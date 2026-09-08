@@ -16,6 +16,11 @@ Node caches modules by path, so every `load()` writes a uniquely-named temp file
 Without that, a sweep would reuse the first configuration for every run and every
 row would come out identical.
 
+`sim/stub.js` also unrefs every timer the game creates. The game starts a 400ms
+layout-refresh interval at load; under Node that would keep the process alive
+after a report has printed, so scripts hung until killed. With the timers unref'd
+the process exits as soon as a script finishes.
+
 ## Cost
 
 About 1.2s per 10-minute match. 100 matches ≈ 2 minutes.

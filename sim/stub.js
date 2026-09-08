@@ -56,3 +56,15 @@ globalThis.Path2D = class {};
 globalThis.Touch = class {}; globalThis.TouchEvent = class {};
 globalThis.KeyboardEvent = class {}; globalThis.MouseEvent = class {};
 globalThis.Event = class { constructor(t){ this.type=t; } };
+
+// The game starts a 400ms layout-refresh setInterval at load and a few short
+// setTimeouts during play (tooltip auto-hide, HUD flash). Harmless in a
+// browser, but under Node an active timer keeps the event loop alive, so a sim
+// script would print its report and then hang until killed. Unref every timer
+// the game creates: once a script's synchronous loop finishes, Node exits on
+// its own. clearTimeout/clearInterval still work because the same Timeout
+// object is returned. The sim scripts themselves never schedule timers.
+for(const name of ['setTimeout', 'setInterval']){
+  const real = globalThis[name];
+  globalThis[name] = (fn, ms, ...args) => real(fn, ms, ...args).unref();
+}
