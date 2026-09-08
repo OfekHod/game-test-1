@@ -26,7 +26,28 @@ exits as soon as a script finishes.
 
 ## Cost
 
-About 1.2s per 10-minute match. 100 matches ≈ 2 minutes.
+A match that ends on a base kill (~250s of game time) costs a few seconds of
+wall time; one that runs the full 600s costs about four times that. Measured on
+a 4-core Xeon: 12 games took 60s in one process and 15-20s with `parallel.js`.
+
+## Using every core
+
+```bash
+node sim/parallel.js 40               # one worker per core, auto-detected
+node sim/parallel.js 40 --workers 2   # or SIM_WORKERS=2
+```
+
+Node is single-threaded, so `run.js` uses one core no matter how many exist.
+`parallel.js` forks one worker per core (`os.availableParallelism`, which
+honours container CPU limits) and dispatches matches one at a time from a
+shared queue. The queue is the important part: match length is random, so a
+fixed slice per worker leaves fast workers idle while an unlucky one finishes
+its 600s games.
+
+More workers than cores does not help. The sim never waits on I/O, so extra
+processes just time-slice the same cores and pay Node's startup cost again;
+12 workers on 4 cores measured slower than 4. The worker count is capped at
+the number of games, so `parallel.js 1` forks exactly one worker.
 
 The dominant cost is not the simulation but how often you call `state()` — it
 rebuilds arrays over every tower and hero. Sample once per simulated second

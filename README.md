@@ -12,6 +12,8 @@ lane.html          the game — open it in a browser, nothing to install
 sim/               headless simulation harness (Node, no dependencies)
   harness.js       lifts the game out of lane.html and instruments it
   run.js           headline result for the shipped configuration
+  parallel.js      same report, one worker per core
+  match.js         one match + the report, shared by run.js and parallel.js
   sweep.js         one configuration per invocation, one comparable line out
   analyse.js       timeline: when buildings fall, deaths, farming intensity
   stub.js          minimal DOM so the game runs under Node
@@ -26,13 +28,16 @@ docs/
 ## Running the simulation
 
 ```bash
-node sim/run.js 40                     # 40 full matches, player idle
+node sim/parallel.js 40                # 40 matches spread over every core
+node sim/run.js 40                     # same, single process
 node sim/analyse.js 25                 # timeline breakdown
 node sim/sweep.js 20 "half tower dmg" "const TOWER_DMG = 100;=>const TOWER_DMG = 50;"
 ```
 
-A full 10-minute match simulates in about 1.2 seconds — roughly 80x realtime —
-so a hundred matches is about two minutes.
+A match is pure CPU work, so one process only ever uses one core. `parallel.js`
+forks one worker per available core and hands out matches from a shared queue;
+on a 4-core machine it finishes a batch in roughly a third of the time. It
+detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
 
 ## Why the harness reads lane.html
 
