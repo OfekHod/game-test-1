@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400" width="320" height="400">
+  <defs>
+    <linearGradient id="r_st" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#dbd7c7"/><stop offset=".28" stop-color="#9c9988"/>
+      <stop offset=".62" stop-color="#5b594c"/><stop offset="1" stop-color="#232219"/></linearGradient>
+    <linearGradient id="r_st2" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#a5a293"/><stop offset=".28" stop-color="#6a6759"/>
+      <stop offset=".62" stop-color="#3a382f"/><stop offset="1" stop-color="#131209"/></linearGradient>
+    <linearGradient id="r_st3" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#6e6b5d"/><stop offset=".28" stop-color="#403e34"/>
+      <stop offset=".62" stop-color="#232116"/><stop offset="1" stop-color="#0b0a05"/></linearGradient>
+    <linearGradient id="r_ms" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#b6dd72"/><stop offset=".28" stop-color="#5d8a34"/>
+      <stop offset=".62" stop-color="#2f4d1c"/><stop offset="1" stop-color="#12200b"/></linearGradient>
+    <linearGradient id="r_am" x1="1" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/><stop offset=".28" stop-color="#ffc75e"/>
+      <stop offset=".62" stop-color="#d8801c"/><stop offset="1" stop-color="#5a2f06"/></linearGradient>
+    <filter id="r_sh" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="r_ao" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="r_ao2" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="r_grain" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="3" seed="53" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0" result="ng"/>
+      <feComponentTransfer in="ng" result="nc">
+        <feFuncR type="linear" slope=".15" intercept=".43"/>
+        <feFuncG type="linear" slope=".15" intercept=".43"/>
+        <feFuncB type="linear" slope=".15" intercept=".43"/>
+      </feComponentTransfer>
+      <feComposite in="nc" in2="SourceGraphic" operator="in" result="m"/>
+      <feBlend in="SourceGraphic" in2="m" mode="overlay"/>
+    </filter>
+  </defs>
+  <ellipse cx="190" cy="346" rx="100" ry="12" fill="#000" opacity=".55" filter="url(#r_sh)"/>
+  <g filter="url(#r_grain)">
+    <path d="M140 108 L166 118 L142 190 L112 178 Z" fill="url(#r_st3)"/>
+    <path d="M112 178 L142 190 L134 268 L100 262 Z" fill="url(#r_st3)"/>
+    <path d="M92 258 L140 264 L146 302 L136 330 L96 326 L84 296 Z" fill="url(#r_st3)"/>
+    <g fill="none" stroke="#070603" stroke-width="3" opacity=".65"><path d="M90 292 L144 298"/><path d="M94 312 L140 316"/></g>
+    <path d="M148 204 L184 208 L180 270 L146 268 Z" fill="url(#r_st3)"/>
+    <path d="M146 268 L180 270 L178 322 L144 320 Z" fill="url(#r_st3)"/>
+    <path d="M124 316 L190 320 L192 340 L122 338 Z" fill="url(#r_st3)"/>
+    <path d="M116 100 L150 84 L200 96 L214 124 L210 168 L196 206 L146 212 L124 190 L110 142 Z" fill="url(#r_st)"/>
+    <path d="M116 100 L150 84 L156 122 L124 134 Z" fill="url(#r_st2)"/>
+    <path d="M200 96 L214 124 L210 168 L184 158 L182 110 Z" fill="url(#r_st2)"/>
+    <path d="M124 190 L146 212 L196 206 L210 168 L184 182 L140 178 Z" fill="url(#r_st3)"/>
+    <path d="M124 134 L156 122 L162 168 L132 172 Z" fill="url(#r_st2)" opacity=".55"/>
+    <g fill="none" stroke="#0b0a05" stroke-width="2.8" opacity=".6"><path d="M150 84 L156 122 L124 134"/><path d="M182 110 L184 158 L210 168"/><path d="M156 122 L162 168 L132 172"/><path d="M140 178 L184 182"/></g>
+    <path d="M116 100 L150 84 L154 96 L124 112 Z" fill="#f2eeda" opacity=".28"/>
+    <path d="M196 112 L214 118 L212 156 L194 152 Z" fill="url(#r_st3)"/>
+    <path d="M204 116 L238 108 L256 130 L252 160 L226 176 L202 166 Z" fill="url(#r_st2)"/>
+    <path d="M204 116 L238 108 L242 124 L206 132 Z" fill="url(#r_st)"/>
+    <path d="M202 166 L226 176 L252 160 L250 172 L224 188 L200 176 Z" fill="url(#r_st3)"/>
+    <path d="M208 146 C226 154 244 150 252 140 L250 154 C238 166 216 166 206 158 Z" fill="#080804"/>
+    <g fill="url(#r_st3)"><path d="M212 108 L216 88 L228 104 Z"/><path d="M236 106 L250 92 L252 112 Z"/></g>
+    <ellipse cx="238" cy="128" rx="13" ry="9" fill="#ffb63f" opacity=".5" filter="url(#r_ao2)"/>
+    <ellipse cx="238" cy="128" rx="6" ry="4.2" fill="#fff0c4"/>
+    <path d="M182 206 L220 208 L216 272 L180 270 Z" fill="url(#r_st)"/>
+    <path d="M180 270 L216 272 L214 330 L178 328 Z" fill="url(#r_st)"/>
+    <path d="M182 206 L196 208 L192 270 L180 270 Z" fill="url(#r_st2)" opacity=".7"/>
+    <path d="M158 324 L232 328 L234 352 L156 348 Z" fill="url(#r_st)"/>
+    <g fill="none" stroke="#0b0a05" stroke-width="2.8" opacity=".55"><path d="M182 246 L216 248"/><path d="M180 296 L214 298"/></g>
+    <path d="M198 118 L228 112 L246 190 L216 198 Z" fill="url(#r_st)"/>
+    <path d="M216 198 L246 190 L252 288 L218 290 Z" fill="url(#r_st)"/>
+    <path d="M198 118 L212 114 L228 194 L216 198 Z" fill="url(#r_st2)" opacity=".65"/>
+    <path d="M208 284 L262 288 L270 320 L258 352 L212 350 L200 318 Z" fill="url(#r_st)"/>
+    <g fill="none" stroke="#0b0a05" stroke-width="3.4" opacity=".6"><path d="M206 316 L266 320"/><path d="M212 336 L262 338"/></g>
+    <path d="M208 284 L234 280 L240 316 L212 318 Z" fill="url(#r_st2)" opacity=".7"/>
+    <path d="M228 112 L246 190" fill="none" stroke="#f4f0dc" stroke-width="3" opacity=".35"/>
+    <ellipse cx="160" cy="146" rx="32" ry="30" fill="#ffb63f" opacity=".4" filter="url(#r_ao)"/>
+    <g fill="none" stroke="#ffd47a" stroke-width="5" stroke-linecap="round"><path d="M160 116 l-10 22 l12 15 l-8 27"/><path d="M150 138 l-26 -10 M172 153 l24 9 M154 180 l-16 16 M160 116 l14 -18"/></g>
+    <path d="M160 116 l-10 22 l12 15 l-8 27" fill="none" stroke="#fff6dc" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+    <path d="M120 98 L150 84 L196 94 L188 106 L150 98 L126 110 Z" fill="url(#r_ms)"/>
+    <path d="M206 116 L238 108 L242 120 L210 128 Z" fill="url(#r_ms)" opacity=".85"/>
+    <path d="M158 324 L200 326 L200 338 L158 336 Z" fill="url(#r_ms)" opacity=".7"/>
+    <g fill="none" stroke="#eef4ff" stroke-opacity=".38" stroke-width="3" stroke-linecap="round"><path d="M238 108 L256 130 L252 160"/><path d="M200 96 L214 124 L210 168"/><path d="M228 112 L246 190 L252 288"/><path d="M220 208 L216 272"/></g>
+  </g>
+</svg>

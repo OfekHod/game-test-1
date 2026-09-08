@@ -11,9 +11,31 @@ neutral camp unit.
 | `dire_hexcaster` | Dire ranged | Robed caster, skull staff |
 | `neutral_rock_golem` | Neutral camp | Stone brute with glowing core |
 
-Each ships as an `.svg` source and a `256x288` `.png` export with a transparent
+Two variants of each creep are provided:
+
+- **`./`** — original 3/4 view, stylized flat vector, `256x288`.
+- **`./side/`** — side profile, higher detail and realism, `320x400`.
+
+Each ships as an `.svg` source and a `.png` export with a transparent
 background. Prefer editing the SVG — it rescales and recolors cleanly for team
 variants.
+
+## Side-view set
+
+The `side/` sprites are drawn in true profile facing right at roughly 7.3 head
+proportions, with layered form shading, ambient occlusion at the joints, and an
+`feTurbulence` grain overlay for surface texture.
+
+They are generated from Python rather than hand-edited. Regenerate with:
+
+```sh
+./side/src/build.sh
+```
+
+`side/src/gen.py` holds the shared scaffolding (tapered-capsule limb helper,
+gradient ramps, grain and blur filters); each `side/src/0*.py` builds one creep
+from a named joint skeleton. Edit the joint coordinates there to repose a
+figure rather than moving path data by hand.
 
 ## Style conventions
 
@@ -29,6 +51,8 @@ variants.
 - Contact shadows are baked into each sprite. Strip them if the engine casts its
   own shadows.
 - Single idle pose only — no walk, attack, or death frames yet.
+- Side-view sprites face right only; mirror horizontally for the other facing.
+- The style is detailed vector illustration, not painted or photoreal art.
 
 ## Provenance
 
