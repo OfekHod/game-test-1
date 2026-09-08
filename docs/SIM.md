@@ -18,8 +18,11 @@ row would come out identical.
 
 `sim/stub.js` also unrefs every timer the game creates. The game starts a 400ms
 layout-refresh interval at load; under Node that would keep the process alive
-after a report has printed, so scripts hung until killed. With the timers unref'd
-the process exits as soon as a script finishes.
+after a report has printed, so scripts hung until killed. Only timers created
+while game code is running are affected — during `load()` and inside `start()`,
+`step()` and `state()`; a timer a script sets for itself fires as normal, so a
+script can still `await` a delay. With the game's timers unref'd the process
+exits as soon as a script finishes.
 
 ## Cost
 
