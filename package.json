@@ -1,0 +1,11 @@
+{
+  "name": "lane-poc",
+  "version": "1.0.0",
+  "description": "Browser MOBA prototype with a headless simulation harness",
+  "private": true,
+  "scripts": {
+    "sim": "node sim/run.js 40",
+    "analyse": "node sim/analyse.js 25"
+  },
+  "engines": { "node": ">=18" }
+}
