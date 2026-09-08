@@ -18,6 +18,7 @@ sim/               headless simulation harness (Node, no dependencies)
   analyse.js       timeline: when buildings fall, deaths, farming intensity
   stub.js          minimal DOM so the game runs under Node
 docs/
+  GAMEPLAY.md      screenshots from a played match and a survival round
   FINDINGS.md      what was measured, including what did NOT work
   TUNING.md        every constant that matters and the evidence for its value
   AI.md            how the enemy team thinks
