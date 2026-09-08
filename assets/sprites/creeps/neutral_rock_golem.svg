@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 288" width="256" height="288">
+  <defs>
+    <linearGradient id="rg_st" x1=".25" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#bdb9a9"/><stop offset=".42" stop-color="#6e6b60"/><stop offset="1" stop-color="#242318"/>
+    </linearGradient>
+    <linearGradient id="rg_st2" x1=".25" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#8a8776"/><stop offset=".5" stop-color="#4b4940"/><stop offset="1" stop-color="#1a1912"/>
+    </linearGradient>
+    <linearGradient id="rg_st3" x1=".3" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#615f52"/><stop offset="1" stop-color="#121108"/>
+    </linearGradient>
+    <linearGradient id="rg_moss" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#93c055"/><stop offset="1" stop-color="#24401a"/>
+    </linearGradient>
+    <radialGradient id="rg_core" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fffbe6"/><stop offset=".28" stop-color="#ffb63f"/><stop offset=".65" stop-color="#e07a18" stop-opacity=".5"/><stop offset="1" stop-color="#e07a18" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="rg_soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+
+  <ellipse cx="128" cy="264" rx="92" ry="15" fill="#000" opacity=".5" filter="url(#rg_soft)"/>
+
+  <g stroke="#0d0d07" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+
+    <!-- RIGHT (back) ARM -->
+    <path d="M198 112 q30 34 24 74" fill="none" stroke="#0d0d07" stroke-width="38"/>
+    <path d="M198 112 q30 34 24 74" fill="none" stroke="url(#rg_st3)" stroke-width="29"/>
+    <path d="M196 186 h50 l6 30 l-12 28 h-40 l-10 -28 z" fill="url(#rg_st3)"/>
+    <path d="M200 212 h46 M204 232 h38" fill="none" stroke="#0d0d07" stroke-width="3.4"/>
+
+    <!-- LEGS -->
+    <path d="M132 188 h32 l4 44 h-38 z" fill="url(#rg_st2)"/>
+    <path d="M124 228 h50 q9 0 9 12 h-68 q0 -12 9 -12 z" fill="url(#rg_st2)"/>
+    <path d="M92 188 h32 l2 44 h-38 z" fill="url(#rg_st)"/>
+    <path d="M82 228 h50 q9 0 9 12 h-68 q0 -12 9 -12 z" fill="url(#rg_st)"/>
+
+    <!-- TORSO -->
+    <path d="M74 90 q54 -22 108 0 l-10 68 q-14 34 -44 34 q-30 0 -44 -34 z" fill="url(#rg_st)"/>
+    <path d="M182 90 l-10 68 q-14 34 -44 34 l0 -114 z" fill="url(#rg_st3)" stroke-width="3"/>
+    <path d="M74 90 l28 12 l-14 42 l-20 -8 z" fill="url(#rg_st2)" stroke-width="3"/>
+    <path d="M86 160 q42 22 84 0 l-6 18 q-36 18 -72 0 z" fill="url(#rg_st3)" stroke-width="3"/>
+
+    <!-- SHOULDER SLABS -->
+    <path d="M80 86 q-30 -8 -44 14 q-8 22 14 26 q26 4 36 -18 z" fill="url(#rg_st)"/>
+    <path d="M38 98 l22 -6 l6 22 l-22 6 z" fill="url(#rg_st2)" stroke-width="2.6"/>
+    <path d="M176 86 q30 -8 44 14 q8 22 -14 26 q-26 4 -36 -18 z" fill="url(#rg_st3)"/>
+
+    <!-- HEAD -->
+    <path d="M128 44 q28 2 30 24 q2 22 -30 24 q-32 -2 -30 -24 q2 -22 30 -24 z" fill="url(#rg_st2)"/>
+    <path d="M100 66 q28 -12 56 0 l-4 14 q-24 8 -48 0 z" fill="#0b0b06"/>
+    <path d="M104 46 l4 -18 l10 16 z M128 40 l4 -20 l8 18 z M148 48 l14 -16 l0 18 z" fill="url(#rg_st3)"/>
+
+    <!-- LEFT (front) ARM -->
+    <path d="M58 112 q-30 34 -24 74" fill="none" stroke="#0d0d07" stroke-width="40"/>
+    <path d="M58 112 q-30 34 -24 74" fill="none" stroke="url(#rg_st)" stroke-width="31"/>
+    <path d="M6 186 h52 l8 30 l-12 30 h-44 l-10 -30 z" fill="url(#rg_st)"/>
+    <path d="M10 214 h48 M14 234 h40" fill="none" stroke="#0d0d07" stroke-width="3.6"/>
+    <path d="M6 186 l24 -4 l4 28 l-24 4 z" fill="url(#rg_st2)" stroke-width="2.6"/>
+
+    <!-- MOSS -->
+    <path d="M96 92 q28 -12 56 -4 q-8 14 -28 14 q-20 0 -28 -10 z" fill="url(#rg_moss)" stroke-width="2.8"/>
+    <path d="M84 190 q20 -8 38 0 q-8 12 -20 12 q-12 0 -18 -12 z" fill="url(#rg_moss)" stroke-width="2.8"/>
+    <path d="M2 192 q18 -6 28 4 q-10 10 -20 8 q-9 -2 -8 -12 z" fill="url(#rg_moss)" stroke-width="2.8"/>
+  </g>
+
+  <!-- CORE + CRACKS -->
+  <ellipse cx="126" cy="130" rx="26" ry="26" fill="url(#rg_core)"/>
+  <g fill="none" stroke="#ffd47a" stroke-width="4.6" stroke-linecap="round">
+    <path d="M126 106 l-9 20 l11 12 l-7 24"/>
+    <path d="M117 126 l-26 -12 M137 138 l28 8 M121 162 l-18 16 M126 106 l14 -18"/>
+  </g>
+  <path d="M126 106 l-9 20 l11 12 l-7 24" fill="none" stroke="#fff4d2" stroke-width="1.9" stroke-linecap="round" opacity=".9"/>
+  <ellipse cx="115" cy="72" rx="9" ry="6" fill="#ffcf6e"/>
+  <ellipse cx="141" cy="72" rx="9" ry="6" fill="#ffcf6e"/>
+
+  <!-- RIM LIGHT -->
+  <g fill="none" stroke="#f0f6ff" stroke-opacity=".5" stroke-width="3.4" stroke-linecap="round">
+    <path d="M110 28 q-10 8 -10 18"/>
+    <path d="M78 86 q-30 -6 -42 14"/>
+    <path d="M36 128 q-14 26 -10 52"/>
+    <path d="M6 188 l-4 26"/>
+    <path d="M92 190 l-4 38"/>
+  </g>
+</svg>

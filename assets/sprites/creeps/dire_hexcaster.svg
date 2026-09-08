@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 288" width="256" height="288">
+  <defs>
+    <linearGradient id="dh_robe" x1=".2" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#6a5a86"/><stop offset=".45" stop-color="#3d3156"/><stop offset="1" stop-color="#181227"/>
+    </linearGradient>
+    <linearGradient id="dh_robe2" x1=".2" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#4a3d63"/><stop offset="1" stop-color="#120d1e"/>
+    </linearGradient>
+    <linearGradient id="dh_trim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8455f"/><stop offset="1" stop-color="#5a1226"/>
+    </linearGradient>
+    <linearGradient id="dh_bone" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#efe8cd"/><stop offset="1" stop-color="#8f8567"/>
+    </linearGradient>
+    <linearGradient id="dh_wood" x1="0" y1="0" x2="1" y2=".2">
+      <stop offset="0" stop-color="#6b5334"/><stop offset="1" stop-color="#2b1f10"/>
+    </linearGradient>
+    <radialGradient id="dh_flame" cx=".5" cy=".55" r=".5">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".25" stop-color="#b6ff7a"/><stop offset=".6" stop-color="#3fa03a" stop-opacity=".75"/><stop offset="1" stop-color="#3fa03a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dh_eye" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#eaffd0"/><stop offset=".4" stop-color="#7ce85a"/><stop offset="1" stop-color="#7ce85a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="dh_soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+
+  <ellipse cx="126" cy="262" rx="56" ry="12" fill="#000" opacity=".45" filter="url(#dh_soft)"/>
+
+  <!-- STAFF (behind, left) -->
+  <g stroke="#12140d" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M72 84 L64 252" fill="none" stroke="#12140d" stroke-width="13"/>
+    <path d="M72 84 L64 252" fill="none" stroke="url(#dh_wood)" stroke-width="8"/>
+    <path d="M70 130 q-12 6 -14 20 M71 108 q12 6 14 18" fill="none" stroke="url(#dh_wood)" stroke-width="6"/>
+  </g>
+  <ellipse cx="73" cy="62" rx="34" ry="38" fill="url(#dh_flame)"/>
+  <g stroke="#12140d" stroke-width="3" stroke-linejoin="round">
+    <path d="M73 40 q22 0 22 22 q0 16 -10 20 l2 12 h-28 l2 -12 q-10 -4 -10 -20 q0 -22 22 -22 z" fill="url(#dh_bone)"/>
+    <ellipse cx="65" cy="60" rx="6" ry="7" fill="#1d2416"/>
+    <ellipse cx="82" cy="60" rx="6" ry="7" fill="#1d2416"/>
+    <path d="M67 78 h12 l-2 6 h-8 z" fill="#1d2416" stroke-width="2"/>
+  </g>
+  <circle cx="65" cy="60" r="4" fill="#b6ff7a"/><circle cx="82" cy="60" r="4" fill="#b6ff7a"/>
+
+  <g stroke="#12140d" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+
+    <!-- ROBE -->
+    <path d="M126 96 q40 4 48 46 l18 96 q-66 22 -132 0 l18 -96 q8 -42 48 -46 z" fill="url(#dh_robe)"/>
+    <path d="M126 96 q40 4 48 46 l18 96 q-24 8 -50 10 l4 -152 z" fill="url(#dh_robe2)"/>
+    <path d="M62 232 q64 20 132 0 l2 10 q-68 22 -136 0 z" fill="url(#dh_trim)"/>
+    <path d="M126 118 l14 26 l-14 86 l-14 -86 z" fill="url(#dh_trim)"/>
+
+    <!-- ARMS -->
+    <path d="M100 132 q-22 4 -30 18" fill="none" stroke="#12140d" stroke-width="21"/>
+    <path d="M100 132 q-22 4 -30 18" fill="none" stroke="url(#dh_robe2)" stroke-width="14"/>
+    <path d="M152 134 q26 8 30 30" fill="none" stroke="#12140d" stroke-width="21"/>
+    <path d="M152 134 q26 8 30 30" fill="none" stroke="url(#dh_robe2)" stroke-width="14"/>
+    <path d="M72 148 q-10 4 -12 12 M74 152 q-6 8 -4 16 M80 152 q0 10 4 14" fill="none" stroke="url(#dh_bone)" stroke-width="5"/>
+    <path d="M182 166 q8 8 6 18 M186 166 q4 12 0 18 M176 168 q-2 12 -6 16" fill="none" stroke="url(#dh_bone)" stroke-width="5"/>
+
+    <!-- HOOD -->
+    <path d="M126 44 q40 2 42 42 q2 32 -20 40 q-30 8 -46 -8 q-16 -26 -2 -56 q10 -18 26 -18 z" fill="url(#dh_robe)"/>
+    <path d="M126 44 q40 2 42 42 q-16 -18 -42 -16 q-20 2 -28 20 q0 -28 12 -38 q7 -8 16 -8 z" fill="url(#dh_robe2)"/>
+    <path d="M104 84 q22 -12 44 -2 l-6 34 q-18 10 -34 -2 z" fill="#0d0a16"/>
+  </g>
+  <ellipse cx="116" cy="100" rx="13" ry="10" fill="url(#dh_eye)"/>
+  <ellipse cx="140" cy="102" rx="13" ry="10" fill="url(#dh_eye)"/>
+  <circle cx="116" cy="100" r="3.6" fill="#f4ffe6"/><circle cx="140" cy="102" r="3.6" fill="#f4ffe6"/>
+
+  <!-- RIM LIGHT -->
+  <g fill="none" stroke="#c9b6ff" stroke-opacity=".42" stroke-width="3" stroke-linecap="round">
+    <path d="M108 50 q-14 14 -12 34"/>
+    <path d="M92 108 q-14 26 -18 56"/>
+    <path d="M66 190 l-4 40"/>
+  </g>
+</svg>

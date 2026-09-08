@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 288" width="256" height="288">
+  <defs>
+    <linearGradient id="rv_au" x1=".15" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#ffeab0"/><stop offset=".45" stop-color="#d4a944"/><stop offset="1" stop-color="#4e3408"/>
+    </linearGradient>
+    <linearGradient id="rv_au2" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#e0bb5f"/><stop offset="1" stop-color="#372603"/>
+    </linearGradient>
+    <linearGradient id="rv_teal" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#5fd6a8"/><stop offset="1" stop-color="#14503b"/>
+    </linearGradient>
+    <linearGradient id="rv_steel" x1=".1" y1="0" x2=".9" y2="1">
+      <stop offset="0" stop-color="#eef5f7"/><stop offset=".5" stop-color="#9aa8ad"/><stop offset="1" stop-color="#2b353a"/>
+    </linearGradient>
+    <filter id="rv_soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+
+  <ellipse cx="128" cy="264" rx="60" ry="13" fill="#000" opacity=".42" filter="url(#rv_soft)"/>
+
+  <g stroke="#151a10" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round">
+
+    <!-- BACK LEG -->
+    <path d="M150 194 L157 228 L152 250" fill="none" stroke="#151a10" stroke-width="27"/>
+    <path d="M150 194 L157 228 L152 250" fill="none" stroke="#2e6b52" stroke-width="19"/>
+    <path d="M138 246 h30 q8 0 8 8 h-46 q0 -8 8 -8 z" fill="#6b5121"/>
+
+    <!-- SWORD ARM (behind torso) -->
+    <path d="M166 134 q26 0 30 -18" fill="none" stroke="#151a10" stroke-width="24"/>
+    <path d="M166 134 q26 0 30 -18" fill="none" stroke="url(#rv_au2)" stroke-width="16"/>
+    <path d="M186 130 q18 -8 26 4 q-2 16 -22 14 q-8 -6 -4 -18 z" fill="url(#rv_au)"/>
+    <g transform="rotate(-14 196 116)">
+      <path d="M188 118 h16 v-10 h-16 z" fill="#4a3512"/>
+      <path d="M174 108 h44 l-6 -11 h-32 z" fill="url(#rv_au)"/>
+      <path d="M196 97 l10 -7 l-3 -56 l-7 -14 l-7 14 l-3 56 z" fill="url(#rv_steel)"/>
+      <path d="M196 24 v73" fill="none" stroke="#eef5f7" stroke-width="2" opacity=".55"/>
+    </g>
+
+    <!-- SKIRT / TASSETS -->
+    <path d="M100 168 h56 l12 44 q-40 12 -80 0 z" fill="url(#rv_teal)"/>
+    <path d="M118 176 h20 l4 34 h-28 z" fill="url(#rv_au2)"/>
+
+    <!-- FRONT LEG -->
+    <path d="M112 198 L104 230 L108 250" fill="none" stroke="#151a10" stroke-width="27"/>
+    <path d="M112 198 L104 230 L108 250" fill="none" stroke="#49a37e" stroke-width="19"/>
+    <path d="M94 246 h30 q8 0 8 8 h-46 q0 -8 8 -8 z" fill="#8a6a2c"/>
+
+    <!-- TORSO -->
+    <path d="M97 114 q31 -12 62 0 l7 40 q-9 20 -38 20 q-29 0 -38 -20 z" fill="url(#rv_au)"/>
+    <path d="M128 122 l20 12 l-20 40 l-20 -40 z" fill="url(#rv_teal)"/>
+    <path d="M128 136 l9 9 l-9 9 l-9 -9 z" fill="#ffeab0"/>
+
+    <path d="M159 114 l7 40 q-9 20 -38 20 l0 -60 z" fill="#000" opacity=".22" stroke="none"/>
+    <!-- PAULDRONS -->
+    <path d="M96 110 q-26 2 -30 26 q-1 14 14 16 q20 2 26 -16 z" fill="url(#rv_au)"/>
+    <path d="M160 110 q26 2 30 26 q1 14 -14 16 q-20 2 -26 -16 z" fill="url(#rv_au2)"/>
+
+    <!-- NECK + HELM -->
+    <path d="M116 100 h24 v14 h-24 z" fill="#3b4a44"/>
+    <path d="M128 58 q28 0 28 30 q0 26 -28 30 q-28 -4 -28 -30 q0 -30 28 -30 z" fill="url(#rv_au)"/>
+    <path d="M106 88 q22 -7 44 0 l-3 12 q-19 6 -38 0 z" fill="#12181c"/>
+    <path d="M124 88 h8 v12 h-8 z" fill="url(#rv_au2)" stroke-width="2"/>
+    <path d="M126 54 q6 -30 26 -40 q10 24 -4 44 q-6 8 -22 6 z" fill="url(#rv_teal)"/>
+    <path d="M132 50 q6 -22 18 -32" fill="none" stroke="#8ff0c6" stroke-width="3" stroke-opacity=".6"/>
+  </g>
+
+  <!-- SHIELD (front hand) -->
+  <g stroke="#151a10" stroke-width="3.4" stroke-linejoin="round">
+    <path d="M100 128 q-20 4 -30 20" fill="none" stroke="#151a10" stroke-width="24" stroke-linecap="round"/>
+    <path d="M100 128 q-20 4 -30 20" fill="none" stroke="url(#rv_au2)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M66 112 q36 8 36 46 q0 42 -36 64 q-36 -22 -36 -64 q0 -38 36 -46 z" fill="url(#rv_au2)"/>
+    <path d="M66 124 q27 7 27 35 q0 32 -27 50 q-27 -18 -27 -50 q0 -28 27 -35 z" fill="url(#rv_teal)" stroke-width="2.6"/>
+    <circle cx="66" cy="164" r="13" fill="url(#rv_au)"/>
+    <path d="M66 152 l6 12 l-6 12 l-6 -12 z" fill="#ffeab0" stroke-width="2"/>
+  </g>
+
+  <!-- RIM LIGHT -->
+  <g fill="none" stroke="#fff6d6" stroke-opacity=".5" stroke-width="3" stroke-linecap="round">
+    <path d="M104 62 q-16 8 -18 26"/>
+    <path d="M92 112 q-22 4 -26 22"/>
+    <path d="M36 138 q-4 22 0 42"/>
+    <path d="M100 172 l-8 34"/>
+  </g>
+</svg>

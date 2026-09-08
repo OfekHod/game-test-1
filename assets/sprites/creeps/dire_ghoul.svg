@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 288" width="256" height="288">
+  <defs>
+    <linearGradient id="dg_flesh" x1=".25" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#b6bf90"/><stop offset=".45" stop-color="#6b7853"/><stop offset="1" stop-color="#252b19"/>
+    </linearGradient>
+    <linearGradient id="dg_flesh2" x1=".25" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#77855c"/><stop offset=".5" stop-color="#454f33"/><stop offset="1" stop-color="#171b0e"/>
+    </linearGradient>
+    <linearGradient id="dg_bone" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#fbf6dc"/><stop offset=".6" stop-color="#c6bd97"/><stop offset="1" stop-color="#79704f"/>
+    </linearGradient>
+    <linearGradient id="dg_blade" x1=".1" y1="0" x2=".9" y2="1">
+      <stop offset="0" stop-color="#d9c9ae"/><stop offset=".35" stop-color="#9a6c40"/><stop offset="1" stop-color="#361d0e"/>
+    </linearGradient>
+    <linearGradient id="dg_hide" x1=".2" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#6b5231"/><stop offset="1" stop-color="#241a0e"/>
+    </linearGradient>
+    <radialGradient id="dg_eye" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fff4b0"/><stop offset=".35" stop-color="#ff5a2a"/><stop offset="1" stop-color="#e8301a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="dg_soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+
+  <ellipse cx="130" cy="266" rx="66" ry="13" fill="#000" opacity=".5" filter="url(#dg_soft)"/>
+
+  <g stroke="#0f110a" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round">
+
+    <!-- BACK LEG -->
+    <path d="M164 176 L180 210 L162 232 L172 250" fill="none" stroke="#0f110a" stroke-width="26"/>
+    <path d="M164 176 L180 210 L162 232 L172 250" fill="none" stroke="url(#dg_flesh2)" stroke-width="18"/>
+    <path d="M158 244 q20 -4 30 4 q4 10 -8 10 h-28 q-4 -10 6 -14 z" fill="#3e4a2b"/>
+
+    <!-- BACK ARM + CLEAVER -->
+    <path d="M158 116 q36 -4 42 -28" fill="none" stroke="#0f110a" stroke-width="24"/>
+    <path d="M158 116 q36 -4 42 -28" fill="none" stroke="url(#dg_flesh2)" stroke-width="16"/>
+    <path d="M188 92 q16 -8 24 2 q-4 14 -22 12 z" fill="url(#dg_flesh2)" stroke-width="3"/>
+    <g transform="rotate(-8 204 84)">
+      <path d="M198 96 h14 v-26 h-14 z" fill="url(#dg_hide)"/>
+      <path d="M180 70 h56 l4 -44 q-30 -8 -56 4 z" fill="url(#dg_blade)"/>
+      <path d="M236 32 q-8 14 -6 30" fill="none" stroke="#0f110a" stroke-width="3"/>
+      <path d="M180 70 h56 l2 -14 h-60 z" fill="#48280f" stroke-width="2.6"/>
+      <path d="M186 62 l52 0" fill="none" stroke="#f2e3c4" stroke-width="3" opacity=".6"/>
+      <circle cx="192" cy="46" r="3.4" fill="#3a1f0c" stroke-width="2"/>
+      <circle cx="226" cy="42" r="3.4" fill="#3a1f0c" stroke-width="2"/>
+    </g>
+
+    <!-- SPINE SPURS -->
+    <path d="M148 92 l14 -24 l4 20 z M162 112 l22 -18 l-2 20 z M172 136 l24 -10 l-8 20 z" fill="url(#dg_bone)"/>
+
+    <!-- HUNCHED TORSO -->
+    <path d="M92 104 q38 -26 72 4 q16 28 4 58 q-26 24 -62 8 q-24 -28 -14 -70 z" fill="url(#dg_flesh)"/>
+    <path d="M140 106 q22 4 28 28 q4 24 -6 40 q-14 10 -26 10 z" fill="url(#dg_flesh2)" stroke-width="2.6"/>
+    <g stroke="#0f110a" stroke-width="2.6" fill="url(#dg_bone)">
+      <path d="M100 120 q24 10 42 5 l-2 9 q-22 5 -42 -5 z"/>
+      <path d="M100 137 q24 10 40 5 l-2 9 q-20 5 -40 -5 z"/>
+      <path d="M102 154 q22 9 36 4 l-2 9 q-18 4 -36 -4 z"/>
+    </g>
+    <path d="M100 170 q30 14 62 2 l6 26 q-36 18 -74 2 z" fill="url(#dg_hide)"/>
+    <path d="M118 176 l-4 24 M136 178 l0 24" fill="none" stroke="#120c06" stroke-width="3"/>
+
+    <!-- FRONT LEG -->
+    <path d="M116 178 L104 210 L118 230 L106 250" fill="none" stroke="#0f110a" stroke-width="26"/>
+    <path d="M116 178 L104 210 L118 230 L106 250" fill="none" stroke="url(#dg_flesh)" stroke-width="18"/>
+    <path d="M94 244 q20 -4 30 4 q4 10 -8 10 h-28 q-4 -10 6 -14 z" fill="#94a171"/>
+    <path d="M88 250 l-8 8 M100 252 l-6 10 M112 252 l-2 10" fill="none" stroke="url(#dg_bone)" stroke-width="4"/>
+
+    <!-- FRONT ARM + CLAWS -->
+    <path d="M98 118 q-34 18 -30 52" fill="none" stroke="#0f110a" stroke-width="24"/>
+    <path d="M98 118 q-34 18 -30 52" fill="none" stroke="url(#dg_flesh)" stroke-width="16"/>
+    <path d="M56 166 q18 -6 26 6 q0 16 -18 16 q-14 -2 -8 -22 z" fill="url(#dg_flesh)" stroke-width="3"/>
+    <path d="M58 186 l-14 22 M70 190 l-8 26 M82 186 l4 26" fill="none" stroke="#0f110a" stroke-width="10"/>
+    <path d="M58 186 l-14 22 M70 190 l-8 26 M82 186 l4 26" fill="none" stroke="url(#dg_bone)" stroke-width="5.5"/>
+
+    <!-- HEAD -->
+    <path d="M104 72 q36 -6 42 22 q2 24 -20 30 q-28 4 -36 -16 q-4 -28 14 -36 z" fill="url(#dg_flesh)"/>
+    <path d="M130 74 q16 6 16 20 q2 24 -20 30 l2 -50 z" fill="url(#dg_flesh2)" stroke-width="2.6"/>
+    <path d="M96 106 q24 14 48 2 l-4 14 q-22 8 -40 -2 z" fill="#1a1409"/>
+    <g stroke="#0f110a" stroke-width="2" fill="url(#dg_bone)">
+      <path d="M104 110 l4 11 l5 -11 z M118 115 l4 11 l5 -11 z M132 112 l4 10 l5 -10 z M142 106 l3 9 l5 -9 z"/>
+    </g>
+    <path d="M108 64 q-6 -18 4 -26 q6 14 2 26 z M140 66 q8 -16 18 -18 q-4 16 -12 22 z" fill="url(#dg_bone)"/>
+  </g>
+
+  <ellipse cx="116" cy="88" rx="14" ry="10" fill="url(#dg_eye)"/>
+  <ellipse cx="139" cy="90" rx="12" ry="9" fill="url(#dg_eye)"/>
+  <circle cx="116" cy="88" r="3.6" fill="#fff6cc"/>
+  <circle cx="139" cy="90" r="3.2" fill="#fff6cc"/>
+
+  <!-- RIM LIGHT -->
+  <g fill="none" stroke="#e2eec0" stroke-opacity=".5" stroke-width="3.2" stroke-linecap="round">
+    <path d="M102 74 q-14 12 -10 30"/>
+    <path d="M92 104 q-14 22 -8 44"/>
+    <path d="M66 128 q-14 16 -12 34"/>
+    <path d="M110 182 l-8 26"/>
+  </g>
+</svg>
