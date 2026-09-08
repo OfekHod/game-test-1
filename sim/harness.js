@@ -99,9 +99,20 @@ function load(edits){
   const file = path.join(require('os').tmpdir(), `lane_sim_${process.pid}_${n++}.js`);
   fs.writeFileSync(file, build(edits));
   require('./stub.js');
-  require(file);
+  // Everything the game schedules — the layout interval it starts while the
+  // script is evaluated, the short timeouts it sets during play — must not
+  // keep Node alive once the sim script is done. The stub unrefs timers only
+  // while __laneInGame is raised, so raise it exactly where game code runs:
+  // here, and inside each call the script makes into the game.
+  const G = inGame(() => { require(file); return globalThis.__GAME; })();
   fs.unlinkSync(file);
-  return globalThis.__GAME;
+  return { start: inGame(G.start), step: inGame(G.step), state: inGame(G.state) };
+}
+function inGame(fn){
+  return (...args) => {
+    globalThis.__laneInGame++;
+    try { return fn(...args); } finally { globalThis.__laneInGame--; }
+  };
 }
 
 module.exports = { extract, build, load };
