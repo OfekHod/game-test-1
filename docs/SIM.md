@@ -16,6 +16,14 @@ Node caches modules by path, so every `load()` writes a uniquely-named temp file
 Without that, a sweep would reuse the first configuration for every run and every
 row would come out identical.
 
+`sim/stub.js` also unrefs every timer the game creates. The game starts a 400ms
+layout-refresh interval at load; under Node that would keep the process alive
+after a report has printed, so scripts hung until killed. Only timers created
+while game code is running are affected — during `load()` and inside `start()`,
+`step()` and `state()`; a timer a script sets for itself fires as normal, so a
+script can still `await` a delay. With the game's timers unref'd the process
+exits as soon as a script finishes.
+
 ## Cost
 
 A match that ends on a base kill (~250s of game time) costs a few seconds of

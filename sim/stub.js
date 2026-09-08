@@ -56,3 +56,29 @@ globalThis.Path2D = class {};
 globalThis.Touch = class {}; globalThis.TouchEvent = class {};
 globalThis.KeyboardEvent = class {}; globalThis.MouseEvent = class {};
 globalThis.Event = class { constructor(t){ this.type=t; } };
+
+// The game starts a 400ms layout-refresh setInterval at load and a few short
+// setTimeouts during play (tooltip auto-hide, HUD flash). Harmless in a
+// browser, but under Node an active timer keeps the event loop alive, so a sim
+// script would print its report and then hang until killed.
+//
+// Timers created while GAME code is running are therefore unref'd: they still
+// exist and can be cleared, they just never hold the process open, so Node
+// exits as soon as a script's own work is done. harness.js raises __laneInGame
+// while it evaluates the game script and for the duration of every start(),
+// step() and state() call. A timer a sim script creates for itself, outside
+// those calls, is the real thing and fires as normal — so a script can still
+// await a delay without the harness silently swallowing it.
+globalThis.__laneInGame = 0;
+for(const name of ['setTimeout', 'setInterval']){
+  const real = globalThis[name];
+  globalThis[name] = function(fn, ms, ...args){
+    if(!(globalThis.__laneInGame > 0)) return real(fn, ms, ...args);
+    // anything scheduled from inside a game timer's callback is game code too
+    const inGame = (...a) => {
+      globalThis.__laneInGame++;
+      try { return fn(...a); } finally { globalThis.__laneInGame--; }
+    };
+    return real(inGame, ms, ...args).unref();
+  };
+}
