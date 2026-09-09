@@ -837,13 +837,20 @@ window.addEventListener('DOMContentLoaded', function(){
   // Darker than the grass on purpose. The old grey was lighter than the deep
   // green field, so unexplored ground came out brighter than ground you could
   // see and the fog read as haze rather than as shadow.
-  const FOG_COLOR = '#3C5240';
+  //
+  // Two greys rather than one, laid across the screen as a slow diagonal. Shade
+  // outdoors is not one flat colour: what fills it is sky rather than sun, so
+  // it drifts cooler and bluer the less bounced light reaches it. The drift is
+  // small — a few per cent — but it is the difference between a shadow that
+  // looks painted on and one that looks like an absence of light.
+  const FOG_WARM = '#405643';   // shade that still catches some green bounce
+  const FOG_COOL = '#36474E';   // shade lit only by sky
   // How far a fog edge — and so the side of every shadow a tree throws — takes
   // to fade out, in WORLD units. It has to be world units: the mask is sized
   // from canvasScale, so a radius fixed in mask pixels would be four times
   // softer on a laptop than on a phone with the same picture in front of you.
   // applyLayout turns it into the filter drawFog uses.
-  const FOG_EDGE_SOFT = 11;
+  const FOG_EDGE_SOFT = 7;
   let fogEdgeFilter = 'none';
   const FOG_ALPHA = 0.82;
   const canvas = document.getElementById('game');
@@ -2989,8 +2996,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     return false;
   }
-  function rayTreeDist(ox,oy,dx,dy,t){
-    const cr = t.r*TREE_BLOCK_FACTOR;
+  function rayTreeDist(ox,oy,dx,dy,t,k){
+    const cr = t.r*TREE_BLOCK_FACTOR*k;
     const mx = ox-t.x, my = oy-t.y;
     const b = mx*dx + my*dy;
     const c = mx*mx + my*my - cr*cr;
@@ -3021,14 +3028,48 @@ window.addEventListener('DOMContentLoaded', function(){
     return g;
   }
   function norm2pi(a){ a %= Math.PI*2; return a<0 ? a+Math.PI*2 : a; }
+  // One gradient per surface size, not per frame.
+  let fogSheetGrad = null, fogSheetKey = '';
+  function fogSheet(fw, fh){
+    const key = fw+'x'+fh;
+    if(fogSheetKey === key && fogSheetGrad) return fogSheetGrad;
+    const g = fogCtx.createLinearGradient(0, 0, fw, fh);
+    g.addColorStop(0, FOG_WARM);
+    g.addColorStop(1, FOG_COOL);
+    fogSheetGrad = g; fogSheetKey = key;
+    return g;
+  }
+  // A shadow with one crisp side is a shadow cast by a point of light, and
+  // nothing outdoors is lit by a point. Blurring the finished mask can only
+  // give every side a fringe of the SAME width, so close to the bush it was
+  // already too soft while a hundred units out the sides were still drawn
+  // lines — which is exactly how they read.
+  //
+  // So the light is given a size instead. The mask is carved twice: once with
+  // each tree at its true blocking radius, once with it shrunk, and each pass
+  // lays down half the light. Ground that both passes leave dark is umbra and
+  // stays fully shaded; ground only the wider pass leaves dark is penumbra and
+  // comes out half lit. The two polygons spread apart as they travel — plain
+  // geometry — so the soft band is a few units wide against the bush and tens
+  // of units wide at the far end, the way a real shadow opens up. FOG_EDGE_SOFT
+  // then rounds the two steps into one continuous ramp.
+  const SHADOW_UMBRA_R = 0.58;  // inner blocking radius, as a fraction of the true one
   function carveVision(fctx, s){
     const sNear = nearOf(s);
+    // No tree in range means both passes would carve the same circle, so there
+    // is no penumbra to draw and no reason to pay for a second one.
+    if(!sNear.length){ carvePass(fctx, s, sNear, 1, 1); return; }
+    carvePass(fctx, s, sNear, 1, 0.5);
+    carvePass(fctx, s, sNear, SHADOW_UMBRA_R, 0.5);
+    revealTrees(fctx, s);
+  }
+  function carvePass(fctx, s, sNear, k, alpha){
     fogAngles.length = 0;
     for(let i=0;i<FOG_RIM_RAYS;i++) fogAngles.push(i/FOG_RIM_RAYS*Math.PI*2);
     for(const t of sNear){
       const dx = t.x-s.x, dy = t.y-s.y;
       const d = Math.sqrt(dx*dx+dy*dy);
-      const cr = t.r*TREE_BLOCK_FACTOR;
+      const cr = t.r*TREE_BLOCK_FACTOR*k;
       if(d <= cr || d >= s.r + cr) continue;
       const base = Math.atan2(dy,dx);
       const half = Math.asin(Math.min(1, cr/d));
@@ -3038,13 +3079,14 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     fogAngles.sort((a,b)=>a-b);
     fctx.save();
+    fctx.globalAlpha = alpha;
     fctx.beginPath();
     for(let i=0;i<fogAngles.length;i++){
       const a = fogAngles[i];
       const dx = Math.cos(a), dy = Math.sin(a);
       let d = s.r;
       for(const t of sNear){
-        const hit = rayTreeDist(s.x,s.y,dx,dy,t);
+        const hit = rayTreeDist(s.x,s.y,dx,dy,t,k);
         if(hit < d) d = hit;
       }
       const px = s.x+dx*d, py = s.y+dy*d;
@@ -3072,7 +3114,6 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.fillRect(rx0-s.x, ry0-s.y, rx1-rx0, ry1-ry0);
     }
     fctx.restore();
-    revealTrees(fctx, s);
   }
 
   // Rays stop at a tree's near face, so the canopy itself lands outside the
@@ -3135,7 +3176,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // 2. One grey sheet, cut through once by that finished union.
     fogCtx.setTransform(1,0,0,1,0,0);
     fogCtx.globalCompositeOperation = 'source-over';
-    fogCtx.fillStyle = FOG_COLOR;
+    fogCtx.fillStyle = fogSheet(fw, fh);
     fogCtx.fillRect(0,0,fw,fh);
     fogCtx.globalCompositeOperation = 'destination-out';
     // Blurring the mask on the way out is what takes the razor edge off a tree's
