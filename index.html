@@ -155,7 +155,18 @@
   .skillName{font-size:13px;font-weight:800;color:var(--text-strong);min-width:52px;}
   .hint{font-size:12.5px;color:var(--text-strong);opacity:.75;}
 
-  .hud-right{display:flex;align-items:center;gap:24px;font-size:19px;font-weight:800;color:var(--text-strong);}
+  .hud-right{display:flex;align-items:center;gap:24px;font-size:19px;font-weight:800;color:var(--text-strong);
+    flex:0 0 auto;}
+  /* Survival's slot reads "Wave 12" where a Match reads "10:00", and the xp
+     beside it grows a digit at a time all round. On a phone that was enough to
+     wrap the slot onto two lines, and then — once it could not wrap — to push
+     its last character off the edge of the screen. So: neither span ever wraps,
+     the slot never shrinks, and the skill name in the middle gives up its
+     width first, because it is a label for a button that is already showing
+     its own icon. */
+  .hud-right>span{white-space:nowrap;}
+  .hud-abilities{min-width:0;}
+  .hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .xpGem{display:inline-block;width:11px;height:11px;background:var(--gold);margin-right:8px;transform:rotate(45deg);vertical-align:0;box-shadow:inset 0 0 0 2px rgba(0,0,0,.15);}
 
   /* justify-content:center made a too-tall panel overflow at BOTH ends, and the
@@ -579,21 +590,24 @@
     .waveBanner span{font-size:15px;}
     .waveBanner b{font-size:66px;}
 
-    .hud{min-height:50px;padding:0 2%;gap:6px;}
+    .hud{min-height:50px;padding:0 2%;gap:4px;}
     .hud-left{gap:6px;}
     .hudLevel{font-size:11px;padding:3px 6px;}
-    .bars-mini{width:110px;gap:2px;}
+    .bars-mini{width:92px;gap:2px;}
     .bars-mini .hp,.bars-mini .mp,.bars-mini .xp{height:12px;}
     .barText{font-size:8px;}
-    .hud-abilities{gap:5px;}
+    .hud-abilities{gap:4px;}
     .ability{width:38px;height:38px;border-radius:10px;}
     .ability .orb{width:16px;height:16px;}
     .ability .key{font-size:7px;}
     .skillIcon{width:15px;height:15px;}
-    .skillName{font-size:10.5px;min-width:auto;}
+    .skillName{font-size:10.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .hint{display:none;}
-    .hud-right{gap:12px;font-size:14px;}
-    .xpGem{width:9px;height:9px;margin-right:6px;}
+    /* The slot holds "Wave 12" and an xp count that grows all round, where a
+       Match's clock was a fixed five characters. A point smaller and a
+       tighter gap is what keeps both on one line at the width of a phone. */
+    .hud-right{gap:8px;font-size:12.5px;}
+    .xpGem{width:9px;height:9px;margin-right:4px;}
 
     .party{top:8px;left:8px;gap:5px;}
     .pchip{width:36px;padding:3px;}
