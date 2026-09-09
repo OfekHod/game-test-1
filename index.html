@@ -9130,7 +9130,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // only thing that carries the bottom of the intensity range on its own:
       // the guitar is the voice that never stops, so opening it up is heard
       // immediately and everywhere, without a note being added.
-      lp.frequency.value = clamp(mtof(midi) * (5 + bs * (1 + SPREAD_RISE * intensity) * vel), 700, 9000);
+      lp.frequency.value = clamp(mtof(midi) * (5 + bs * sh.spread * vel), 700, 9000);
       lp.Q.value = 0.5;
       s.connect(lp); lp.connect(g);
       g.connect(kind === 'bass' ? busBass : busGuitar);
@@ -9173,11 +9173,21 @@ window.addEventListener('DOMContentLoaded', function(){
           tenser. This is what makes the middle of the range readable instead
           of a flat wait between two switches.
         - LAYERS are notes the piece already contains and does not play. Each
-          carries the tier it belongs to — tier 1 is the celeste warning, tier
-          2 the dive pulse — and is skipped entirely while the intensity is
+          carries the tier it belongs to — 1 is the celeste warning, 2 the dive
+          pulse, 3 the dread — and is skipped entirely while the intensity is
           below where that tier enters. Over the 0.18 above its threshold it
           fades up from nothing, so a layer arriving is a player walking into
           the room rather than a channel being unmuted.
+
+       The three thresholds are placed against what the game can actually
+       produce, so the ladder counts heads. The game's plan is to add up a
+       share per enemy hero, 1 at point blank falling to 0 at the edge of the
+       ring, and divide by 2.5 — so a whole team on top of you is 1, two is
+       0.80 and one is 0.40. Solve the thresholds against those three numbers
+       and each layer means exactly one more enemy: one gets the celeste and
+       cannot reach the pulse, two get the pulse and cannot reach the dread,
+       and only three get all of it. That is the whole mechanic — the layer
+       you can hear is a head count — so the numbers below are not free.
 
        Tempo is deliberately not one of them. loopStart and position() are both
        measured in a fixed seconds-per-beat, so moving the tempo would move the
@@ -9185,9 +9195,8 @@ window.addEventListener('DOMContentLoaded', function(){
        brightness instead — which is the better answer anyway: a piece that
        speeds up tells you something is happening, and a piece that grows a
        voice above everything else tells you what. */
-    const TIER_IN = [0, 0.34, 0.70];   // indexed by tier: 0 is everything else
-    const TIER_FADE = 0.18;            // and how far above that it is fully in
-    const SPREAD_RISE = 1.6;           // how much harder the guitar is picked at 1
+    const TIER_IN = [0, 0.24, 0.55, 0.86];  // indexed by tier: 0 is everything else
+    const TIER_FADE = 0.14;                 // and how far above that it is fully in
     let intensity = 0;
 
     function layerGain(tier){
@@ -9197,36 +9206,57 @@ window.addEventListener('DOMContentLoaded', function(){
       return clamp((intensity - lo) / TIER_FADE, 0, 1);
     }
 
+    // Every continuous move in one place, as numbers rather than as
+    // side-effects, because the audition page shows them and a panel that
+    // describes the mix instead of reading it is a panel that goes stale.
+    //
+    // The curve on the early ones is the point of the exponent. Linear, the
+    // bottom of the range is the part that does least, and the bottom of the
+    // range is exactly where the information is worth most: it is the only
+    // warning you get before you can see anybody. At 0.7 a fifth of the way in
+    // is already a third of the effect.
+    function shadeValues(u){
+      const e = Math.pow(u, 0.7);
+      return {
+        u,
+        padMul:  1 + 1.9 * e,
+        padLp:   (buses.pad ? buses.pad.lpBase : 0) * (1 + 1.1 * e),
+        // Down as the layers arrive, so the top of the range is a change of
+        // colour and not only of level. Squared, so it is the top that pays:
+        // linear here made the bottom of the range measurably DARKER than
+        // silence — the duck and the shorter tail together outran everything
+        // that was supposed to be opening up, and "they are getting closer"
+        // came out as the music quietly dimming.
+        gtrMul:  1 - 0.26 * u * u,
+        gtrLp:   (buses.guitar ? buses.guitar.lpBase : 0) * (1 + 0.55 * e),
+        pnoMul:  1 - 0.16 * u * u,
+        // The celeste is the voice carrying the warning, so it grows after it
+        // has arrived as well as while it is arriving.
+        bellMul: 1 + 0.8 * u,
+        // How much harder the guitar is picked. 5 to 18 across the range, which
+        // takes it past the menu theme's 16: at the top this is not the same
+        // instrument played louder, it is somebody digging in.
+        spread:  1 + 2.6 * e,
+        // A shorter tail reads as a smaller room, and a smaller room reads as
+        // close. Most of what makes the match theme sound like it is happening
+        // somewhere else is this one number.
+        wet:     0.9 - 0.38 * e,
+      };
+    }
+    let sh = shadeValues(0);
+
     // Targets, never jumps. A fifth of a second is short enough that walking
     // into range is felt as it happens and long enough that a hero weaving in
     // and out of the ring cannot make the mix flutter.
     function shade(){
-      const now = ctx.currentTime, T = 0.22, u = intensity;
+      const now = ctx.currentTime, T = 0.22;
       const set = (prm, v) => prm.setTargetAtTime(v, now, T);
-      const pad = buses.pad, gtr = buses.guitar, pno = buses.piano;
-      if(pad){
-        set(pad.g.gain, pad.gBase * (1 + 1.7 * u));
-        set(pad.lp.frequency, pad.lpBase * (1 + 0.75 * u));
-      }
-      if(gtr){
-        // Down as the layers arrive. The drama is meant to be a change of
-        // colour rather than of loudness, and something has to make room for
-        // it or the whole thing simply gets louder and the information is
-        // lost the moment the player turns the tab down.
-        //
-        // Squared, so it is the top of the range that pays. Linear here made
-        // the bottom of the range measurably DARKER than silence — the duck
-        // and the shorter tail together outran everything that was supposed to
-        // be opening up, and "they are getting closer" came out as the music
-        // quietly dimming.
-        set(gtr.g.gain, gtr.gBase * (1 - 0.16 * u * u));
-        set(gtr.lp.frequency, gtr.lpBase * (1 + 0.30 * u));
-      }
-      if(pno) set(pno.g.gain, pno.gBase * (1 - 0.10 * u));
-      // A shorter tail reads as a smaller room, and a smaller room reads as
-      // close. Most of what makes the match theme sound like it is happening
-      // somewhere else is this one number.
-      set(wet.gain, 0.9 - 0.30 * u);
+      const pad = buses.pad, gtr = buses.guitar, pno = buses.piano, bel = buses.bell;
+      if(pad){ set(pad.g.gain, pad.gBase * sh.padMul); set(pad.lp.frequency, sh.padLp); }
+      if(gtr){ set(gtr.g.gain, gtr.gBase * sh.gtrMul); set(gtr.lp.frequency, sh.gtrLp); }
+      if(pno) set(pno.g.gain, pno.gBase * sh.pnoMul);
+      if(bel) set(bel.g.gain, bel.gBase * sh.bellMul);
+      set(wet.gain, sh.wet);
     }
 
     /* --------------------------------------------------------- scheduling */
@@ -9295,11 +9325,14 @@ window.addEventListener('DOMContentLoaded', function(){
         const n = clamp(v == null ? 0 : v, 0, 1);
         if(n === intensity) return;
         intensity = n;
+        sh = shadeValues(n);
         shade();
       },
-      // The demo page draws its meters off these, so the picture on it and the
-      // sound out of it can never disagree about where a layer comes in.
+      // The demo page draws its meters and its mix panel off these, so the
+      // picture on it and the sound out of it can never disagree about where a
+      // layer comes in or what the mix is doing when it does.
       layerGain,
+      shading(){ return sh; },
       tiers: TIER_IN.slice(),
       tierFade: TIER_FADE,
       get intensity(){ return intensity; },
@@ -9459,10 +9492,26 @@ window.addEventListener('DOMContentLoaded', function(){
           for(const step of pat.steps){
             const t = ch.b + cell + step.b;
             if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
-            // The bass reads off the chord's root like the bass patterns do;
-            // everything else climbs the voicing like the guitar figure does.
-            const p = step.k === 'b' ? ch.bass + (step.rel || 0)
-                                     : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
+            // A held cluster, written against the root rather than the voicing
+            // because the whole point of it is the note the chord does NOT
+            // contain. Its length is the pattern's, so a swell written over a
+            // chord lasts exactly as long as the chord does.
+            if(step.k === 'd'){
+              push('d', t, 0, 1, { a: amp, tier: pat.tier,
+                                   n: step.rel.map(r => ch.bass + r),
+                                   d: Math.min(pat.span, ch.b + ch.dur - t) });
+              continue;
+            }
+            // A step written as `rel` is an interval off the chord's root, the
+            // way the bass patterns are written, and a step written as `i`
+            // climbs the voicing the way the guitar figure does. Which one a
+            // layer wants is not about its instrument: a note that is meant to
+            // be IN the chord has to be picked out of the voicing, and a note
+            // that is meant to clash with it has to be measured from the root,
+            // or it lands on a chord tone half the time and the clash is only
+            // there in the bars nobody planned it for.
+            const p = step.rel != null ? ch.bass + step.rel
+                                       : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
             push(step.k || 'c', t + jitter(0.008), p, step.v, { a: amp, tier: pat.tier });
           }
         }
@@ -9757,12 +9806,33 @@ window.addEventListener('DOMContentLoaded', function(){
       { b: 1,   k: 'c', i: 7, oct: 1, v: 0.26 },
       { b: 1.5, k: 'c', i: 5, oct: 1, v: 0.17 },
     ] },
-    stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.34 } ] },
+    stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.28 } ] },
     // The one place the piece is allowed a groove. Root-only is what keeps the
     // match theme from ever tapping your foot; the fifth arriving on the third
     // beat is that decision being revoked, and it is worth more than any
     // amount of extra volume.
     drive: { tier: 2, span: 4, steps: [ { b: 2, k: 'b', rel: 7, v: 0.30 } ] },
+
+    // TIER 3, "all three of them". Everything below this line is the piece
+    // going wrong on purpose, and only a whole enemy team can reach it.
+    //
+    // A heartbeat, at the tempo the piece already runs at: the root twice a
+    // bar-beat, the second one a third of a beat behind the first and softer.
+    // Even spacing would be a drum machine; this is a pulse.
+    pound: { tier: 3, span: 1, steps: [
+      { b: 0,    k: 'b', rel: 0, v: 0.26 },
+      { b: 0.35, k: 'b', rel: 0, v: 0.15 },
+    ] },
+    // The wrong note: a minor ninth above the root, three octaves up, once a
+    // bar and quiet. It is the only deliberately sour note in either piece and
+    // it is worth more than another decibel of anything. Measured from the
+    // root rather than the voicing, so it is the same wrong note in every bar.
+    rub: { tier: 3, span: 4, steps: [ { b: 1.5, k: 'c', rel: 49, v: 0.22 } ] },
+    // A held minor ninth over the root, with the fifth under it so it reads as
+    // a chord souring rather than as a mistake. It arrives over nearly a
+    // second and lasts the whole chord: this is the sound of the ground going
+    // out from under the piece.
+    swell: { tier: 3, span: 8, steps: [ { b: 0, k: 'd', rel: [19, 25], v: 1 } ] },
   },
 
   mix: {

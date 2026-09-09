@@ -172,21 +172,28 @@ const page = `<title>Lane Music Intensity</title>
   <div class="rows">
     <div class="row" id="L1" style="--rail:var(--mana)">
       <div class="hd"><b>Shading</b><span class="amt">0%</span></div>
-      <p>No new notes. The pad rises and opens, the guitar brightens and both give up a fraction of a
-        decibel, and the reverb tail shortens so the room closes in. This is the part that makes the
-        middle of the range mean something.</p>
+      <p>No new notes. The guitar is picked harder and brightens with it, the pad rises and opens, the
+        reverb tail shortens so the room closes in, and the guitar and piano step back a couple of
+        decibels to leave room for what is coming. Curved, so it front-loads: this is all the warning
+        there is before you can see anybody.</p>
       <div class="bar"><i></i></div>
     </div>
     <div class="row" id="L2" style="--rail:var(--gold)">
       <div class="hd"><b>Celeste warning</b><span class="amt">0%</span></div>
       <p>Three rising notes a bar, at MIDI 74&ndash;83 &mdash; above everything else in the piece, so it
-        cannot be mistaken for part of it. One enemy on top of you tops out here and goes no further.</p>
+        cannot be mistaken for part of it. A single enemy walking up on you gets exactly this far.</p>
       <div class="bar"><i></i></div>
     </div>
-    <div class="row" id="L3" style="--rail:var(--hurt)">
+    <div class="row" id="L3" style="--rail:#E8894A">
       <div class="hd"><b>Dive pulse</b><span class="amt">0%</span></div>
       <p>Straight eighths on the celeste, a piano note on every bar, and the bass finally moving off the
-        root onto the fifth. Two or three of them, close. The tempo has not changed and never does.</p>
+        root onto the fifth. Two of them, close. The tempo has not changed and never does.</p>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="row" id="L4" style="--rail:var(--hurt)">
+      <div class="hd"><b>Dread</b><span class="amt">0%</span></div>
+      <p>A heartbeat on the root twice a beat, a minor ninth held over the chord until it sours, and one
+        wrong note three octaves up on every bar. Only a whole enemy team can reach this.</p>
       <div class="bar"><i></i></div>
     </div>
   </div>
@@ -196,13 +203,15 @@ const page = `<title>Lane Music Intensity</title>
     <div><span>Pad</span><b id="mPad">&times;1.00</b></div>
     <div><span>Pad opens to</span><b id="mPadLp">1600 Hz</b></div>
     <div><span>Guitar cutoff</span><b id="mGtr">3400 Hz</b></div>
+    <div><span>Picked harder</span><b id="mSpread">&times;1.00</b></div>
     <div><span>Room</span><b id="mWet">0.90</b></div>
   </div>
 
   <p class="note">In the game this number is not a slider. Every enemy hero within about 1900 world
     units of the hero you are driving contributes a share that rises as it closes, and the shares are
-    added and divided by 2.2 &mdash; so <b>one enemy at point blank reaches 0.45 and can never reach the
-    dive pulse, two reach about 0.85, and three saturate it.</b> The count is the signal. The game also
+    added and divided by 2.5 &mdash; so <b>one enemy at point blank reaches 0.40 and gets the celeste and
+    nothing more, two reach 0.80 and get the pulse, and only three reach the dread.</b> The thresholds
+    are solved against those three numbers, so the layer you can hear is a head count. The game also
     smooths it, quickly on the way up and slowly on the way down, so what the music follows is the
     shape of a gank rather than the jitter of someone strafing at the edge of the ring.
     Keys: <b>space</b> play, <b>&larr; &rarr;</b> nudge, <b>1&ndash;4</b> presets, <b>A</b> walk one in.</p>
@@ -241,12 +250,15 @@ ${engine}
       return createLaneMusic(new OAC(2, 4410, 44100), song('play'), { lite: true });
     }catch(err){ return null; }
   })();
-  function layerGain(tier, v){
-    if(!probe) return v >= (tier === 2 ? 0.70 : 0.34) ? 1 : 0;
+  // One question, one answer: where every layer is and what the mix is doing,
+  // both straight off the engine, so nothing on this page is a second copy of
+  // a rule that lives in index.html.
+  function readout(v){
+    if(!probe) return null;
     probe.setIntensity(v);
-    return probe.layerGain(tier);
+    return { gains: probe.tiers.map((_, t) => probe.layerGain(t)), sh: probe.shading() };
   }
-  const TIERS = probe ? probe.tiers : [0, 0.34, 0.70];
+  const TIERS = probe ? probe.tiers : [0, 0.24, 0.55, 0.80];
 
   const el = id => document.getElementById(id);
   function paintStatus(){
@@ -304,16 +316,17 @@ ${engine}
   // What the number means, in the terms the game will produce it in.
   const SAYS = [
     [0.02, 'Nothing near you. <b>The piece as written.</b>'],
-    [0.16, 'Someone is out there. <b>The bed tightens, nothing new plays.</b>'],
-    [0.34, 'Closing. <b>Still no new voice — this is the warning about the warning.</b>'],
-    [0.52, 'One of them is on you. <b>The celeste is in.</b>'],
-    [0.70, 'One at point blank, or two closing. <b>As far as a single enemy can push it.</b>'],
-    [0.88, 'Two of them, close. <b>The pulse is in and the bass has started moving.</b>'],
-    [1.01, 'All three, on top of you. <b>Everything is in. Leave.</b>'],
+    [0.12, 'Someone is out there somewhere. <b>The guitar is being picked a little harder.</b>'],
+    [0.24, 'Closing. <b>Still no new voice — this is the warning about the warning.</b>'],
+    [0.38, 'One of them is nearly on you. <b>The celeste is coming in.</b>'],
+    [0.55, 'One at point blank. <b>As far as a single enemy can push it.</b>'],
+    [0.69, 'Two of them, closing. <b>The pulse is coming in and the bass has started moving.</b>'],
+    [0.86, 'Two on top of you. <b>Everything a pair can do.</b>'],
+    [1.01, 'All three. <b>The heartbeat, the sour ninth, the wrong note. Leave.</b>'],
   ];
   const PRESETS = [
-    ['Empty lane', 0.00], ['One enemy, point blank', 0.45],
-    ['Two closing', 0.85], ['All three on you', 1.00],
+    ['Empty lane', 0.00], ['One enemy, point blank', 0.40],
+    ['Two on top of you', 0.80], ['All three', 1.00],
   ];
 
   function setIntensity(v, fromSlider){
@@ -327,19 +340,21 @@ ${engine}
     el('num').textContent = v.toFixed(2);
     for(const [upto, text] of SAYS){ if(v < upto){ el('says').innerHTML = text; break; } }
 
-    const bars = [['L1', v], ['L2', layerGain(1, v)], ['L3', layerGain(2, v)]];
-    for(const [id, amt] of bars){
-      const row = el(id);
+    const r = readout(v);
+    const amts = [v].concat(r ? r.gains.slice(1) : [0, 0, 0]);
+    ['L1', 'L2', 'L3', 'L4'].forEach((id, i) => {
+      const row = el(id), amt = amts[i] || 0;
       row.classList.toggle('live', amt > 0.02);
       row.querySelector('.bar i').style.width = (amt * 100).toFixed(1) + '%';
       row.querySelector('.amt').textContent = Math.round(amt * 100) + '%';
+    });
+    if(r){
+      el('mPad').textContent = '\\u00d7' + r.sh.padMul.toFixed(2);
+      el('mPadLp').textContent = Math.round(r.sh.padLp) + ' Hz';
+      el('mGtr').textContent = Math.round(r.sh.gtrLp) + ' Hz';
+      el('mSpread').textContent = '\\u00d7' + r.sh.spread.toFixed(2);
+      el('mWet').textContent = r.sh.wet.toFixed(2);
     }
-    // The same arithmetic the engine's shade() does, so the panel is a readout
-    // and not a description.
-    el('mPad').textContent = '\\u00d7' + (1 + 1.7 * v).toFixed(2);
-    el('mPadLp').textContent = Math.round(1600 * (1 + 0.75 * v)) + ' Hz';
-    el('mGtr').textContent = Math.round(3400 * (1 + 0.30 * v)) + ' Hz';
-    el('mWet').textContent = (0.9 - 0.30 * v).toFixed(2);
 
     const ps = el('presets').children;
     for(let i = 0; i < ps.length; i++)
@@ -356,8 +371,8 @@ ${engine}
       s.textContent = text;
       box.appendChild(i); box.appendChild(s);
     };
-    mk(TIERS[1], 'celeste in');
-    mk(TIERS[2], 'pulse in');
+    const LABELS = ['', 'celeste in', 'pulse in', 'dread in'];
+    for(let t = 1; t < TIERS.length; t++) mk(TIERS[t], LABELS[t] || ('tier ' + t));
   })();
 
   (function presets(){
