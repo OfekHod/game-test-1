@@ -3661,8 +3661,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // recovered from outlines: leg-A-forward and leg-B-forward have nearly the
     // same silhouette and differ only in which leg is lit and drawn in front.
     // Solving the loop on silhouettes alone therefore hops between the two
-    // halves, which is what was jumping. It is solved on pixels instead -- see
-    // tour2 in the sheet build -- and then thinned to ten evenly along it.
+    // halves, which is what was jumping. It is solved on pixel colour instead,
+    // as a shortest closed tour over the 23, then thinned to ten evenly along
+    // it. The sheet is baked, so this is a note on how it was made, not a step
+    // that runs here.
     // A solved loop has no direction, and playing it backwards is a moonwalk:
     // the build now proves the planted foot drifts BACKWARDS relative to the
     // head, which is the only way round the body can travel over it.
