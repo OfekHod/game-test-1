@@ -17,12 +17,14 @@ them — and then almost nothing else.
 | a river down the length of the corridor, and two lakes | one river, across the practice ground, ending short of both lanes |
 | two outposts per lane per side — eight buildings | one per lane per side — four |
 
-Bushes, grass and rocks are the exception to all of that: they are on the
-tutorial map exactly as densely as they are on the other two, practice box
-included. None of them is solid, none blocks a shot or a line of sight, and
-none is something a step can put you in front of — so the practice ground can
-look like the rest of the world without being any harder to teach on than the
-bare field it was.
+Grass, and every bush and rock short enough to see over, are the exception to
+all of that: they are on the tutorial map exactly as densely as they are on the
+other two, practice box included. None of them is solid, none blocks a shot or
+a line of sight, and none is tall enough to hide a hero — so the practice
+ground can look like the rest of the world without being any harder to teach on
+than the bare field it was. A bush or boulder drawn `PROP_TALL` or taller does
+hide whatever stands behind it, which makes it the same kind of thing as a
+tree, and it is fenced out of the box on the same rule.
 
 ### The practice box
 

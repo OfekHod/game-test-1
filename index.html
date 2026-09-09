@@ -2389,6 +2389,11 @@ window.addEventListener('DOMContentLoaded', function(){
   let healWaves = [];
   let sparkles = [];
   let trees = [];
+  // Bushes and rocks, split by whether they stand up off the ground. props are
+  // drawn live and sorted against the units; groundDecor is stamped into the
+  // world canvas once. Both are laid down together, by generateDecor.
+  let props = [];
+  let groundDecor = [];
   let camps = [];
   let lakes = [];     // solid, organic outline
   let rivers = [];    // shallow: you can ford them, they just slow you
@@ -2459,7 +2464,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // canopy it lights out of the fog stop agreeing with each other.
   function sizeTree(t){
     const f = TREE_FRAMES[t.v];
-    t.dw = t.r*f[4]*t.sc;
+    t.dw = t.r*f[4]*t.sc*DECOR_SCALE;
     t.dh = t.dw*(f[3]/f[2]);
   }
   function pointSegDist(px,py,x1,y1,x2,y2){
@@ -2704,7 +2709,14 @@ window.addEventListener('DOMContentLoaded', function(){
   // Camps sit in a clearing ringed by trees, so a camp is invisible from
   // outside and you have to physically walk into the jungle to see whether it
   // is up. The ring is deliberately gappy — the trees are solid now.
+  // Trees, camps and water first, then the bushes and rocks — decor has to be
+  // laid down last because it keeps out of the water and off the tower
+  // clearings, and neither of those exists until the map above it does.
   function generateForest(){
+    layOutForest();
+    generateDecor();
+  }
+  function layOutForest(){
     trees = []; camps = [];
     generateWater();
     if(tutMap){
@@ -3661,7 +3673,9 @@ window.addEventListener('DOMContentLoaded', function(){
     bakeGrassDetail(RR);
     bgCtx.fillStyle = 'rgba(10,74,10,.16)';
     for(const c of camps){ bgCtx.beginPath(); bgCtx.ellipse(c.x, c.y, CAMP_RING_R*0.8, CAMP_RING_R*0.7, 0,0,7); bgCtx.fill(); }
-    for(const t of trees) drawTree(bgCtx, t);
+    // Trees are NOT baked in here any more. A baked tree is part of the ground,
+    // and part of the ground can only ever be behind you; a tree you can stand
+    // behind has to be drawn with the units, in the y-sorted pass render() runs.
   }
   // Every tree, bush and rock on every map is one frame out of three sprite
   // atlases, each atlas a single data URI so the game stays one portable file.
@@ -3698,6 +3712,19 @@ window.addEventListener('DOMContentLoaded', function(){
     [0,219,79,94,36.0],[81,219,97,72,51.7],[180,219,100,67,54.0],
     [282,219,100,61,53.1],[384,219,100,77,54.0],[0,315,100,93,53.6],
     [102,315,100,61,54.0] ];
+  // Every k above is what the sprite measured on its sheet, and everything the
+  // atlases draw is this much bigger than that. At the size they first shipped
+  // at a tree was a shrub you could see over the top of and a boulder was a
+  // pebble; at two and a half times it, the art has the presence the sheets
+  // drew it with — and a tree is big enough that standing behind one hides you,
+  // which is only worth doing when the tree is taller than the hero.
+  const DECOR_SCALE = 2.5;
+  // Anything drawn at least this tall stands up off the ground: it goes into
+  // the y-sorted pass with the units, so it can be in front of you rather than
+  // only ever under you. Everything shorter is ground cover — you walk over
+  // grass, pebbles and a knee-high bush, you do not walk behind them — and it
+  // stays stamped into the world canvas, where it costs nothing per frame.
+  const PROP_TALL = 105;
   const treeImg = new Image(), bushImg = new Image(), rockImg = new Image();
   let treeImgReady = false, bushImgReady = false, rockImgReady = false;
   // The whole world canvas is baked once, so a decoded atlas means re-baking
@@ -3808,8 +3835,16 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       placed++;
     }
-    bakeDecor(RR, bushImg, bushImgReady, BUSH_FRAMES, BUSH_COUNT, 40, 30, 150, 0.80, 1.28, drawBushBlob);
-    bakeDecor(RR, rockImg, rockImgReady, ROCK_FRAMES, ROCK_COUNT, 34,  8, 140, 0.78, 1.24, drawRockBlob);
+    // Shadows first, all of them, so nothing standing on the ground is ever
+    // drawn over its neighbour's shadow — including the trees and tall props
+    // that are no longer baked at all.
+    for(const d of groundDecor) bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
+    for(const d of props)       bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
+    // A trunk's shadow, not a canopy's: it pools at the foot of the tree,
+    // roughly as wide as the trunk is. A disc the width of the canopy belongs
+    // to a sprite that sits on the ground; these stand on it.
+    for(const t of trees)       bakeShadow(t.x, t.y + t.r*0.20, t.dw*0.21, t.dw*0.072);
+    for(const d of groundDecor) drawDecor(bgCtx, d);
   }
   // Bushes and rocks are stamped out of the same atlases the trees come from, so
   // the clutter on the ground is the same art as the canopy over it. Both are
@@ -3818,26 +3853,43 @@ window.addEventListener('DOMContentLoaded', function(){
   // Sizes come off the sheet and are then jittered per stamp, which is what
   // keeps three of the same sprite in one clearing from reading as three copies.
   //
-  // Every branch draws the SAME number of RR() values whether the atlas has
-  // decoded or not. The background is baked once now and again when the last
-  // atlas lands, and if the stream ran short by one call the second bake would
-  // deal a different map — every bush and rock would jump when the art arrived.
-  function bakeDecor(RR, img, ready, frames, count, roadPad, waterPad, towerPad, jitLo, jitHi, fallback){
+  // Placing is done ONCE, when the map is built, and is separate from drawing.
+  // The tall half of what comes out of it has to exist as objects before the
+  // first frame — it is drawn live, sorted against the units — and the flat half
+  // is stamped into the world canvas from the same list, so the two can never
+  // disagree about where anything is. It also means the bake can be repeated
+  // when an atlas lands without re-dealing the map.
+  function generateDecor(){
+    props = []; groundDecor = [];
+    const RR = mulberry(0x9E3D1);
+    placeDecor(RR, 'bush', BUSH_FRAMES, BUSH_COUNT, 40, 30, 150, 0.80, 1.28);
+    placeDecor(RR, 'rock', ROCK_FRAMES, ROCK_COUNT, 34,  8, 140, 0.78, 1.24);
+  }
+  function placeDecor(RR, kind, frames, count, roadPad, waterPad, towerPad, jitLo, jitHi){
     let placed=0, guard=0;
     while(placed<count && guard++ < count*8){
       const x=RR()*WORLD_W, y=RR()*WORLD_H;
       const fi=(RR()*frames.length)|0, jit=jitLo+RR()*(jitHi-jitLo), flip=RR()<0.5;
       if(onRoadway(x,y,roadPad) || nearWater(x,y,waterPad) || nearAnyTower(x,y,towerPad)) continue;
-      const f = frames[fi], w = f[4]*jit, h = w*(f[3]/f[2]);
-      bgCtx.save(); bgCtx.translate(x,y);
-      bgCtx.fillStyle='rgba(0,0,0,.17)';
-      bgCtx.beginPath(); bgCtx.ellipse(0, 0, w*0.42, h*0.17, 0,0,7); bgCtx.fill();
-      if(flip) bgCtx.scale(-1,1);
-      if(ready) bgCtx.drawImage(img, f[0], f[1], f[2], f[3], -w/2, h*0.16-h, w, h);
-      else fallback(bgCtx, w, h);
-      bgCtx.restore();
+      const f = frames[fi], w = f[4]*jit*DECOR_SCALE, h = w*(f[3]/f[2]);
+      const tall = h >= PROP_TALL;
+      // A tall prop hides whatever stands behind it, which makes it the same
+      // kind of thing as a tree as far as the tutorial is concerned: it stays
+      // out of the practice box. Ground cover is exempt — you cannot lose a
+      // hero behind a bush you can see over.
+      if(tall && tutMap && !tutOutsideArena(x, y)) continue;
+      (tall ? props : groundDecor).push({ x, y, kind, f, w, h, flip });
       placed++;
     }
+  }
+  function drawDecor(g, d){
+    const rock = d.kind === 'rock';
+    const img = rock ? rockImg : bushImg, ready = rock ? rockImgReady : bushImgReady;
+    g.save(); g.translate(d.x, d.y);
+    if(d.flip) g.scale(-1,1);
+    if(ready) g.drawImage(img, d.f[0], d.f[1], d.f[2], d.f[3], -d.w/2, d.h*0.16-d.h, d.w, d.h);
+    else (rock ? drawRockBlob : drawBushBlob)(g, d.w, d.h);
+    g.restore();
   }
   // Stand-ins for the frames between the map being built and the atlases being
   // decoded. Same footprint, same anchor, so nothing shifts when the art lands.
@@ -3870,15 +3922,18 @@ window.addEventListener('DOMContentLoaded', function(){
   // drawn standing on the spot it occupies rather than centred on it, so the
   // canopy hangs above the thing you bump into the way it does on the sheet.
   const TREE_SINK = 0.30;
+  // A shadow is a mark on the ground, so it is baked into the ground with
+  // everything else that never moves — which also keeps it out of the sorted
+  // pass, where it would have cost a path per tree per frame for something that
+  // is identical in every one of them.
+  function bakeShadow(x, y, rx, ry){
+    bgCtx.fillStyle = 'rgba(0,0,0,.21)';
+    bgCtx.beginPath(); bgCtx.ellipse(x, y, rx, ry, 0, 0, 7); bgCtx.fill();
+  }
   function drawTree(gctx, t){
     gctx.save(); gctx.translate(t.x,t.y);
     if(treeImgReady){
       const f = TREE_FRAMES[t.v];
-      // A trunk's shadow, not a canopy's: it pools at the foot of the tree,
-      // roughly as wide as the trunk is. The old wide disc belonged to a sprite
-      // that sat on the ground; this one stands on it.
-      gctx.beginPath(); gctx.ellipse(0, t.r*0.20, t.dw*0.21, t.dw*0.072, 0,0,7);
-      gctx.fillStyle='rgba(0,0,0,.24)'; gctx.fill();
       gctx.rotate(t.rot||0);
       gctx.scale(t.flip||1, 1);
       gctx.drawImage(treeImg, f[0], f[1], f[2], f[3],
@@ -7726,6 +7781,11 @@ window.addEventListener('DOMContentLoaded', function(){
     updateStatStrip();
   }
 
+  // Reused between frames: the pass rebuilds it every frame and it is the only
+  // per-frame array in render(), so it is not worth handing the collector a new
+  // one sixty times a second.
+  const ground = [];
+  function byGroundY(a,b){ return a.y - b.y; }
   function render(){
     ctx.clearRect(0,0,W,H);
     rebuildVision();
@@ -7765,50 +7825,86 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawBurns();            // scorched ground, under everything that walks on it
     drawRipples();          // on the surface, so units stand in them
-    for(const c of allyCreeps){
-      if(!onScreen(c.x,c.y,c.r+30)) continue;
-      drawCreep(c,'#7FC4EE','ally');
-    }
-    for(const c of enemyCreeps){
-      if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
-      drawCreep(c,'#F5A08F','enemy');
-    }
-    for(const c of neutralCreeps){
-      if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
-      drawCreep(c,'#A6D98A','neutral');
-    }
-    for(const list of [allyCreeps, enemyCreeps, neutralCreeps])
-      for(const c of list) if(isStunned(c) && onScreen(c.x,c.y,60)) drawStunMark(c);
-    for(const list of [playerTeam, enemyTeam])
-      for(const h of list) if(h.alive && isStunned(h) && onScreen(h.x,h.y,60)) drawStunMark(h);
-
-    for(const t of playerTowers) drawTower(t, '#C68958', '#FFE7B8');
-    for(const t of enemyTowers) drawTower(t, '#B5482D', '#3a1010');
     drawHealWaves();
     drawLevelFxBehind();
 
+    // ---------- one y-sorted pass for everything standing on the ground ----------
+    // This is what makes a tree hide the hero who walked behind it. Sorting on
+    // the foot of each sprite gets both halves of that right at once: the tree
+    // is drawn after the hero standing north of its trunk and before the hero
+    // standing south of it, so one is covered and the other is not. Nothing
+    // short of a sort does that — a tree baked into the ground is always
+    // behind you, a tree drawn over the units is always in front.
+    //
+    // Towers, creeps and the tall bushes and boulders are all in it for the
+    // same reason. Bars, stun marks and muzzle flashes are NOT: they are how
+    // you find a unit, so they go over the whole pile afterwards.
     const aimLive = !usedTouch;
+    let enemyLookTarget=null, enemyLookNd=Infinity;
+    for(const ph of playerTeam){ if(ph.alive){ const d=dist(enemyTeam[0].x,enemyTeam[0].y,ph.x,ph.y); if(d<enemyLookNd){enemyLookNd=d;enemyLookTarget=ph;} } }
+
+    ground.length = 0;
+    for(const t of trees){
+      if(onScreen(t.x, t.y, t.dw > t.dh ? t.dw : t.dh)) ground.push({ y:t.y, k:0, o:t });
+    }
+    for(const d of props){
+      if(onScreen(d.x, d.y, d.w > d.h ? d.w : d.h)) ground.push({ y:d.y, k:1, o:d });
+    }
+    for(const t of playerTowers) ground.push({ y:t.y, k:2, o:t, a:'#C68958', b:'#FFE7B8' });
+    for(const t of enemyTowers)  ground.push({ y:t.y, k:2, o:t, a:'#B5482D', b:'#3a1010' });
+    for(const c of allyCreeps){
+      if(!onScreen(c.x,c.y,c.r+30)) continue;
+      ground.push({ y:c.y, k:3, o:c, a:'#7FC4EE', b:'ally' });
+    }
+    for(const c of enemyCreeps){
+      if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
+      ground.push({ y:c.y, k:3, o:c, a:'#F5A08F', b:'enemy' });
+    }
+    for(const c of neutralCreeps){
+      if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
+      ground.push({ y:c.y, k:3, o:c, a:'#A6D98A', b:'neutral' });
+    }
     for(const h of playerTeam){
       if(!h.alive) continue;
       const isActive = h===playerTeam[activePlayerIdx];
-      drawHeroGhosts(h);
-      drawHeroBody(h, HERO_STATS[h.type].colorPlayer, false);
-      const lookX = (isActive && aimLive) ? worldMouseX : h.x + Math.cos(h.facing)*200;
-      const lookY = (isActive && aimLive) ? worldMouseY : h.y + Math.sin(h.facing)*200;
-      if(!(heroSheets[h.type] && heroSheets[h.type].ready)) drawHeroEyes(h, lookX, lookY);
-      drawHeroBars(h, true, isActive);
-      drawMuzzle(h);
+      h.lookX = (isActive && aimLive) ? worldMouseX : h.x + Math.cos(h.facing)*200;
+      h.lookY = (isActive && aimLive) ? worldMouseY : h.y + Math.sin(h.facing)*200;
+      ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorPlayer, b:false });
     }
-    let enemyLookTarget=null, enemyLookNd=Infinity;
-    for(const ph of playerTeam){ if(ph.alive){ const d=dist(enemyTeam[0].x,enemyTeam[0].y,ph.x,ph.y); if(d<enemyLookNd){enemyLookNd=d;enemyLookTarget=ph;} } }
     for(const h of enemyTeam){
       if(!h.alive) continue;
       if(!onScreen(h.x,h.y,h.r+220) || !isVisible(h.x,h.y,h.r)) continue;
       const isCarryAI = h===enemyTeam[0];
-      drawHeroGhosts(h);
-      drawHeroBody(h, HERO_STATS[h.type].colorEnemy, true);
-      if(!(heroSheets[h.type] && heroSheets[h.type].ready))
-        drawHeroEyes(h, isCarryAI&&enemyLookTarget?enemyLookTarget.x:h.x-200, isCarryAI&&enemyLookTarget?enemyLookTarget.y:h.y);
+      h.lookX = isCarryAI&&enemyLookTarget ? enemyLookTarget.x : h.x-200;
+      h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : h.y;
+      ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
+    }
+    ground.sort(byGroundY);
+    for(const e of ground){
+      const o = e.o;
+      if(e.k===0) drawTree(ctx, o);
+      else if(e.k===1) drawDecor(ctx, o);
+      else if(e.k===2) drawTower(o, e.a, e.b);
+      else if(e.k===3) drawCreep(o, e.a, e.b);
+      else {
+        drawHeroGhosts(o);
+        drawHeroBody(o, e.a, e.b);
+        if(!(heroSheets[o.type] && heroSheets[o.type].ready)) drawHeroEyes(o, o.lookX, o.lookY);
+      }
+    }
+
+    for(const list of [allyCreeps, enemyCreeps, neutralCreeps])
+      for(const c of list) if(isStunned(c) && onScreen(c.x,c.y,60)) drawStunMark(c);
+    for(const list of [playerTeam, enemyTeam])
+      for(const h of list) if(h.alive && isStunned(h) && onScreen(h.x,h.y,60)) drawStunMark(h);
+    for(const h of playerTeam){
+      if(!h.alive) continue;
+      drawHeroBars(h, true, h===playerTeam[activePlayerIdx]);
+      drawMuzzle(h);
+    }
+    for(const h of enemyTeam){
+      if(!h.alive) continue;
+      if(!onScreen(h.x,h.y,h.r+220) || !isVisible(h.x,h.y,h.r)) continue;
       drawHeroBars(h, false, false);
       drawMuzzle(h);
     }
