@@ -1,0 +1,36 @@
+{
+  "name": "chibi_marksman",
+  "frameWidth": 92,
+  "frameHeight": 122,
+  "walkFrames": 8,
+  "attackFrames": 0,
+  "foot": 0.95,
+  "suggestedScale": 2.99,
+  "sheets": {
+    "carry": {
+      "file": "chibi_marksman_carry.png",
+      "rows": 1,
+      "cols": 8,
+      "facing": "S",
+      "mirroredByEngine": true,
+      "note": "matches the heroSheets `carry` entry (no dirs)"
+    },
+    "dirs8": {
+      "file": "chibi_marksman_dirs8.png",
+      "rows": 8,
+      "cols": 8,
+      "rowOrder": [
+        "S",
+        "SE",
+        "E",
+        "NE",
+        "N",
+        "NW",
+        "W",
+        "SW"
+      ],
+      "mirroredByEngine": false,
+      "note": "row = heroDirRow(); row 0 faces down, counter-clockwise"
+    }
+  }
+}
