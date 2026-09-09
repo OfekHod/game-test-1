@@ -2741,6 +2741,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // ground with the treeline a jungle map should have and leaves every
       // lesson standing in the same empty field it stood in before.
       scatterTrees(TUT_LANE_KEEP, tutOutsideArena);
+      scatterShoreTrees(TUT_LANE_KEEP, tutOutsideArena);
       return;
     }
     if(gameMode==='survival'){
@@ -2771,6 +2772,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       buildCampRings();
       scatterTrees();
+      scatterShoreTrees();
       return;
     }
     // One camp per x-slot across the middle corridor, so the three are always
@@ -2802,6 +2804,7 @@ window.addEventListener('DOMContentLoaded', function(){
     buildCampRings();
     scatterClumps();
     scatterTrees();
+    scatterShoreTrees();
   }
   // A few short lines of trees out in the corridor. Not the tutorial's hedge —
   // three or four trunks with gaps narrower than a hero, so a chase or a retreat
@@ -2863,12 +2866,13 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     // The forest around a camp is a thicket of berry bushes, one kind per camp,
     // which is what the ring looked like when every tree in the game was drawn
-    // with the berry-bush sprite. Eight or nine of them rather than the six or
-    // seven a ring of trees needed: a bush is smaller, and the ring only works
-    // if it closes. What a hero can walk through is set by the collide radius,
-    // which never moved, so the camp is as enterable as it always was.
+    // with the berry-bush sprite. Seven to ten of them, which is exactly what
+    // the old build used — they are drawn at the old build's size again, so it
+    // takes the old build's number of them to close the ring. What a hero can
+    // walk through is set by the collide radius, which never moved, so the camp
+    // is as enterable as it always was.
     for(const c of camps){
-      const n = 8 + Math.floor(Math.random()*2);
+      const n = 7 + Math.floor(Math.random()*4);
       const b = FOREST_BUSH_FRAMES[Math.floor(Math.random()*FOREST_BUSH_FRAMES.length)];
       for(let i=0;i<n;i++){
         const a = i/n*Math.PI*2 + rand(-0.16,0.16);
@@ -2928,6 +2932,68 @@ window.addEventListener('DOMContentLoaded', function(){
         t.v = v; sizeTree(t);          // one stand, one kind of tree
         trees.push(t);
         loose++;
+      }
+    }
+  }
+  // A few trees on the banks. Water is where trees actually grow, and a
+  // shoreline with nothing along it reads as a hole cut in the map rather than
+  // as a lake. Deliberately thin: the chance is rolled per candidate spot and
+  // the spots are far enough apart that even a lucky map leaves most of every
+  // bank open — this is the suggestion of a treeline, not one. Each is a normal
+  // tree, so it is solid and it blocks sight like any other, which is why there
+  // are a dozen of them and not fifty.
+  const SHORE_TREE_CHANCE = 0.17;
+  const SHORE_LAKE_SAMPLES = 9;    // candidate spots around a lake, before the roll
+  const SHORE_TREE_GAP = 40;        // how far off the water a trunk stands, at least
+  // The lake keep-outs elsewhere measure against the lake's biggest circle,
+  // which is the safe thing to do and the wrong thing here: it would hold a
+  // trunk hundreds of units off a shore that wobbles inward. So the water is
+  // tested where it actually is, at the trunk and around it.
+  function offWater(x, y, r){
+    if(inWater(x, y)) return false;
+    for(let i=0;i<6;i++){
+      const a = i/6*Math.PI*2;
+      if(inWater(x + Math.cos(a)*r, y + Math.sin(a)*r)) return false;
+    }
+    return true;
+  }
+  function scatterShoreTrees(roadPad, extra){
+    const pad = roadPad || 70;
+    function tryAt(x, y){
+      if(Math.random() > SHORE_TREE_CHANCE) return;
+      if(x<220 || y<220 || x>WORLD_W-220 || y>WORLD_H-220) return;
+      if(extra && !extra(x, y)) return;
+      if(onRoadway(x, y, pad)) return;
+      if(nearAnyTower(x, y, 260)) return;
+      if(!offWater(x, y, SHORE_TREE_GAP)) return;
+      for(const t of trees){ if(dist(x,y,t.x,t.y) < TREE_MIN_GAP) return; }
+      for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R+90) return; }
+      trees.push(makeTree(x, y));
+    }
+    for(const l of lakes){
+      for(let i=0;i<SHORE_LAKE_SAMPLES;i++){
+        const a = i/SHORE_LAKE_SAMPLES*Math.PI*2 + rand(-0.2, 0.2);
+        // Step outward from the shoreline until the trunk is clear of it: on a
+        // squashed lake an outward step in the lake's round space is not an
+        // outward step in the world, so it has to be walked rather than added.
+        for(let k=0;k<8;k++){
+          const rr = lakeRadiusAt(l, a) + SHORE_TREE_GAP + k*26;
+          const x = l.x + Math.cos(a)*rr, y = l.y + Math.sin(a)*rr*l.sy;
+          if(!offWater(x, y, SHORE_TREE_GAP)) continue;
+          tryAt(x, y);
+          break;
+        }
+      }
+    }
+    for(const rv of rivers){
+      for(let i=1;i<rv.pts.length-1;i+=2){
+        const a = rv.pts[i-1], b = rv.pts[i+1];
+        let nx = -(b.y-a.y), ny = (b.x-a.x);
+        const nl = Math.max(1, Math.sqrt(nx*nx+ny*ny)); nx/=nl; ny/=nl;
+        for(const s of [1,-1]){
+          const d = rv.w*0.5 + SHORE_TREE_GAP + rand(10, 60);
+          tryAt(rv.pts[i].x + nx*s*d, rv.pts[i].y + ny*s*d);
+        }
       }
     }
   }
@@ -3767,11 +3833,11 @@ window.addEventListener('DOMContentLoaded', function(){
     [343,230,71,38,34.5],[416,230,84,44,44.9],[0,302,81,40,57.0],
     [83,302,77,74,37.1],[162,302,84,82,41.9],[248,302,82,69,48.2] ];
   const ROCK_FRAMES = [
-    [0,0,100,47,24.3],[102,0,100,47,24.5],[204,0,100,68,24.5],
-    [306,0,100,66,28.5],[408,0,100,77,28.3],[0,79,100,87,35.7],
-    [102,79,100,83,34.0],[204,79,97,94,28.5],[303,79,79,94,26.5],
-    [384,79,97,72,38.9],[0,175,100,67,46.5],[102,175,100,61,40.1],
-    [204,175,100,77,47.8],[306,175,100,93,40.4],[408,175,100,61,58.3] ];
+    [0,0,100,47,28.2],[102,0,100,47,28.5],[204,0,100,68,28.5],
+    [306,0,100,66,33.1],[408,0,100,77,32.9],[0,79,100,87,41.5],
+    [102,79,100,83,39.5],[204,79,97,94,33.1],[303,79,79,94,30.8],
+    [384,79,97,72,45.2],[0,175,100,67,54.1],[102,175,100,61,46.6],
+    [204,175,100,77,55.5],[306,175,100,93,47.0],[408,175,100,61,67.8] ];
   // Every k above is what the sprite measured on its sheet, and everything the
   // atlases draw is this much bigger than that. At the size they first shipped
   // at a tree was a shrub you could see over the top of and a boulder was a
@@ -3786,8 +3852,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // whole point of a ring. A camp you can see into from outside the jungle is a
   // camp you never have to walk to. k is fixed here rather than taken off the
   // sheet: these are standing in for trees, so they are sized like trees.
+  // They are drawn at roughly the size the old build drew them: a shade under
+  // 90 units across at an average trunk, against the 200 they got when they
+  // were first sized like the trees they replaced. At 200 the ring was a wall
+  // of green with no bushes left in it. The k is small because DECOR_SCALE is
+  // applied on top of it, the same as everywhere else.
   const FOREST_BUSH_FRAMES = [18, 19, 20];   // berry S, M, L
-  const FOREST_BUSH_K = 2.35;                // drawn width, in units of r
+  const FOREST_BUSH_K = 1.02;                // drawn width, in units of r
   const treeImg = new Image(), bushImg = new Image(), rockImg = new Image();
   let treeImgReady = false, bushImgReady = false, rockImgReady = false;
   // The whole world canvas is baked once, so a decoded atlas means re-baking

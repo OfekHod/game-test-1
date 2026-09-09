@@ -55,12 +55,24 @@ is solid, so all of it is tuning.
 | `PROP_BAR_HALF` / `PROP_BAR_T` | 0.40w / 6 | what a prop blocks: a horizontal bar at the foot of its sprite |
 | `TREE_PATCH_MIN/MAX` | 2 / 5 | a stand is two to five of ONE silhouette |
 | `TREE_PATCH_SPREAD` / `TREE_MIN_GAP` | 285 / 150 | at 128 and 104 a stand was a pile: the canopies read as one lumpy mass |
-| `FOREST_BUSH_K` | 2.35 | the camp ring is berry bushes sized like trees, not like bushes |
+| `FOREST_BUSH_K` | 1.02 | the camp ring is berry bushes at the size the pre-atlas build drew them, ~90 across. At 2.35 the ring was a wall of green with no bushes left in it |
+| `SHORE_TREE_CHANCE` | 0.17 | rolled per candidate spot on a bank. Four to sixteen trees a map, which is the point |
+| `SHORE_LAKE_SAMPLES` / `SHORE_TREE_GAP` | 9 / 40 | spots tried around each lake, and how far off the water a trunk stands |
 | `DECOR_ROAD_KEEP` | 130 | beyond the road edge. Solid scenery at the old 40 deflected a retreat into a tower |
 | **`DECOR_TOWER_KEEP`** | **`TOWER_RANGE` + 120** | see below. This one is not cosmetic |
 | `DECOR_CAMP_KEEP` | 90 | beyond the camp ring, so a clearing you have to walk into stays walkable |
 
-**Solid scenery must clear a tower's REACH, not its footprint.** This is the
+All of it together costs nothing. 240 games each, this map against the same
+build with no scenery on it at all:
+
+| | no scenery | shipped |
+|---|---|---|
+| base destroyed | 221/240 (92%) | 219/240 (91%) |
+| median win | 268s | 264s |
+| enemy deaths/game | 0.85 | 0.85 |
+| end levels | 12.0 / 14.5 / 8.6 | 12.2 / 14.5 / 8.3 |
+
+**But solid scenery must clear a tower's REACH, not its footprint.** This is the
 same trap `scatterClumps` fell into and wrote down, and solid bushes and rocks
 walked straight back into it. A solid thing standing just inside a tower's
 circle deflects a path around it and into the guns. Measured over 120 games
@@ -74,3 +86,9 @@ each:
 
 Ten bases in a hundred and twenty, from a keep-out number. Anything solid that
 gets added to the map has to clear that circle.
+
+A note on sample size, because this branch got it wrong three times. At 40
+games the band on a 90% rate is roughly ±9 points, which is wider than every
+effect measured here — three separate 40-game runs read 98%, 88% and 93% off
+builds that were doing the same thing. Nothing under 120 games says anything,
+and a claim of parity wants 240.
