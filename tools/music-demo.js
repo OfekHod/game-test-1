@@ -181,23 +181,24 @@ const page = `<title>Lane Music Intensity</title>
     <div class="row" id="L2" style="--rail:var(--gold)">
       <div class="hd"><b>Celeste warning</b><span class="amt">0%</span></div>
       <p>Three rising notes a bar, at MIDI 74&ndash;83 &mdash; above everything else in the piece, so it
-        cannot be mistaken for part of it. One hero alone reaches this at about 1126 units, which is
-        still well outside the 700 you can see.</p>
+        cannot be mistaken for part of it. One hero alone reaches this at about 697 units, two at 971,
+        three at 1117 &mdash; so a group is heard well before it is seen, and a lone hero is heard about
+        as it arrives.</p>
       <div class="bar"><i></i></div>
     </div>
     <div class="row" id="L3" style="--rail:#E8894A">
       <div class="hd"><b>Dive pulse</b><span class="amt">0%</span></div>
       <p>Straight eighths on the celeste, a piano note on every bar, and the bass finally moving off the
-        root onto the fifth. One hero at 772 units, or three at 1216. The tempo has not changed and
-        never does.</p>
+        root onto the fifth. One hero at 403 units, two at 644, three at 804. The tempo has not changed
+        and never does.</p>
       <div class="bar"><i></i></div>
     </div>
     <div class="row" id="L4" style="--rail:var(--hurt)">
       <div class="hd"><b>Dread</b><span class="amt">0%</span></div>
       <p>The celeste doubles to sixteenths &mdash; the same voice at twice the rate, not a second one. A
         heartbeat on the root twice a beat, a minor ninth held over the chord until it sours, and one
-        wrong note three octaves up. One hero inside 518 units gets here on its own; it takes three of
-        them to do it from 1061.</p>
+        wrong note three octaves up. One hero inside 283 units gets here on its own &mdash; that is
+        inside its own attack range, so it is already hitting you &mdash; and three do it from 628.</p>
       <div class="bar"><i></i></div>
     </div>
   </div>
@@ -211,17 +212,15 @@ const page = `<title>Lane Music Intensity</title>
     <div><span>Room</span><b id="mWet">0.90</b></div>
   </div>
 
-  <p class="note">In the game this number is not a slider. Every living enemy hero contributes a share
-    that falls from 1 at 420 units to 0 at 1900, and the shares are <b>added and capped</b> &mdash; added
-    rather than averaged, so <b>one hero close enough pins it on its own and three get there from
-    further out</b>, because three at 600 is worse than one at 600 and ought to sound it. It saturates
-    at <b>420 for one, 820 for two, 1000 for three</b>; the celeste starts at 1126 for one and 1430 for
-    three. The share falls off as a 2.2 power rather than a straight line, which is what stops "three of
-    them" from meaning "three of them anywhere": straight-line shares measured, in a real match, as a
-    pinned 1.00 with the nearest enemy 1149 units away. The ring stops short of the 1600 units between
-    the two lanes, so a hero laning in the other one never registers. The game smooths it too &mdash; a
-    third of a second up, two and a half down &mdash; so what the music follows is the shape of a gank
-    rather than the jitter of someone strafing at the edge of the ring.
+  <p class="note">In the game this number is not a slider. Every living enemy hero contributes
+    <b>one over its distance</b>, windowed to be exactly 1 at 250 units and exactly 0 at 1600, and the
+    shares are <b>added and capped</b> &mdash; added rather than averaged, so <b>one hero close enough
+    pins it on its own and a group gets there from further out</b>. It saturates at <b>250 for one, 430
+    for two, 570 for three</b>; the celeste starts at 697, 971 and 1117. 1600 is the gap between the two
+    lanes, so a hero laning in the other one contributes exactly nothing and an empty lane is the piece
+    as written, to the sample. The game smooths it too &mdash; a third of a second up, two and a half
+    down &mdash; so what the music follows is the shape of a gank rather than the jitter of someone
+    strafing at the edge of the ring.
     Keys: <b>space</b> play, <b>&larr; &rarr;</b> nudge, <b>1&ndash;4</b> presets, <b>A</b> walk one in.</p>
 </div>
 <script>
@@ -323,18 +322,18 @@ ${engine}
 
   // What the number means, in the terms the game will produce it in.
   const SAYS = [
-    [0.02, 'Nothing within 1900 units. <b>The piece as written.</b>'],
+    [0.02, 'Nothing within 1600 units. <b>The piece as written.</b>'],
     [0.12, 'Something is out at the edge of the ring. <b>The guitar is picked a little harder.</b>'],
     [0.24, 'Closing. <b>Still no new voice — this is the warning about the warning.</b>'],
-    [0.40, 'One of them around 1100 out. <b>The celeste is in, and you still cannot see them.</b>'],
+    [0.40, 'One around 700 out, or the team at 1100. <b>The celeste is in.</b>'],
     [0.55, 'Closer than you can see. <b>The pulse is coming in.</b>'],
-    [0.70, 'One inside 700, or two inside 1000. <b>The bass has started moving.</b>'],
-    [0.86, 'One inside 518. <b>The dread is arriving.</b>'],
-    [1.01, 'On top of you, or the whole team inside 1000. <b>Sixteenths, heartbeat, sour ninth. Leave.</b>'],
+    [0.70, 'One inside 450, or three inside 700. <b>The bass has started moving.</b>'],
+    [0.86, 'Inside its own attack range. <b>The dread is arriving.</b>'],
+    [1.01, 'One at 250, two at 430, three at 570. <b>Sixteenths, heartbeat, sour ninth. Leave.</b>'],
   ];
   const PRESETS = [
-    ['Nobody near', 0.00], ['One at 1000', 0.33],
-    ['One at 700', 0.63], ['One on top of you', 1.00],
+    ['Nobody near', 0.00], ['One at 900', 0.28],
+    ['One at 500', 0.59], ['One on top of you', 1.00],
   ];
 
   function setIntensity(v, fromSlider){

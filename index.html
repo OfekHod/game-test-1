@@ -10266,34 +10266,45 @@ window.addEventListener('DOMContentLoaded', function(){
 
      How close the enemy is, as the one number the music acts on.
 
-     A share per living enemy hero, 1 at THREAT_NEAR falling to 0 at THREAT_FAR,
-     added up and capped. Added, not averaged, and capped rather than divided:
-     that is the whole behaviour. One hero close enough is all the danger there
-     is and pins it on its own; three of them get there from further out,
-     because three at 600 is worse than one at 600 and ought to sound it.
-     Anything else — a mean, a divisor big enough for three — makes a hero
-     standing on top of you sound like a third of a problem, which is exactly
-     what the music is there to tell you it is not.
+     A share per living enemy hero, added up and capped. Added, not averaged,
+     and capped rather than divided: that is the whole behaviour. One hero
+     close enough is all the danger there is and pins it on its own; three of
+     them get there from further out, because three at 600 is worse than one at
+     600 and ought to sound it. Anything else — a mean, a divisor big enough
+     for three — makes a hero standing on top of you sound like a third of a
+     problem, which is exactly what the music is there to tell you it is not.
 
-     The curve on the share is what stops "three of them" from meaning "three
-     of them anywhere". Straight-line shares measured, in a real match, as a
-     pinned 1.00 with the nearest enemy 1149 units away and the other two past
-     1300 — nobody near, everything at maximum, and the number useless for the
-     rest of the push. At 2.2 the same three read 0.39. What saturates it is:
+     The share is one over the distance, which is both the obvious physical
+     answer and, as it turns out, the only shape that fits. Windowed so that it
+     is exactly 1 at NEAR and exactly 0 at FAR, or a hero at the far edge would
+     go on contributing a little for ever and the piece would never be quite
+     itself again. What that lands on:
 
-       one hero    inside  420        two at   820        three at 1000
-       and the celeste starts at 1117 for one, 1405 for three.
+                       one     two   three
+       saturated       250     432     571
+       dread           283     482     628
+       pulse           403     644     804
+       celeste         697     971    1117
 
-     So distance decides most of it and the head count decides the rest, which
-     is the way round it has to be for "very close" to always mean "loud".
+     Two earlier shapes did not work and are worth not repeating. Shares that
+     fell in a straight line measured, in a real match, as a pinned 1.00 with
+     the nearest enemy 1149 units away — nobody close, everything at maximum,
+     the number useless for the rest of the push. Raising that line to a power
+     fixed the pinning but cannot hit the three distances above at any exponent
+     or any radius: the ratios it produces are wrong by a factor of two, which
+     is a fact about the shape and not about the tuning.
 
-     NEAR is a little outside the longest attack range in the game, so by the
-     time a hero can hit you the music has been saying so for a moment. FAR
-     sits below the 1600 units between the two lanes, so a hero laning in the
-     other one never registers at all. */
-  const THREAT_NEAR  = 420;   // at or inside this, one hero is all the threat there is
-  const THREAT_FAR   = 1900;  // beyond it, none
-  const THREAT_CURVE = 2.2;   // and how sharply a share falls off in between
+     NEAR is inside the longest attack range in the game — by the time this is
+     saturated the hero is already hitting you. FAR is the 1600 units between
+     the two lanes, so a hero laning in the other one contributes exactly
+     nothing and an empty lane is the piece as written, to the sample. */
+  const THREAT_NEAR = 250;    // at or inside this, one hero is all the threat there is
+  const THREAT_FAR  = 1600;   // and at or beyond it, none
+  const THREAT_EDGE = THREAT_NEAR / THREAT_FAR;
+  // One over the distance, normalised so the ends are exactly 1 and exactly 0.
+  function threatShare(d){
+    return clamp((THREAT_NEAR / Math.max(d, 1) - THREAT_EDGE) / (1 - THREAT_EDGE), 0, 1);
+  }
   // Fast up and slow down, deliberately unequal. A hero stepping into the ring
   // is news and should arrive; a hero stepping out of it might be about to step
   // back in, and music that flickered with them would be worse than none.
@@ -10305,8 +10316,7 @@ window.addEventListener('DOMContentLoaded', function(){
     let sum = 0;
     for(const e of enemyTeam){
       if(!e.alive) continue;
-      const d = dist(x, y, e.x, e.y);
-      sum += Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1), THREAT_CURVE);
+      sum += threatShare(dist(x, y, e.x, e.y));
     }
     return Math.min(1, sum);
   }
@@ -10348,7 +10358,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const e of enemyTeam){
       if(!e.alive) continue;
       const d = dist(me.x, me.y, e.x, e.y);
-      const p = Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1), THREAT_CURVE);
+      const p = threatShare(d);
       if(p <= 0) continue;
       ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(e.x, e.y);
       ctx.strokeStyle = 'rgba(255,110,90,' + (0.2 + 0.6 * p).toFixed(2) + ')';
@@ -10368,9 +10378,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const e of enemyTeam){
       if(!e.alive){ lines.push(e.type + ' dead'); continue; }
       const d = me ? dist(me.x, me.y, e.x, e.y) : 0;
-      lines.push(e.type + '  ' + Math.round(d) + 'u  ' +
-                 Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1),
-                          THREAT_CURVE).toFixed(2));
+      lines.push(e.type + '  ' + Math.round(d) + 'u  ' + threatShare(d).toFixed(2));
     }
     ctx.save();
     // Top left, under the party chips: the bottom of the canvas is behind the
