@@ -1,0 +1,69 @@
+{
+  "name": "radiant_vanguard",
+  "frameWidth": 576,
+  "frameHeight": 720,
+  "directions": 8,
+  "directionOrder": [
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW",
+    "N",
+    "NE"
+  ],
+  "directionStepDegrees": 45,
+  "layout": "one PNG per clip per facing; frames packed row-major, left-to-right then top-to-bottom, starting at the top-left",
+  "clips": {
+    "idle": {
+      "frames": 4,
+      "cols": 2,
+      "rows": 2,
+      "loops": true,
+      "files": {
+        "E": "idle_E.png",
+        "SE": "idle_SE.png",
+        "S": "idle_S.png",
+        "SW": "idle_SW.png",
+        "W": "idle_W.png",
+        "NW": "idle_NW.png",
+        "N": "idle_N.png",
+        "NE": "idle_NE.png"
+      }
+    },
+    "walk": {
+      "frames": 8,
+      "cols": 4,
+      "rows": 2,
+      "loops": true,
+      "files": {
+        "E": "walk_E.png",
+        "SE": "walk_SE.png",
+        "S": "walk_S.png",
+        "SW": "walk_SW.png",
+        "W": "walk_W.png",
+        "NW": "walk_NW.png",
+        "N": "walk_N.png",
+        "NE": "walk_NE.png"
+      }
+    },
+    "attack": {
+      "frames": 6,
+      "cols": 3,
+      "rows": 2,
+      "loops": false,
+      "files": {
+        "E": "attack_E.png",
+        "SE": "attack_SE.png",
+        "S": "attack_S.png",
+        "SW": "attack_SW.png",
+        "W": "attack_W.png",
+        "NW": "attack_NW.png",
+        "N": "attack_N.png",
+        "NE": "attack_NE.png"
+      }
+    }
+  },
+  "note": "E faces screen-right (the original side profile); yaw increases clockwise viewed from above. Camera elevation 0.38 rad (~22 deg). Facings are rendered, not mirrored."
+}
