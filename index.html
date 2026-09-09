@@ -3641,10 +3641,7 @@ window.addEventListener('DOMContentLoaded', function(){
       });
     }
     return { x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
-             // Thinner than they used to be: white at .3-.46 was unnoticeable
-             // over the old pale grass but sits on the saturated green as a
-             // milky wash, which is exactly the vividness the field just gained.
-             alpha: rand(0.16, 0.26), puffs, pad: 150*scale + 70 };
+             alpha: rand(0.30, 0.46), puffs, pad: 150*scale + 70 };
   }
   function resetClouds(){
     clouds = [];
@@ -3664,7 +3661,9 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.save();
     for(const c of clouds){
       if(!onScreen(c.x, c.y, c.pad)) continue;
-      // soft-edged puffs, built up so the body is denser than the rim
+      // soft-edged puffs, built up so the body is denser than the rim. The long
+      // gradual falloff is what blends the puffs into one cloud: tighten it and
+      // each one starts reading as its own disc where they overlap.
       for(const p of c.puffs){
         const px = c.x + p.dx, py = c.y + p.dy;
         const g = ctx.createRadialGradient(px, py, p.r*0.15, px, py, p.r);
