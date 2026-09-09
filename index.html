@@ -13,7 +13,7 @@
     --hud-bg:#FFE7B8; --gold:#D9A029;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;background:#9CD86A;font-family:'Baloo 2',sans-serif;overflow:hidden;}
+  html,body{margin:0;height:100%;background:#1E9419;font-family:'Baloo 2',sans-serif;overflow:hidden;}
   .wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);}
   #stage{position:relative;width:100%;height:100%;overflow:hidden;}
@@ -21,7 +21,7 @@
     .wrap{padding:18px;display:flex;align-items:center;justify-content:center;}
     #stage{border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.22);}
   }
-  canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;background:#9CD86A;}
+  canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;background:#1E9419;}
   #game{cursor:none;outline:none;touch-action:none;}
 
   .party{position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:6;}
@@ -786,7 +786,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // because applyLayout clears it and runs long before the fog code below.
   const rimGrads = new Map();
   const FOG_SCALE = 0.8;
-  const FOG_COLOR = '#6E7A70';
+  // Darker than the grass on purpose. The old grey was lighter than the deep
+  // green field, so unexplored ground came out brighter than ground you could
+  // see and the fog read as haze rather than as shadow.
+  const FOG_COLOR = '#3C5240';
   const FOG_ALPHA = 0.82;
   const canvas = document.getElementById('game');
   const stageEl = document.getElementById('stage');
@@ -1427,9 +1430,12 @@ window.addEventListener('DOMContentLoaded', function(){
     resetClouds();
     drawBackground();
   }
-  const GRASS_COLOR = '#9CD86A';
+  const GRASS_COLOR = '#1E9419';
   const MINOR_DMG_COL = '#FFE0B8';   // damage between units you are not driving
-  const ROAD_FILL = '#C6A16A', ROAD_RIM = '#A98047', ROAD_EDGE = 'rgba(118,88,48,.62)';
+  // Packed earth, not sand. The rim is the lighter lip that catches the light at
+  // the roadside, the fill is the trodden middle, and the edge is a hard dark
+  // line so the lane cuts out of the grass instead of fading into it.
+  const ROAD_FILL = '#5E3A28', ROAD_RIM = '#7A5138', ROAD_EDGE = 'rgba(48,26,17,.95)';
   const TUFT_COUNT = 2400, BUSH_COUNT = 130;
   const LANE_ENTRY_X = 620, LANE_EXIT_X = WORLD_W-620;
   const LANE_PATHS = LANE_YS.map(ly => [
@@ -3337,28 +3343,40 @@ window.addEventListener('DOMContentLoaded', function(){
 
   // ---------- background ----------
   function drawBackground(){
-    // Flat top-down grass straight off the MapleStory mockup: solid #9CD86A
-    // under an even 14px grid of soft white dots. The old sky gradient and
-    // clouds were side-view leftovers and washed the whole field out.
+    // Flat top-down grass: one solid, deeply saturated green. The white stud
+    // grid that used to sit on top was a moulded-plastic look — it lifted the
+    // whole field towards white and flattened the contrast against the lanes,
+    // so the roads read as a tint rather than as dirt.
     bgCtx.fillStyle = GRASS_COLOR;
     bgCtx.fillRect(0,0,WORLD_W,WORLD_H);
-    // One tile stamped as a repeating pattern. Big studs with a shadow beneath
-    // and a highlight up-left read like a moulded brick plate rather than
-    // scattered speckle. Alpha stays low so the grass colour survives the
-    // much larger white coverage.
-    const TILE = 26, STUD_R = 8;
+    // Instead of studs, a fine two-tone grain stamped as one repeating tile:
+    // hard-edged 1-2px flecks, half darker green and half lighter, at an alpha
+    // low enough that the base colour still reads as a single flat green from
+    // playing distance but never as dead vinyl up close.
+    const TILE = 64;
     const tile = document.createElement('canvas');
     tile.width = tile.height = TILE;
     const tc = tile.getContext('2d');
-    const tcx = TILE/2, tcy = TILE/2;
-    tc.beginPath(); tc.arc(tcx, tcy+1.7, STUD_R, 0, 7);
-    tc.fillStyle = 'rgba(42,86,32,.17)'; tc.fill();
-    tc.beginPath(); tc.arc(tcx, tcy, STUD_R, 0, 7);
-    tc.fillStyle = 'rgba(255,255,255,.18)'; tc.fill();
-    tc.beginPath(); tc.arc(tcx-2.2, tcy-2.4, STUD_R*0.5, 0, 7);
-    tc.fillStyle = 'rgba(255,255,255,.20)'; tc.fill();
+    const TR = mulberry(0x51EED);
+    for(let i=0;i<300;i++){
+      const x = TR()*TILE, y = TR()*TILE, s = 1 + (TR()<0.25 ? 1 : 0);
+      tc.fillStyle = TR()<0.5 ? 'rgba(12,86,10,.16)' : 'rgba(150,232,110,.13)';
+      tc.fillRect(x, y, s, s);
+    }
     bgCtx.fillStyle = bgCtx.createPattern(tile,'repeat');
     bgCtx.fillRect(0,0,WORLD_W,WORLD_H);
+    // A slow, wide mottle over the grain so the field has large soft patches of
+    // shade the way real turf does, without any of it reading as a pattern.
+    const MR = mulberry(0x2C4B1);
+    for(let i=0;i<220;i++){
+      const x = MR()*WORLD_W, y = MR()*WORLD_H, r = 90 + MR()*260;
+      const g = bgCtx.createRadialGradient(x,y,0,x,y,r);
+      const dark = MR() < 0.55;
+      g.addColorStop(0, dark ? 'rgba(9,74,9,.10)' : 'rgba(104,206,64,.09)');
+      g.addColorStop(1, dark ? 'rgba(9,74,9,0)'   : 'rgba(104,206,64,0)');
+      bgCtx.fillStyle = g;
+      bgCtx.beginPath(); bgCtx.arc(x,y,r,0,7); bgCtx.fill();
+    }
 
 
     // Lanes are packed earth now, not a tint over the grass. Everything below is
@@ -3376,7 +3394,7 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const path of LANE_PATHS) bakeRoad(path, LANE_HALF, RR);
     }
     bakeGrassDetail(RR);
-    bgCtx.fillStyle = 'rgba(74,132,60,.16)';
+    bgCtx.fillStyle = 'rgba(10,74,10,.16)';
     for(const c of camps){ bgCtx.beginPath(); bgCtx.ellipse(c.x, c.y, CAMP_RING_R*0.8, CAMP_RING_R*0.7, 0,0,7); bgCtx.fill(); }
     for(const t of trees) drawTree(bgCtx, t);
   }
@@ -3412,12 +3430,19 @@ window.addEventListener('DOMContentLoaded', function(){
     for(let i=1;i<p.length;i++) bgCtx.lineTo(p[i].x,p[i].y);
     bgCtx.closePath();
   }
+  // Grit in the earth reads as small dark pebbles, not pale blobs. The old light
+  // tan ellipses were bigger than the ruts and lifted the whole lane towards
+  // sand; these are mostly darker than the fill, with the occasional lighter
+  // stone, so the surface looks trodden rather than dusty.
   function bakeGravel(RR, cx, cy, spread){
-    for(let i=0;i<3;i++){
+    for(let i=0;i<4;i++){
       const x=cx+(RR()-0.5)*spread, y=cy+(RR()-0.5)*spread;
-      bgCtx.fillStyle = 'rgba('+(150+(RR()*40|0))+','+(118+(RR()*30|0))+','+(74+(RR()*24|0))+',.65)';
+      const light = RR() < 0.28;
+      bgCtx.fillStyle = light
+        ? 'rgba('+(132+(RR()*26|0))+','+(94+(RR()*20|0))+','+(70+(RR()*16|0))+',.5)'
+        : 'rgba('+(56+(RR()*22|0))+','+(32+(RR()*16|0))+','+(21+(RR()*12|0))+',.55)';
       bgCtx.beginPath();
-      bgCtx.ellipse(x, y, 3+RR()*8, 2+RR()*4, RR()*3, 0, 7);
+      bgCtx.ellipse(x, y, 1.6+RR()*3.4, 1.2+RR()*2.2, RR()*3, 0, 7);
       bgCtx.fill();
     }
   }
@@ -3425,7 +3450,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const poly = roadOutline(pts, half);
     bakePoly(poly); bgCtx.fillStyle = ROAD_RIM;  bgCtx.fill();
     bgCtx.save(); bakePoly(poly); bgCtx.clip();
-    bakePoly(roadOutline(pts, half-9)); bgCtx.fillStyle = ROAD_FILL; bgCtx.fill();
+    bakePoly(roadOutline(pts, half-11)); bgCtx.fillStyle = ROAD_FILL; bgCtx.fill();
     for(let i=0;i<pts.length-1;i++){
       const steps = Math.ceil(dist(pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y)/26);
       for(let k=0;k<steps;k++){
@@ -3436,7 +3461,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     // cart ruts, offset either side of the centre line
     bgCtx.lineWidth = 7; bgCtx.lineCap='round'; bgCtx.lineJoin='round';
-    bgCtx.strokeStyle = 'rgba(140,106,60,.4)';
+    bgCtx.strokeStyle = 'rgba(52,29,19,.26)';
     for(const s of [-0.34, 0.34]){
       const rut = roadOutline(pts, half*s);
       bgCtx.beginPath();
@@ -3447,7 +3472,7 @@ window.addEventListener('DOMContentLoaded', function(){
       bgCtx.stroke();
     }
     bgCtx.restore();
-    bgCtx.lineWidth = 5; bgCtx.strokeStyle = ROAD_EDGE;
+    bgCtx.lineWidth = 4; bgCtx.strokeStyle = ROAD_EDGE;
     bakePoly(poly); bgCtx.stroke();
   }
   function bakePlaza(x, y, r, RR){
@@ -3459,7 +3484,7 @@ window.addEventListener('DOMContentLoaded', function(){
       bakeGravel(RR, x+Math.cos(a)*d, y+Math.sin(a)*d, 40);
     }
     bgCtx.restore();
-    bgCtx.lineWidth = 5; bgCtx.strokeStyle = ROAD_EDGE;
+    bgCtx.lineWidth = 4; bgCtx.strokeStyle = ROAD_EDGE;
     bgCtx.beginPath(); bgCtx.arc(x,y,r,0,7); bgCtx.stroke();
   }
   // Tufts and small outlined clumps, kept off the roadway and out of the water.
@@ -3470,7 +3495,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const x=RR()*WORLD_W, y=RR()*WORLD_H;
       if(onRoadway(x,y,10) || nearWater(x,y,10)) continue;
       const s=5+RR()*7;
-      bgCtx.strokeStyle = RR()>0.5 ? 'rgba(72,138,58,.6)' : 'rgba(196,240,148,.55)';
+      bgCtx.strokeStyle = RR()>0.5 ? 'rgba(10,78,10,.55)' : 'rgba(126,222,86,.5)';
       for(let k=-1;k<2;k++){
         bgCtx.beginPath(); bgCtx.moveTo(x+k*3,y);
         bgCtx.quadraticCurveTo(x+k*4.5, y-s*0.6, x+k*6, y-s); bgCtx.stroke();
@@ -3485,13 +3510,13 @@ window.addEventListener('DOMContentLoaded', function(){
       bgCtx.save(); bgCtx.translate(x,y);
       bgCtx.fillStyle='rgba(0,0,0,.16)';
       bgCtx.beginPath(); bgCtx.ellipse(0,s*0.32,s*0.95,s*0.28,0,0,7); bgCtx.fill();
-      bgCtx.fillStyle='#5FAE41'; bgCtx.strokeStyle='#255420'; bgCtx.lineWidth=2.2;
+      bgCtx.fillStyle='#2FA81C'; bgCtx.strokeStyle='#0B4A0B'; bgCtx.lineWidth=2.2;
       bgCtx.beginPath();
       for(const [dx,dy,r] of [[0,-0.28,0.72],[-0.62,0,0.54],[0.62,0,0.54]]){
         bgCtx.moveTo(dx*s+r*s, dy*s); bgCtx.arc(dx*s,dy*s,r*s,0,7);
       }
       bgCtx.fill(); bgCtx.stroke();
-      bgCtx.fillStyle='rgba(198,244,152,.55)';
+      bgCtx.fillStyle='rgba(150,236,104,.5)';
       bgCtx.beginPath(); bgCtx.ellipse(-s*0.2,-s*0.5,s*0.4,s*0.2,-0.4,0,7); bgCtx.fill();
       bgCtx.restore();
       placed++;
@@ -3616,7 +3641,10 @@ window.addEventListener('DOMContentLoaded', function(){
       });
     }
     return { x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
-             alpha: rand(0.30, 0.46), puffs, pad: 150*scale + 70 };
+             // Thinner than they used to be: white at .3-.46 was unnoticeable
+             // over the old pale grass but sits on the saturated green as a
+             // milky wash, which is exactly the vividness the field just gained.
+             alpha: rand(0.16, 0.26), puffs, pad: 150*scale + 70 };
   }
   function resetClouds(){
     clouds = [];
