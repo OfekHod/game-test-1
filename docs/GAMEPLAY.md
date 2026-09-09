@@ -123,7 +123,12 @@ Time ran out with both bases standing and the scoreboard settled it: 1169 to
 ## Survival
 
 No enemy heroes, no enemy base: just our tower in the middle of the arena and
-mobs arriving from all four sides in growing numbers.
+mobs arriving in growing numbers.
+
+These frames predate the two-lane arena. The round was played on the original
+map — four straight spokes, mobs arriving from all four sides — where today
+there are two snaking lanes, two outposts on each, a river and six lakes.
+Everything below about the *waves* still holds; only the ground has changed.
 
 ### Wave 23 — 2:06
 
