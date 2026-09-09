@@ -1,7 +1,7 @@
 {
   "name": "radiant_vanguard",
-  "frameWidth": 576,
-  "frameHeight": 720,
+  "frameWidth": 648,
+  "frameHeight": 648,
   "directions": 8,
   "directionOrder": [
     "E",
@@ -14,11 +14,11 @@
     "NE"
   ],
   "directionStepDegrees": 45,
-  "layout": "one PNG per clip per facing; frames packed row-major, left-to-right then top-to-bottom, starting at the top-left",
+  "layout": "one PNG per clip per facing; frames packed row-major, left-to-right then top-to-bottom, from the top-left",
   "clips": {
     "idle": {
-      "frames": 4,
-      "cols": 2,
+      "frames": 6,
+      "cols": 3,
       "rows": 2,
       "loops": true,
       "files": {
@@ -33,9 +33,9 @@
       }
     },
     "walk": {
-      "frames": 8,
+      "frames": 12,
       "cols": 4,
-      "rows": 2,
+      "rows": 3,
       "loops": true,
       "files": {
         "E": "walk_E.png",
@@ -49,8 +49,8 @@
       }
     },
     "attack": {
-      "frames": 6,
-      "cols": 3,
+      "frames": 8,
+      "cols": 4,
       "rows": 2,
       "loops": false,
       "files": {
@@ -65,5 +65,5 @@
       }
     }
   },
-  "note": "E faces screen-right (the original side profile); yaw increases clockwise viewed from above. Camera elevation 0.38 rad (~22 deg). Facings are rendered, not mirrored."
+  "note": "Cell size is fitted to this creep's own proportions, so it differs between heroes. E faces screen-right; yaw increases clockwise viewed from above. Camera elevation 0.38 rad. Facings are rendered, not mirrored."
 }
