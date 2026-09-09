@@ -372,7 +372,7 @@ window.addEventListener('DOMContentLoaded', function(){
         </div>
         <div class="hud-right">
           <span><span class="xpGem"></span><span id="xpCount">0</span> xp</span>
-          <span id="timer">5:00</span>
+          <span id="timer">10:00</span>
         </div>
       </div>
     </div>
@@ -389,7 +389,7 @@ window.addEventListener('DOMContentLoaded', function(){
           Forest mob <b>1</b> · enemy creep <b>2</b> · big creep <b>3</b> ·
           enemy hero <b>30</b> · tower <b>200</b>. Destroy the enemy base and you win outright.</p>
         <div class="modeRow">
-          <button id="startBtn">Match &middot; 5:00</button>
+          <button id="startBtn">Match &middot; 10:00</button>
           <button id="startSurvBtn">Survival</button>
           <button id="startTutBtn">Tutorial</button>
         </div>
@@ -8008,6 +8008,11 @@ window.addEventListener('DOMContentLoaded', function(){
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
   });
   bindTap(restartBtn, ()=>startRound(lastMode));
+
+  // The round length is ROUND_TIME and nowhere else. The button and the idle
+  // clock used to be hand-typed, and both read 5:00 against a ten-minute round.
+  startBtn.innerHTML = 'Match &middot; ' + fmtTime(ROUND_TIME);
+  timerEl.textContent = fmtTime(ROUND_TIME);
   window.__laneLoaded = true;
 })();
 </script>
