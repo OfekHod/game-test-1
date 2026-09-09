@@ -2244,7 +2244,21 @@ window.addEventListener('DOMContentLoaded', function(){
   // Darker than the grass on purpose. The old grey was lighter than the deep
   // green field, so unexplored ground came out brighter than ground you could
   // see and the fog read as haze rather than as shadow.
-  const FOG_COLOR = '#3C5240';
+  //
+  // Two greys rather than one, laid across the screen as a slow diagonal. Shade
+  // outdoors is not one flat colour: what fills it is sky rather than sun, so
+  // it drifts cooler and bluer the less bounced light reaches it. The drift is
+  // small — a few per cent — but it is the difference between a shadow that
+  // looks painted on and one that looks like an absence of light.
+  const FOG_WARM = '#405643';   // shade that still catches some green bounce
+  const FOG_COOL = '#36474E';   // shade lit only by sky
+  // How far a fog edge — and so the side of every shadow a tree throws — takes
+  // to fade out, in WORLD units. It has to be world units: the mask is sized
+  // from canvasScale, so a radius fixed in mask pixels would be four times
+  // softer on a laptop than on a phone with the same picture in front of you.
+  // applyLayout turns it into the filter drawFog uses.
+  const FOG_EDGE_SOFT = 7;
+  let fogEdgeFilter = 'none';
   const FOG_ALPHA = 0.82;
   const canvas = document.getElementById('game');
   const stageEl = document.getElementById('stage');
@@ -2315,6 +2329,8 @@ window.addEventListener('DOMContentLoaded', function(){
     fogCanvas.height = Math.max(1, Math.round(H*FOG_SCALE*canvasScale));
     maskCanvas.width = fogCanvas.width;
     maskCanvas.height = fogCanvas.height;
+    const soft = FOG_EDGE_SOFT * FOG_SCALE * canvasScale;
+    fogEdgeFilter = soft >= 0.5 ? 'blur('+soft.toFixed(2)+'px)' : 'none';
     rimGrads.clear();
   }
   applyLayout(true);
@@ -4504,8 +4520,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     return false;
   }
-  function rayTreeDist(ox,oy,dx,dy,t){
-    const cr = t.r*TREE_BLOCK_FACTOR;
+  function rayTreeDist(ox,oy,dx,dy,t,k){
+    const cr = t.r*TREE_BLOCK_FACTOR*k;
     const mx = ox-t.x, my = oy-t.y;
     const b = mx*dx + my*dy;
     const c = mx*mx + my*my - cr*cr;
@@ -4536,14 +4552,48 @@ window.addEventListener('DOMContentLoaded', function(){
     return g;
   }
   function norm2pi(a){ a %= Math.PI*2; return a<0 ? a+Math.PI*2 : a; }
+  // One gradient per surface size, not per frame.
+  let fogSheetGrad = null, fogSheetKey = '';
+  function fogSheet(fw, fh){
+    const key = fw+'x'+fh;
+    if(fogSheetKey === key && fogSheetGrad) return fogSheetGrad;
+    const g = fogCtx.createLinearGradient(0, 0, fw, fh);
+    g.addColorStop(0, FOG_WARM);
+    g.addColorStop(1, FOG_COOL);
+    fogSheetGrad = g; fogSheetKey = key;
+    return g;
+  }
+  // A shadow with one crisp side is a shadow cast by a point of light, and
+  // nothing outdoors is lit by a point. Blurring the finished mask can only
+  // give every side a fringe of the SAME width, so close to the bush it was
+  // already too soft while a hundred units out the sides were still drawn
+  // lines — which is exactly how they read.
+  //
+  // So the light is given a size instead. The mask is carved twice: once with
+  // each tree at its true blocking radius, once with it shrunk, and each pass
+  // lays down half the light. Ground that both passes leave dark is umbra and
+  // stays fully shaded; ground only the wider pass leaves dark is penumbra and
+  // comes out half lit. The two polygons spread apart as they travel — plain
+  // geometry — so the soft band is a few units wide against the bush and tens
+  // of units wide at the far end, the way a real shadow opens up. FOG_EDGE_SOFT
+  // then rounds the two steps into one continuous ramp.
+  const SHADOW_UMBRA_R = 0.58;  // inner blocking radius, as a fraction of the true one
   function carveVision(fctx, s){
     const sNear = nearOf(s);
+    // No tree in range means both passes would carve the same circle, so there
+    // is no penumbra to draw and no reason to pay for a second one.
+    if(!sNear.length){ carvePass(fctx, s, sNear, 1, 1); return; }
+    carvePass(fctx, s, sNear, 1, 0.5);
+    carvePass(fctx, s, sNear, SHADOW_UMBRA_R, 0.5);
+    revealTrees(fctx, s);
+  }
+  function carvePass(fctx, s, sNear, k, alpha){
     fogAngles.length = 0;
     for(let i=0;i<FOG_RIM_RAYS;i++) fogAngles.push(i/FOG_RIM_RAYS*Math.PI*2);
     for(const t of sNear){
       const dx = t.x-s.x, dy = t.y-s.y;
       const d = Math.sqrt(dx*dx+dy*dy);
-      const cr = t.r*TREE_BLOCK_FACTOR;
+      const cr = t.r*TREE_BLOCK_FACTOR*k;
       if(d <= cr || d >= s.r + cr) continue;
       const base = Math.atan2(dy,dx);
       const half = Math.asin(Math.min(1, cr/d));
@@ -4553,13 +4603,14 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     fogAngles.sort((a,b)=>a-b);
     fctx.save();
+    fctx.globalAlpha = alpha;
     fctx.beginPath();
     for(let i=0;i<fogAngles.length;i++){
       const a = fogAngles[i];
       const dx = Math.cos(a), dy = Math.sin(a);
       let d = s.r;
       for(const t of sNear){
-        const hit = rayTreeDist(s.x,s.y,dx,dy,t);
+        const hit = rayTreeDist(s.x,s.y,dx,dy,t,k);
         if(hit < d) d = hit;
       }
       const px = s.x+dx*d, py = s.y+dy*d;
@@ -4587,12 +4638,18 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.fillRect(rx0-s.x, ry0-s.y, rx1-rx0, ry1-ry0);
     }
     fctx.restore();
-    revealTrees(fctx, s);
   }
 
   // Rays stop at a tree's near face, so the canopy itself lands outside the
   // polygon and ends up sitting in its own shadow. Light the tree back up so
   // the dark wedge starts behind the trunk rather than in front of it.
+  //
+  // How much of the canopy gets lit decides where the shadow appears to begin.
+  // A disc wider than the tree pushed the wedge clear of the sprite, so the
+  // shadow read as a separate grey shape parked next to the bush; a disc a
+  // little tighter than the blocking radius tucks the apex under the canopy, so
+  // the wedge is only ever seen coming out from behind the thing casting it.
+  const TREE_RELIT_R = 0.86;
   function revealTrees(fctx, s){
     const sNear = nearOf(s);
     for(const t of sNear){
@@ -4614,7 +4671,7 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.save();
       fctx.globalAlpha = fade;
       fctx.fillStyle = '#ffffff';
-      fctx.beginPath(); fctx.arc(t.x, t.y - t.r*0.08, t.r*1.1, 0, 7); fctx.fill();
+      fctx.beginPath(); fctx.arc(t.x, t.y - t.r*0.08, t.r*TREE_RELIT_R, 0, 7); fctx.fill();
       fctx.restore();
     }
   }
@@ -4643,10 +4700,18 @@ window.addEventListener('DOMContentLoaded', function(){
     // 2. One grey sheet, cut through once by that finished union.
     fogCtx.setTransform(1,0,0,1,0,0);
     fogCtx.globalCompositeOperation = 'source-over';
-    fogCtx.fillStyle = FOG_COLOR;
+    fogCtx.fillStyle = fogSheet(fw, fh);
     fogCtx.fillRect(0,0,fw,fh);
     fogCtx.globalCompositeOperation = 'destination-out';
+    // Blurring the mask on the way out is what takes the razor edge off a tree's
+    // shadow. The polygon carved above has exact, geometric sides — correct, and
+    // far too crisp to look like shade — so the cut is feathered here instead of
+    // in the geometry, which keeps the vision test itself exact. The mask is
+    // drawn at FOG_SCALE and stretched to the screen, so a couple of pixels
+    // here spread to a soft band of several once it lands.
+    fogCtx.filter = fogEdgeFilter;
     fogCtx.drawImage(maskCanvas, 0, 0);
+    fogCtx.filter = 'none';
     fogCtx.globalCompositeOperation = 'source-over';
 
     ctx.save();
@@ -5145,6 +5210,61 @@ window.addEventListener('DOMContentLoaded', function(){
     sdEls.range.textContent = Math.round(attackRange(h))+' rng';
   }
 
+  // ---------- shadows ----------
+  // One soft pool, shared by everything that stands on the ground. The shadows
+  // used to be flat black ellipses, and that failed three ways at once: the rim
+  // was a cut line, the tone read as a hole punched in the grass rather than as
+  // shade, and because the whole ellipse sat below the sprite you saw all of it,
+  // so it looked like a sticker lying next to the object instead of light the
+  // object was blocking.
+  //
+  // This is a radial gradient painted into a squashed space, so the edge
+  // feathers out over most of its width instead of ending. It is mixed in greys
+  // rather than black, and not one grey: a neutral, slightly green-shifted core
+  // for the contact patch, turning cooler and bluer as it spreads, the way open
+  // sky fills the outer half of a real shadow. Callers place it near the
+  // object's own centre rather than at its feet and give it radii wider than the
+  // footprint, so most of the pool is hidden behind the sprite and all you see
+  // is the part spilling out from underneath it.
+  const SHADOW_STOPS = [
+    [0.00, '44,52,48',   1.00],
+    [0.50, '45,54,51',   0.95],
+    [0.68, '50,61,63',   0.74],
+    [0.82, '57,70,79',   0.45],
+    [0.93, '63,78,91',   0.18],
+    [1.00, '68,84,100',  0.00],
+  ];
+  const SHADOW_ALPHA = 0.42;      // darkness of the contact patch at full strength
+  // The gradient is built once per context in unit space; a canvas gradient is
+  // resolved against the transform in force when it is painted, so the same
+  // object stretches to fit every shadow we scale it into. One allocation
+  // instead of one per sprite per frame.
+  const shadowGradCache = new Map();
+  function shadowGradient(g, strength){
+    let byStrength = shadowGradCache.get(g);
+    if(!byStrength){ byStrength = new Map(); shadowGradCache.set(g, byStrength); }
+    const key = Math.round(strength*20);
+    let grad = byStrength.get(key);
+    if(!grad){
+      grad = g.createRadialGradient(0,0,0,0,0,1);
+      for(const [stop, rgb, a] of SHADOW_STOPS)
+        grad.addColorStop(stop, 'rgba('+rgb+','+(a*SHADOW_ALPHA*(key/20)).toFixed(4)+')');
+      byStrength.set(key, grad);
+    }
+    return grad;
+  }
+  // rx/ry say where the shadow has faded to nothing, not where it has a rim, so
+  // they run wider than the footprint they stand for.
+  function softShadow(g, x, y, rx, ry, strength){
+    if(!(rx > 0) || !(ry > 0)) return;
+    g.save();
+    g.translate(x, y);
+    g.scale(rx, ry);
+    g.fillStyle = shadowGradient(g, strength == null ? 1 : strength);
+    g.beginPath(); g.arc(0,0,1,0,7); g.fill();
+    g.restore();
+  }
+
   // ---------- background ----------
   function drawBackground(){
     // Flat top-down grass: one solid, deeply saturated green. The white stud
@@ -5307,8 +5427,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(onRoadway(x,y,40) || nearWater(x,y,30) || nearAnyTower(x,y,150)) continue;
       const s=9+RR()*9;
       bgCtx.save(); bgCtx.translate(x,y);
-      bgCtx.fillStyle='rgba(0,0,0,.16)';
-      bgCtx.beginPath(); bgCtx.ellipse(0,s*0.32,s*0.95,s*0.28,0,0,7); bgCtx.fill();
+      softShadow(bgCtx, 0, s*0.18, s*1.15, s*0.44, 0.85);
       bgCtx.fillStyle='#2FA81C'; bgCtx.strokeStyle='#0B4A0B'; bgCtx.lineWidth=2.2;
       bgCtx.beginPath();
       for(const [dx,dy,r] of [[0,-0.28,0.72],[-0.62,0,0.54],[0.62,0,0.54]]){
@@ -5330,8 +5449,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function drawTree(gctx, t){
     gctx.save(); gctx.translate(t.x,t.y);
-    gctx.beginPath(); gctx.ellipse(0, t.r*0.55, t.r*1.05, t.r*0.3, 0,0,7);
-    gctx.fillStyle='rgba(0,0,0,.22)'; gctx.fill();
+    softShadow(gctx, 0, t.r*0.36, t.r*1.24, t.r*0.46, 0.95);
     if(treeImgReady){
       const w = t.r*TREE_SPRITE_W*(t.sc||1);
       const h = w*(treeImg.naturalHeight/treeImg.naturalWidth);
@@ -5658,8 +5776,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const f = Math.floor(bobT*COIN_FPS) % COIN_FRAMES;
     const w = size || COIN_DRAW, h = w*(COIN_FRAME_H/COIN_FRAME_W);
     ctx.save(); ctx.translate(x, y+hop);
-    ctx.beginPath(); ctx.ellipse(0, -hop+h*0.34, w*0.3, w*0.11, 0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fill();
+    softShadow(ctx, 0, -hop+h*0.32, w*0.38, w*0.17, 0.9);
     ctx.drawImage(sheet, f*COIN_FRAME_W, 0, COIN_FRAME_W, COIN_FRAME_H, -w/2, -h/2, w, h);
     ctx.restore();
   }
@@ -6125,9 +6242,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const f = b.sp*BIRD_FRAMES + (Math.floor(b.t*12) % BIRD_FRAMES);
       const w = BIRD_W*b.sc, h = BIRD_H*b.sc;
       const yy = b.y + Math.sin(b.t*1.7 + b.bob)*5;
-      ctx.save(); ctx.globalAlpha = 0.15; ctx.fillStyle='#000';
-      ctx.beginPath(); ctx.ellipse(b.x+40, yy+70, w*0.3, h*0.16, 0,0,7); ctx.fill();
-      ctx.restore();
+      softShadow(ctx, b.x+40, yy+70, w*0.46, h*0.26, 0.5);
       ctx.save(); ctx.translate(b.x, yy);
       if(b.vx < 0) ctx.scale(-1,1);
       ctx.rotate(Math.atan2(b.vy, Math.abs(b.vx))*0.5);   // bank into the turn
@@ -8974,8 +9089,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const f = swinging
         ? Math.min(MOB_FRAMES-1, Math.floor((1 - c.atkT/MOB_ATTACK_SHOW)*MOB_FRAMES))
         : (c.moving>0 ? Math.floor(c.animDist/MOB_STRIDE)%MOB_FRAMES : 0);
-      ctx.beginPath(); ctx.ellipse(0, c.r*0.82, c.r*0.95, c.r*0.3, 0,0,7);
-      ctx.fillStyle='rgba(0,0,0,.22)'; ctx.fill();
+      softShadow(ctx, 0, c.r*0.62, c.r*1.22, c.r*0.5);
       if(c.big){
         ctx.beginPath(); ctx.ellipse(0, c.r*0.82, c.r*1.2, c.r*0.42, 0,0,7);
         ctx.lineWidth=3; ctx.strokeStyle='rgba(90,62,27,.45)'; ctx.stroke();
@@ -9008,8 +9122,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(0,0,c.r+6,0,7);
       ctx.strokeStyle='rgba(90,62,27,.35)'; ctx.lineWidth=3; ctx.stroke();
     }
-    ctx.beginPath(); ctx.ellipse(0, c.r*0.85, c.r*0.9, c.r*0.32, 0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.22)'; ctx.fill();
+    softShadow(ctx, 0, c.r*0.62, c.r*1.15, c.r*0.5);
     ctx.beginPath(); ctx.arc(0,0,c.r,0,7);
     ctx.fillStyle = c.flash>0 ? '#ffffff' : (dim?'#B8B8B0':color); ctx.fill();
     ctx.lineWidth = c.big?3:1.5; ctx.strokeStyle='rgba(90,62,27,.4)'; ctx.stroke();
@@ -9040,8 +9153,7 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     ctx.save(); ctx.translate(o.x, o.y+hop);
-    ctx.beginPath(); ctx.ellipse(0, -hop+7, 6, 2.4, 0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fill();
+    softShadow(ctx, 0, -hop+6, 8, 3.4, 0.9);
     const spin = Math.max(0.28, Math.abs(Math.cos(o.bobT*5)));
     ctx.scale(spin,1);
     const grad = ctx.createLinearGradient(0,-9,0,9);
@@ -9067,8 +9179,7 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     ctx.save(); ctx.translate(m.x, m.y+hop);
-    ctx.beginPath(); ctx.ellipse(0, -hop+6, 6, 2.4, 0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fill();
+    softShadow(ctx, 0, -hop+5, 8, 3.4, 0.9);
     const spin = Math.max(0.25, Math.abs(Math.cos(m.bobT*6)));
     ctx.scale(spin,1);
     const grad = ctx.createRadialGradient(-2,-2,1,0,0,8);
@@ -9103,8 +9214,7 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     ctx.save(); ctx.translate(t.x,t.y);
-    ctx.beginPath(); ctx.ellipse(0,t.r*0.8,t.r*1.0,t.r*0.32,0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fill();
+    softShadow(ctx, 0, t.r*0.62, t.r*1.3, t.r*0.54);
     let barTop = -t.r-18;
     if(towerReady){
       const sw = t.r*TOWER_SPRITE_SCALE, sh = sw*(TOWER_FRAME_H/TOWER_FRAME_W);
@@ -9148,8 +9258,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(0,0,h.r*2.3,0,7); ctx.fillStyle=glow; ctx.fill();
       ctx.restore();
     }
-    ctx.beginPath(); ctx.ellipse(0,h.r*0.85,h.r*0.95,h.r*0.34,0,0,7);
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fill();
+    softShadow(ctx, 0, h.r*0.62, h.r*1.22, h.r*0.55);
     const baseAlpha = h.invuln>0 ? (0.5+0.5*Math.sin(performance.now()/40)) : 1;
     ctx.globalAlpha = dim ? baseAlpha*0.4 : baseAlpha;
     if(spriteReady){
