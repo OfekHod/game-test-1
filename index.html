@@ -511,6 +511,23 @@
   .skillBtn .cdRing{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(60,40,10,.6) calc(var(--cd,0)*360deg), transparent 0);}
   .mobileHint{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
+  /* Survival's wave call. It is the only thing on screen that announces itself,
+     so it sits above the play area rather than in the dock, and it is high up
+     rather than dead centre: the camera keeps the tower and the heroes
+     defending it in the middle of the screen, and a number over the top of the
+     fight is a number you read instead of watching the fight. At 15% it clears
+     both the party chips and the minimap. Never takes input. */
+  .waveBanner{position:absolute;left:0;right:0;top:15%;text-align:center;z-index:9;
+    pointer-events:none;opacity:0;transform:scale(.86);
+    transition:opacity .3s ease, transform .3s ease;
+    font-family:'Baloo 2',sans-serif;
+    text-shadow:0 4px 0 rgba(48,28,8,.55), 0 0 26px rgba(0,0,0,.5);}
+  .waveBanner.show{opacity:1;transform:scale(1);}
+  .waveBanner span{display:block;font-size:23px;font-weight:800;letter-spacing:.36em;
+    text-indent:.36em;color:#FFF3D6;}
+  .waveBanner b{display:block;font-size:110px;line-height:1.02;font-weight:800;color:#FFD54F;}
+  @media (prefers-reduced-motion:reduce){ .waveBanner{transition:opacity .3s ease;transform:none;} }
+
   /* Tutorial card. It sits above the dock rather than over it — the dock's
      height is measured in JS, because the HUD is a percentage of a stage whose
      height nothing here knows. Transparent to input except its own buttons, so
@@ -558,6 +575,9 @@
     .sDerived{display:none;}
     .sPlus{width:15px;height:15px;font-size:11px;line-height:13px;}
     .tip{width:188px;font-size:10.5px;padding:6px 8px;}
+    .waveBanner{top:13%;}
+    .waveBanner span{font-size:15px;}
+    .waveBanner b{font-size:66px;}
 
     .hud{min-height:50px;padding:0 2%;gap:6px;}
     .hud-left{gap:6px;}
@@ -607,6 +627,8 @@
     .hud-right{font-size:12.5px;gap:10px;}
     .party{top:6px;left:6px;}
     .skillBtn{bottom:27%;}
+    .waveBanner{top:7%;}
+    .waveBanner b{font-size:52px;}
     .mobileHint{display:none !important;}
   }
 </style>
@@ -639,6 +661,7 @@ window.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="skillBtn" id="skillBtn"><div class="cdRing" id="skillBtnCd"></div><div class="skillIcon skill-dash" id="skillBtnIcon"></div></div>
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · circle: skill</div>
+    <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b></div>
     <div class="tutCard hidden" id="tutCard">
       <span class="tutStep" id="tutStep"></span>
       <b class="tutTitle" id="tutTitle"></b>
@@ -885,6 +908,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const restartBtn = document.getElementById('restartBtn');
   const xpCountEl = document.getElementById('xpCount');
   const timerEl = document.getElementById('timer');
+  const waveBannerEl = document.getElementById('waveBanner');
+  const waveBannerNumEl = document.getElementById('waveBannerNum');
   const cdFillEl = document.getElementById('cdFill');
   const dashCdFillEl = document.getElementById('dashCdFill');
   const skillIconEl = document.getElementById('skillIcon');
@@ -1407,15 +1432,35 @@ window.addEventListener('DOMContentLoaded', function(){
   let activePlayerIdx = 0;
   let camSnap = 0;
   let gameMode = 'regular';       // 'regular' | 'survival'
-  let survWave = 0;
+  let survWave = 0;            // waves started this round; also the wave you are fighting
+  let survBreak = 0;           // seconds left of the lull before the next wave marches
   // How far along its lane a mob appears, measured ALONG THE ROAD rather than
   // as a radius: on a snaking lane those are very different numbers, and it is
   // the walk that sets the pace. 1250 was the old straight-spoke walk; it now
   // has to clear the far outpost as well, or a wave materialises on top of the
   // building that is supposed to soften it.
   const SURV_SPAWN_R = 1700;
-  const SURV_FIRST_GAP = 8, SURV_MIN_GAP = 3.0, SURV_GAP_STEP = 0.2;
-  const SURV_BASE_COUNT = 3;
+  // Waves are CLEARED, not timed. Nothing spawns while a single mob of the last
+  // wave is still on the field, so the pace is set by how fast you kill rather
+  // than by a stopwatch — which is what makes a growing wave a real question
+  // instead of a race against a spawner that never waits for you.
+  //
+  // Both leads below are short because the real breather is the WALK: mobs
+  // appear out at SURV_SPAWN_R and take half a minute to reach the plaza, and
+  // the banner goes up the moment they set off. Padding that with a long pause
+  // on top only makes the arena feel empty.
+  const SURV_FIRST_LEAD = 2.0;   // from the round starting to wave 1 marching
+  const SURV_WAVE_LEAD = 2.5;    // from the last mob dying to the next wave marching
+  const SURV_BANNER_MS = 2600;   // how long the big wave number holds the screen
+  // Size. Wave 1 is six — four is a wave the two outposts on a lane shoot down
+  // on their own, which makes the opening a thing you watch rather than play —
+  // and every wave after adds two. The cap is not a difficulty ceiling: past it
+  // the wave stops getting wider and starts getting heavier, because the big
+  // count keeps climbing underneath it.
+  const SURV_WAVE_BASE = 6, SURV_WAVE_STEP = 2, SURV_WAVE_MAX = 40;
+  const SURV_RANK = 6, SURV_RANK_GAP = 110;   // mobs per rank, and how far back the next one starts
+  const SURV_BIG_FROM = 3;       // first wave with a big mob in it
+  const SURV_BIG_EVERY = 2;      // one more big mob every this many waves after that
   const SURV_CAMPS = 4;
   // Both measured along the road. The first sits at the mouth of the lane, the
   // second out at the first corner, so a wave meets a building at the one place
@@ -5198,14 +5243,47 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!(tut.on && tut.holdFoeWaves)) spawnLaneWave(l,'enemy');
     }
   }
-  function survGap(){ return Math.max(SURV_MIN_GAP, SURV_FIRST_GAP - survWave*SURV_GAP_STEP); }
+  // How big wave w is, w counted from 1. Nothing but the spawner reads these, so
+  // a tuning pass is four constants and no other code.
+  function survWaveCount(w){
+    return Math.min(SURV_WAVE_MAX, Math.round(SURV_WAVE_BASE + (w-1)*SURV_WAVE_STEP));
+  }
+  function survWaveBigs(w){
+    if(w < SURV_BIG_FROM) return 0;
+    return Math.min(survWaveCount(w), 1 + Math.floor((w-SURV_BIG_FROM)/SURV_BIG_EVERY));
+  }
+  // The wave call. Real time, not game time: the frame loop caps dt, so a
+  // banner timed off the clock hangs about for twenty seconds on a slow machine
+  // and blinks past on a fast one. Every entry point that leaves the arena —
+  // a new round, the end card — clears it, or it survives the round it announced.
+  let waveBannerTimer = 0;
+  function showWaveBanner(w){
+    waveBannerNumEl.textContent = w;
+    waveBannerEl.classList.add('show');
+    clearTimeout(waveBannerTimer);
+    waveBannerTimer = setTimeout(()=>{ waveBannerEl.classList.remove('show'); }, SURV_BANNER_MS);
+  }
+  function hideWaveBanner(){
+    clearTimeout(waveBannerTimer);
+    waveBannerEl.classList.remove('show');
+  }
+  // The gate. A wave is over when the field is empty, and only then does the
+  // lull start running — so the break is a real breather you can spend walking
+  // back to the tower or clearing a camp, not a countdown that started while
+  // you were still fighting.
+  function survTick(dt){
+    if(enemyCreeps.length) return;       // last wave still standing: nothing moves
+    survBreak -= dt;
+    if(survBreak > 0) return;
+    survivalWave();
+    survBreak = SURV_WAVE_LEAD;
+  }
   // Mobs walk in from a ring around the arena and head straight for your tower.
-  // Count climbs, the gap between waves shrinks, and big ones start showing up.
+  // Each wave is wider than the last and carries more big ones.
   function survivalWave(){
-    // Count and rate both climb, so pressure grows roughly with their product.
-    // Both curves are deliberately shallow — steepening either one compounds.
-    const n = SURV_BASE_COUNT + Math.floor(survWave/3);
-    const bigs = survWave < 4 ? 0 : 1 + Math.floor(survWave/6);
+    const w = survWave + 1;
+    const n = survWaveCount(w);
+    const bigs = survWaveBigs(w);
     // Spawn on a road and walk it in — the whole road, bends and all, rather
     // than a straight line to the tower: the lane is only a gauntlet if the wave
     // actually stays on it. Lateral spread is in world units rather than
@@ -5214,14 +5292,18 @@ window.addEventListener('DOMContentLoaded', function(){
     for(let i=0;i<n;i++){
       const li = (base + i) % SURV_PATHS.length;
       const p = SURV_PATHS[li];
-      let idx = survPathIndexAt(p, SURV_SPAWN_R + rand(-120,120));
+      // Ranks of six, each one further back down the road, so a forty-strong
+      // wave is a column that files in rather than forty bodies in one heap
+      // shoving each other off the lane at the moment they appear.
+      const rank = Math.floor(i/SURV_RANK)*SURV_RANK_GAP;
+      let idx = survPathIndexAt(p, SURV_SPAWN_R + rank + rand(-120,120));
       // The tail of the path, walked backwards: from out there in to the plaza.
       let path = p.slice(0, idx+1).reverse();
       let off = rand(-LANE_HALF*0.7, LANE_HALF*0.7);
       let s = survOffsetPoint(path, off);
       for(let att=0; att<6 && nearWater(s.x,s.y,40); att++){
         off = rand(-LANE_HALF*0.7, LANE_HALF*0.7);
-        idx = survPathIndexAt(p, SURV_SPAWN_R + rand(-320,120));
+        idx = survPathIndexAt(p, SURV_SPAWN_R + rank + rand(-320,120));
         path = p.slice(0, idx+1).reverse();
         s = survOffsetPoint(path, off);
       }
@@ -5229,7 +5311,8 @@ window.addEventListener('DOMContentLoaded', function(){
       c.off = off;
       enemyCreeps.push(c);
     }
-    survWave++;
+    survWave = w;
+    showWaveBanner(w);
   }
 
   // ---------- neutral jungle camps ----------
@@ -5801,10 +5884,11 @@ window.addEventListener('DOMContentLoaded', function(){
     if(roundHold) return;
     tickScoreHud(dt);
     if(gameMode==='survival'){
-      timeLeft += dt;                       // survival counts up: the clock is the score
-      timerEl.textContent = fmtTime(timeLeft);
-      spawnTimer -= dt;
-      if(spawnTimer<=0){ survivalWave(); spawnTimer = survGap(); }
+      // The clock still runs — the end card reports it — but the WAVE is the
+      // score now, so that is what the HUD's right-hand slot reads.
+      timeLeft += dt;
+      timerEl.textContent = 'Wave ' + Math.max(1, survWave);
+      survTick(dt);
     } else if(tut.on){
       // The tutorial is a Match with the clock and the waves held back. The
       // phase that teaches waves releases them; the handover releases the rest.
@@ -7565,6 +7649,19 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(p.x,p.y,4,0,7); ctx.fill();
     }
 
+    // Survival puts the whole wave on the map. A wave now has to be CLEARED
+    // before the next one marches, so the last mob of a wave is the thing
+    // standing between you and the round continuing — and hunting a single
+    // straggler around an arena you cannot see is not a fight, it is a search.
+    // Match keeps its fog: there, a creep you have not scouted is information
+    // you are supposed to have to go and get.
+    if(gameMode==='survival'){
+      for(const c of enemyCreeps){
+        p=mp(c.x,c.y);
+        ctx.fillStyle = c.big ? '#8E2F1C' : '#B5482D';
+        ctx.beginPath(); ctx.arc(p.x,p.y, c.big?3:2.2, 0,7); ctx.fill();
+      }
+    }
     for(const h of playerTeam){ if(!h.alive) continue; p=mp(h.x,h.y); ctx.fillStyle=HERO_STATS[h.type].colorPlayer; ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill(); }
     for(const h of enemyTeam){ if(!h.alive || !isVisible(h.x,h.y,h.r)) continue; p=mp(h.x,h.y); ctx.fillStyle=HERO_STATS[h.type].colorEnemy; ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill(); }
 
@@ -8734,6 +8831,8 @@ window.addEventListener('DOMContentLoaded', function(){
     gameMode = (mode==='survival') ? 'survival' : 'regular';
     tutMap = (mode === 'tutorial');    // read by buildMap below, so set it first
     survWave = 0;
+    survBreak = SURV_FIRST_LEAD;
+    hideWaveBanner();
     buildMap();
     state='playing';
     hideTip();
@@ -8779,7 +8878,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const t of playerTowers.concat(enemyTowers)){ t.hp=t.maxHp; t.flash=0; t.atkCd=0; t.hpLag=1; t.noHitT=0; }
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0 };
     xpCountEl.textContent='0';
-    timerEl.textContent = fmtTime(ROUND_TIME);
+    timerEl.textContent = gameMode==='survival' ? 'Wave 1' : fmtTime(ROUND_TIME);
     startScreen.classList.add('hidden');
     // The music is as calm as the map is. Without this a round that ended with
     // three of them on top of you would open the next one at full dread and
@@ -8809,6 +8908,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function endRound(reason){
     state='ended';
     tutStop();
+    hideWaveBanner();
     bottomDock.classList.add('hidden');
     partyEl.classList.add('hidden');
     const shud = document.getElementById('scoreHud');
@@ -8818,9 +8918,13 @@ window.addEventListener('DOMContentLoaded', function(){
     if(gameMode==='survival'){
       resultTitleEl.textContent = 'Overrun';
       resultTitleEl.style.color = '#c9503f';
-      document.getElementById('finalLabel').textContent = 'Time survived';
-      finalXpEl.textContent = fmtTime(timeLeft);
-      finalHitsEl.textContent = survWave+' wave'+(survWave===1?'':'s')+' held · '+xpLooted+' xp looted';
+      // The headline is the wave, because the wave is what the round is now.
+      // A wave you died partway through is not one you held, so the number
+      // reported is the last one you cleared — the one on the HUD, minus the
+      // one that killed you.
+      document.getElementById('finalLabel').textContent = 'Waves held';
+      finalXpEl.textContent = String(Math.max(0, survWave-1));
+      finalHitsEl.textContent = 'reached wave '+survWave+' · '+fmtTime(timeLeft)+' survived · '+xpLooted+' xp looted';
       towerCompareEl.textContent = lastHits+' last hit'+(lastHits===1?'':'s');
       endScreen.classList.remove('hidden');
       musicSync();                     // back to an overlay: fade it up again
