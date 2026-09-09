@@ -2779,9 +2779,23 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   // ---------- tooltips ----------
+  // A mouse closes a tip by leaving. A finger cannot, so a tip a touch opened
+  // carries its own deadline AND a tap anywhere else takes it down. Both, not
+  // either: a tap that nothing calls preventDefault on also produces the
+  // compatibility mouse events afterwards, so mouseenter arrives on a phone
+  // with no mouseleave ever to follow it. That is how the tutorial's stat
+  // description used to stick — spend the third point and .noPoints puts the +
+  // button at pointer-events:none, so the next tap lands on the cell instead of
+  // the button, misses bindTap's preventDefault, and the synthetic mouseenter
+  // re-opened the tip with no deadline on it.
   const tipEl = document.getElementById('tooltip');
-  let tipTimer = 0;
-  function hideTip(){ tipEl.classList.remove('show'); }
+  const TIP_TOUCH_MS = 4000;      // long enough to read a stat line on a phone
+  const TIP_TOUCH_ECHO_MS = 1200; // a mouse event this soon after a tap is that tap's echo
+  let tipTimer = 0, tipAnchor = null, tipTouchAt = 0;
+  function hideTip(){
+    clearTimeout(tipTimer); tipTimer = 0; tipAnchor = null;
+    tipEl.classList.remove('show');
+  }
   function showTip(anchor, html, autoHideMs){
     tipEl.innerHTML = html;
     tipEl.classList.add('show');
@@ -2792,13 +2806,36 @@ window.addEventListener('DOMContentLoaded', function(){
     let top = (er.top-sr.top) - th - 10;
     if(top < 6) top = (er.bottom-sr.top) + 10;
     tipEl.style.left = left+'px'; tipEl.style.top = top+'px';
+    tipAnchor = anchor;
     clearTimeout(tipTimer);
-    if(autoHideMs) tipTimer = setTimeout(hideTip, autoHideMs);
+    tipTimer = autoHideMs ? setTimeout(hideTip, autoHideMs) : 0;
   }
   function bindTip(el, getHtml){
-    el.addEventListener('mouseenter', ()=>showTip(el, getHtml()));
-    el.addEventListener('mouseleave', hideTip);
-    el.addEventListener('touchstart', ()=>showTip(el, getHtml(), 3000), {passive:true});
+    el.addEventListener('mouseenter', ()=>{
+      // The echo of a tap. The touch tip is already up with a deadline; do not
+      // replace it with a hover tip that nothing on a phone will ever close.
+      if(Date.now() - tipTouchAt < TIP_TOUCH_ECHO_MS) return;
+      showTip(el, getHtml());
+    });
+    el.addEventListener('mouseleave', ()=>{
+      // Only the tip we are actually showing. A tap moves the phantom pointer
+      // off whatever it was last over, and that mouseleave arrives after the new
+      // tip has already opened — it must not close somebody else's tip.
+      if(tipAnchor === el) hideTip();
+    });
+    el.addEventListener('touchstart', ()=>{
+      tipTouchAt = Date.now();
+      showTip(el, getHtml(), TIP_TOUCH_MS);
+    }, {passive:true});
+  }
+  // Anything that is not the thing the tip is about dismisses it — the map, the
+  // HUD, the card, and the tip itself, which is pointer-events:none so a tap on
+  // it lands on whatever is behind. Capture, because the canvas stops the
+  // touches it steers with before they reach anyone else.
+  for(const type of ['touchstart','mousedown']){
+    window.addEventListener(type, e=>{
+      if(tipAnchor && !tipAnchor.contains(e.target)) hideTip();
+    }, {capture:true, passive:true});
   }
   const STAT_TIPS = {
     agi:      { name:'Agility',     unit:'move speed', text:'Raises how fast you move. Nothing else scales off it.' },
