@@ -2,6 +2,7 @@
 Chromium via WebGL2, and pulls the framebuffer back out as a PNG."""
 import base64, pathlib, re, subprocess, sys, tempfile, time
 
+BS = chr(92)
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 
 HEADER = r"""#version 300 es
@@ -35,16 +36,89 @@ float smax(float a,float b,float k){ return -smin(-a,-b,k); }
 vec2 mmin(vec2 a,vec2 b){ return a.x<b.x?a:b; }
 vec2 smin2(vec2 a,vec2 b,float k){ float d=smin(a.x,b.x,k); return vec2(d, a.x<b.x?a.y:b.y); }
 mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
+vec3 rotY(vec3 v,float a){ float c=cos(a),s=sin(a); return vec3(c*v.x+s*v.z, v.y, -s*v.x+c*v.z); }
+
+// ---------- animation state, set per sprite cell in main() ----------
+float gPhase;           // 0..1 through the clip
+float gYaw;             // camera orbit, radians
+uniform float uClip;    // 0 idle, 1 walk, 2 attack
+uniform float uHipY;    // hip pivot height
+uniform float uShldY;   // shoulder pivot height
+uniform float uArmZ;    // |z| beyond which geometry counts as an arm
+uniform float uAmp;     // per-creep amplitude scale
+uniform float uLip;     // Lipschitz compensation for the rig warp
+uniform float uLegAmp;  // 0 disables the leg hinge (robed figures: the cut tears the hem)
+const float TAU = 6.28318530718;
+
+// Hinge the region below a pivot, opposite sign per side of the body.
+// Limbs are separated in z, so sign(p.z) selects near vs far leg/arm.
+vec3 hingeLegs(vec3 p, float ang){
+  // Hard cut at the hip plane keeps this a *rigid* transform below the pivot,
+  // so the distance field stays exactly valid inside the leg region. A varying
+  // angle here would shear space and tear the legs apart while marching.
+  if(p.y > uHipY) return p;
+  float s = (p.z < 0.0) ? 1.0 : -1.0;
+  float a = s*ang;
+  p.y -= uHipY; p.xy *= rot(a); p.y += uHipY;
+  return p;
+}
+vec3 hingeArms(vec3 p, float ang, float sameDir){
+  float hw = smoothstep(uShldY+0.10, uShldY-0.16, p.y);
+  float zw = smoothstep(uArmZ*0.35, uArmZ*1.05, abs(p.z));
+  float w = hw*zw;
+  if(w <= 0.001) return p;
+  float s = mix((p.z < 0.0) ? 1.0 : -1.0, 1.0, sameDir);
+  float a = s*ang*w;
+  p.y -= uShldY; p.xy *= rot(a); p.y += uShldY;
+  return p;
+}
+vec3 leanTorso(vec3 p, float ang){
+  float w = smoothstep(uHipY-0.10, uHipY+0.22, p.y);
+  if(w <= 0.001) return p;
+  float a = ang*w;
+  p.y -= uHipY; p.xy *= rot(a); p.y += uHipY;
+  return p;
+}
+vec3 rig(vec3 p){
+  float ph = gPhase;
+  if(uClip < 0.5){
+    float b = sin(ph*TAU);
+    p.y -= 0.010*uAmp*b;
+    p = hingeArms(p, 0.055*uAmp*b, 0.0);
+    p = leanTorso(p, 0.020*uAmp*b);
+  } else if(uClip < 1.5){
+    float sw = sin(ph*TAU);
+    p.y -= 0.026*uAmp*abs(cos(ph*TAU));
+    p = hingeLegs(p,  0.46*uAmp*uLegAmp*sw);
+    p = hingeArms(p, -0.24*uAmp*sw, 0.0);
+    p = leanTorso(p, 0.045*uAmp);
+  } else {
+    float w = smoothstep(0.0,0.34,ph) - smoothstep(0.34,0.52,ph)*1.9
+            + smoothstep(0.52,1.0,ph)*0.9;
+    p = hingeArms(p, -0.85*uAmp*w, 1.0);
+    p = leanTorso(p, -0.30*uAmp*w);
+  }
+  return p;
+}
 """
 
 FOOTER = r"""
-// ---------- raymarch ----------
+vec2 map(vec3 p){ vec2 h=mapRaw(rig(p)); h.x*=uLip; return h; }
+
+uniform vec2  uCell;
+uniform vec2  uGrid;
+uniform float uFrames;
+uniform float uElev;
+uniform float uDist;
+uniform float uFL;
+uniform vec3  uTarget;
+
 vec2 march(vec3 ro,vec3 rd){
   float t=0.35; vec2 res=vec2(-1.0);
-  for(int i=0;i<160;i++){
+  for(int i=0;i<300;i++){
     vec3 p=ro+rd*t; vec2 h=map(p);
     if(h.x<0.0006*t){ res=vec2(t,h.y); break; }
-    t+=h.x*0.85; if(t>7.0) break;
+    t+=h.x*0.80; if(t>7.0) break;
   }
   return res;
 }
@@ -55,76 +129,62 @@ vec3 calcNormal(vec3 p){
 }
 float softShadow(vec3 ro,vec3 rd,float mint,float maxt,float k){
   float res=1.0,t=mint;
-  for(int i=0;i<48;i++){
+  for(int i=0;i<40;i++){
     float h=map(ro+rd*t).x;
-    res=min(res,k*h/t); t+=clamp(h,0.006,0.09);
+    res=min(res,k*h/t); t+=clamp(h,0.008,0.10);
     if(res<0.004||t>maxt) break;
   }
   return clamp(res,0.0,1.0);
 }
 float calcAO(vec3 p,vec3 n){
   float occ=0.0,sca=1.0;
-  for(int i=0;i<6;i++){
-    float h=0.012+0.13*float(i)/5.0;
-    float d=map(p+n*h).x;
-    occ+=(h-d)*sca; sca*=0.82;
+  for(int i=0;i<5;i++){
+    float h=0.014+0.14*float(i)/4.0;
+    occ+=(h-map(p+n*h).x)*sca; sca*=0.80;
   }
-  return clamp(1.0-1.9*occ,0.0,1.0);
+  return clamp(1.0-1.7*occ,0.0,1.0);
 }
-// GGX
-float D_GGX(float NoH,float a){ float a2=a*a; float d=NoH*NoH*(a2-1.0)+1.0; return a2/(3.14159*d*d); }
-float V_Smith(float NoV,float NoL,float a){
-  float a2=a*a;
-  float gv=NoL*sqrt(NoV*NoV*(1.0-a2)+a2);
-  float gl=NoV*sqrt(NoL*NoL*(1.0-a2)+a2);
-  return 0.5/max(gv+gl,1e-5);
+
+// ---------- cel shading ----------
+float toon(float x){
+  return 0.34*smoothstep(0.03,0.09,x)
+       + 0.33*smoothstep(0.32,0.38,x)
+       + 0.33*smoothstep(0.64,0.70,x);
 }
 vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
+  albedo = pow(clamp(albedo,0.0,1.0), vec3(1.0/2.2));
   vec3 V=-rd;
-  vec3 F0=mix(vec3(0.04),albedo,metal);
-  vec3 diffC=albedo*(1.0-metal);
-  vec3 col=vec3(0.0);
-  // key
-  {
-    vec3 L=normalize(vec3(0.55,0.75,-0.50)); vec3 H=normalize(L+V);
-    float NoL=max(dot(n,L),0.0), NoV=max(dot(n,V),1e-4), NoH=max(dot(n,H),0.0), VoH=max(dot(V,H),0.0);
-    float sh=softShadow(p+n*0.004,L,0.02,3.0,5.5);
-    vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);
-    float a=max(rough*rough,0.002);
-    vec3 spec=F*D_GGX(NoH,a)*V_Smith(NoV,NoL,a);
-    col += (diffC/3.14159 + spec) * vec3(1.0,0.95,0.88) * 2.35 * NoL * mix(0.40,1.0,sh);
-  }
-  // cool fill
-  {
-    vec3 L=normalize(vec3(-0.72,0.28,-0.40)); vec3 H=normalize(L+V);
-    float NoL=max(dot(n,L),0.0), NoV=max(dot(n,V),1e-4), NoH=max(dot(n,H),0.0), VoH=max(dot(V,H),0.0);
-    vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);
-    float a=max(rough*rough,0.002);
-    vec3 spec=F*D_GGX(NoH,a)*V_Smith(NoV,NoL,a);
-    col += (diffC/3.14159 + spec*0.6) * vec3(0.44,0.54,0.72) * 0.80 * NoL;
-  }
-  // back rim
-  {
-    vec3 L=normalize(vec3(-0.35,0.32,0.88));
-    float NoL=max(dot(n,L),0.0);
-    float fres=pow(clamp(1.0-max(dot(n,V),0.0),0.0,1.0),2.5);
-    col += diffC * vec3(0.66,0.82,1.0) * 0.85 * NoL * (0.45+0.55*fres);
-  }
-  // hemisphere ambient
-  {
-    float up=0.5+0.5*n.y;
-    vec3 amb=mix(vec3(0.105,0.115,0.140), vec3(0.290,0.330,0.410), up);
-    col += diffC*amb*ao;
-    float NoV=max(dot(n,V),1e-4);
-    vec3 F=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NoV,5.0);
-    col += F*amb*1.1*ao;
-  }
+  vec3 L  = rotY(normalize(vec3( 0.55,0.75,-0.50)), gYaw);
+  vec3 L2 = rotY(normalize(vec3(-0.72,0.28,-0.40)), gYaw);
+  vec3 Lr = rotY(normalize(vec3(-0.35,0.32, 0.88)), gYaw);
+
+  float sh  = softShadow(p+n*0.006,L,0.02,3.0,5.0);
+  float key = toon(max(dot(n,L),0.0)*mix(0.55,1.0,sh));
+  float fil = toon(max(dot(n,L2),0.0));
+  float aoT = mix(1.0, smoothstep(0.25,0.85,ao), 0.55);
+
+  vec3 shadowCol = albedo*vec3(0.44,0.49,0.66);
+  vec3 litCol    = mix(albedo, vec3(1.0), 0.16)*1.04;
+  vec3 col = mix(shadowCol, albedo, smoothstep(0.0,0.52,key));
+  col = mix(col, litCol, smoothstep(0.52,1.0,key));
+  col = mix(col, albedo*vec3(0.62,0.68,0.86), 0.22*(1.0-fil));
+  col *= aoT;
+
+  vec3 H=normalize(L+V);
+  float spec=pow(max(dot(n,H),0.0), mix(26.0,190.0,1.0-rough));
+  col += mix(vec3(1.0),albedo,metal)*step(0.62,spec)*0.42*sh;
+
+  float rim = smoothstep(0.45,0.90, max(dot(n,Lr),0.0))
+            * smoothstep(0.30,0.85, 1.0-abs(dot(n,V)));
+  col += vec3(0.42,0.58,0.86)*rim*0.42;
+
+  float edge = 1.0-abs(dot(n,V));
+  col = mix(col, vec3(0.055,0.048,0.070), smoothstep(0.875,0.960,edge));
   return col;
 }
 vec3 bumpNormal(vec3 p,vec3 n,float scale,float amp){
   if(amp<=0.0) return n;
-  float e=0.0018;
-  float f0=fbm(p*scale);
+  float e=0.0018, f0=fbm(p*scale);
   vec3 g=vec3(fbm((p+vec3(e,0,0))*scale)-f0,
               fbm((p+vec3(0,e,0))*scale)-f0,
               fbm((p+vec3(0,0,e))*scale)-f0)/e;
@@ -138,33 +198,36 @@ vec3 render(vec3 ro,vec3 rd,out float alpha){
   alpha=1.0;
   vec3 p=ro+rd*res.x;
   vec3 n=calcNormal(p);
-  vec3 albedo, emis; float rough,metal,bAmp,bScale;
+  vec3 albedo,emis; float rough,metal,bAmp,bScale;
   material(res.y,p,n,albedo,rough,metal,bAmp,bScale,emis);
   n=bumpNormal(p,n,bScale,bAmp);
   float ao=calcAO(p,n);
-  return shade(p,n,rd,albedo,rough,metal,ao)+emis;
+  return shade(p,n,rd,albedo,rough,metal,ao)+emis*0.55;
 }
 void main(){
+  vec2 cell=floor(gl_FragCoord.xy/uCell);
+  gYaw   = cell.x*TAU/uGrid.x;
+  float row = uGrid.y-1.0-cell.y;
+  gPhase = (uFrames>1.0) ? row/uFrames : 0.0;
+  vec2 fc=mod(gl_FragCoord.xy,uCell);
+
   vec3 col=vec3(0.0); float a=0.0;
   int S=int(uSS);
   for(int j=0;j<3;j++){
     for(int i=0;i<3;i++){
       if(i>=S||j>=S) continue;
       vec2 off=(vec2(float(i),float(j))+0.5)/float(S);
-      vec2 q=(gl_FragCoord.xy+off-0.5-0.5*uRes)/uRes.y;
-      vec3 ro=CAM_RO;
-      vec3 ta=CAM_TA;
+      vec2 q=(fc+off-0.5*uCell)/uCell.y;
+      float ce=cos(uElev), se=sin(uElev);
+      vec3 ta=uTarget;
+      vec3 ro=ta+uDist*vec3(sin(gYaw)*ce, se, -cos(gYaw)*ce);
       vec3 ww=normalize(ta-ro), uu=normalize(cross(vec3(0,1,0),ww)), vv=cross(ww,uu);
-      vec3 rd=normalize(q.x*uu+q.y*vv+CAM_FL*ww);
+      vec3 rd=normalize(q.x*uu+q.y*vv+uFL*ww);
       float aa; col+=render(ro,rd,aa); a+=aa;
     }
   }
   float inv=1.0/float(S*S);
-  col*=inv; a*=inv;
-  // tonemap (ACES-ish) + gamma
-  col=(col*(2.51*col+0.03))/(col*(2.43*col+0.59)+0.14);
-  col=pow(clamp(col,0.0,1.0),vec3(1.0/2.2));
-  fragColor=vec4(col, a);
+  fragColor=vec4(clamp(col*inv,0.0,1.0), a*inv);
 }
 """
 
@@ -194,8 +257,23 @@ try{
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
   const l=gl.getAttribLocation(pr,'p');
   gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);
-  gl.uniform2f(gl.getUniformLocation(pr,'uRes'),%(W)d,%(H)d);
-  gl.uniform1f(gl.getUniformLocation(pr,'uSS'),%(SS)d);
+  const U=n=>gl.getUniformLocation(pr,n);
+  gl.uniform2f(U('uRes'),%(W)d,%(H)d);
+  gl.uniform1f(U('uSS'),%(SS)d);
+  gl.uniform2f(U('uCell'),%(CW)d,%(CH)d);
+  gl.uniform2f(U('uGrid'),%(COLS)d,%(ROWS)d);
+  gl.uniform1f(U('uFrames'),%(FRAMES)d);
+  gl.uniform1f(U('uClip'),%(CLIP)d);
+  gl.uniform1f(U('uElev'),%(ELEV)f);
+  gl.uniform1f(U('uDist'),%(DIST)f);
+  gl.uniform1f(U('uFL'),%(FL)f);
+  gl.uniform3f(U('uTarget'),%(TX)f,%(TY)f,%(TZ)f);
+  gl.uniform1f(U('uHipY'),%(HIPY)f);
+  gl.uniform1f(U('uShldY'),%(SHLDY)f);
+  gl.uniform1f(U('uArmZ'),%(ARMZ)f);
+  gl.uniform1f(U('uAmp'),%(AMP)f);
+  gl.uniform1f(U('uLip'),%(LIP)f);
+  gl.uniform1f(U('uLegAmp'),%(LEGAMP)f);
   gl.viewport(0,0,%(W)d,%(H)d);
   gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES,0,3);
@@ -204,24 +282,31 @@ try{
 }
 </script></body></html>"""
 
-def render(name, body_glsl, cam, out_png, W=512, H=640, SS=1, budget=580000):
+def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
+           cw=192, ch=240, SS=2, budget=1200000):
+    """Render one sprite sheet: `dirs` columns of camera yaw by `frames` rows."""
     fs = HEADER + body_glsl + FOOTER
-    fs = fs.replace("CAM_RO", cam["ro"]).replace("CAM_TA", cam["ta"]).replace("CAM_FL", cam["fl"])
-    fs = fs.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-    html = HTML % dict(W=W, H=H, FS=fs, SS=SS)
+    fs = fs.replace(BS, BS + BS).replace("`", BS + "`").replace("${", BS + "${")
+    W, H = cw * dirs, ch * frames
+    html = HTML % dict(W=W, H=H, FS=fs, SS=SS, CW=cw, CH=ch,
+                       COLS=dirs, ROWS=frames, FRAMES=frames, CLIP=clip,
+                       ELEV=cam["elev"], DIST=cam["dist"], FL=cam["fl"],
+                       TX=cam["target"][0], TY=cam["target"][1], TZ=cam["target"][2],
+                       HIPY=rig["hipY"], SHLDY=rig["shldY"], ARMZ=rig["armZ"],
+                       AMP=rig["amp"], LIP={0:0.85, 1:0.45, 2:0.35}.get(clip,0.5),
+                       LEGAMP=rig.get("legAmp", 1.0))
     d = pathlib.Path(f"_{name}.html"); d.write_text(html)
     t0 = time.time()
-    p = subprocess.run([CHROME,"--headless","--no-sandbox","--enable-unsafe-swiftshader",
-                        f"--virtual-time-budget={budget}","--dump-dom",f"file://{d.resolve()}"],
-                       capture_output=True, text=True, timeout=900)
-    dt = time.time()-t0
-    dom = p.stdout
-    err = re.search(r'ERR:([^<]{0,600})', dom)
+    p = subprocess.run([CHROME, "--headless", "--no-sandbox", "--enable-unsafe-swiftshader",
+                        f"--virtual-time-budget={budget}", "--dump-dom", f"file://{d.resolve()}"],
+                       capture_output=True, text=True, timeout=2400)
+    dt = time.time() - t0
+    err = re.search(r'ERR:([^<]{0,600})', p.stdout)
     if err:
         print(f"[{name}] SHADER ERROR: {err.group(1)[:600]}"); return False
-    m = re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)', dom)
+    m = re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)', p.stdout)
     if not m:
-        print(f"[{name}] no image; dom head: {dom[:300]}"); return False
+        print(f"[{name}] no image; dom head: {p.stdout[:300]}"); return False
     pathlib.Path(out_png).write_bytes(base64.b64decode(m.group(1)))
-    print(f"[{name}] {W}x{H} SS={SS} in {dt:.1f}s -> {out_png}")
+    print(f"[{name}] {W}x{H} ({dirs}dir x {frames}f) SS={SS} in {dt:.0f}s -> {out_png}")
     return True

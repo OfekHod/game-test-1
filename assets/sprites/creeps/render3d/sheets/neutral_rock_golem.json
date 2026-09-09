@@ -1,0 +1,33 @@
+{
+  "name": "neutral_rock_golem",
+  "frameWidth": 192,
+  "frameHeight": 240,
+  "directions": 8,
+  "directionOrder": [
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW",
+    "N",
+    "NE"
+  ],
+  "directionStepDegrees": 45,
+  "layout": "columns are directions, rows are frames; row 0 is the top",
+  "clips": {
+    "idle": {
+      "frames": 4,
+      "sheet": "neutral_rock_golem_idle.png"
+    },
+    "walk": {
+      "frames": 8,
+      "sheet": "neutral_rock_golem_walk.png"
+    },
+    "attack": {
+      "frames": 6,
+      "sheet": "neutral_rock_golem_attack.png"
+    }
+  },
+  "note": "Direction E is the character facing screen-right (the original side profile). Yaw increases clockwise viewed from above. Camera elevation is 0.38 rad (~22 degrees)."
+}

@@ -1,5 +1,3 @@
-import sys; sys.path.insert(0,'.')
-from rt import render
 
 BODY = r"""
 #define KSM 0.019
@@ -14,7 +12,7 @@ void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
   else {           albedo=vec3(0.0); metal=0.0; rough=1.0; emis=vec3(2.4,0.78,0.20); }
 }
 
-vec2 map(vec3 p){
+vec2 mapRaw(vec3 p){
   vec2 res = vec2(1e9,0.0);
   float d;
 
@@ -104,5 +102,5 @@ vec2 map(vec3 p){
   return res;
 }
 """
-CAM = dict(ro="vec3(0.10,0.92,-4.20)", ta="vec3(0.02,0.90,0.0)", fl="1.95")
-render("dire_ghoul", BODY, CAM, "../dire_ghoul_raw.png", W=512, H=640, SS=1)
+CAM = dict(target=(0.0, 0.86, 0.0), dist=4.2, fl=1.26, elev=0.38)
+RIG = dict(hipY=0.9, shldY=1.24, armZ=0.19, amp=0.9)

@@ -1,5 +1,3 @@
-import sys; sys.path.insert(0,'.')
-from rt import render
 
 BODY = r"""
 #define KSM 0.017
@@ -14,7 +12,7 @@ void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
   else {           albedo=vec3(0.055,0.055,0.065); metal=0.0;  rough=0.90; }
 }
 
-vec2 map(vec3 p){
+vec2 mapRaw(vec3 p){
   vec2 res = vec2(1e9,0.0);
 
   // ================= FAR LEG (+z) =================
@@ -123,5 +121,5 @@ vec2 map(vec3 p){
   return res;
 }
 """
-CAM = dict(ro="vec3(0.13,0.95,-4.20)", ta="vec3(0.0,0.91,0.0)", fl="1.85")
-render("radiant_vanguard", BODY, CAM, "../radiant_vanguard_raw.png", W=512, H=640, SS=1)
+CAM = dict(target=(0.0, 1.02, 0.0), dist=4.2, fl=1.24, elev=0.38)
+RIG = dict(hipY=0.92, shldY=1.39, armZ=0.2, amp=1.0)

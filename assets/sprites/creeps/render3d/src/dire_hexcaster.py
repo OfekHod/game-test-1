@@ -1,5 +1,3 @@
-import sys; sys.path.insert(0,'.')
-from rt import render
 
 BODY = r"""
 #define KSM 0.024
@@ -14,7 +12,7 @@ void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
   else {           albedo=vec3(0.0); metal=0.0; rough=1.0; emis=vec3(0.50,2.30,0.48); }
 }
 
-vec2 map(vec3 p){
+vec2 mapRaw(vec3 p){
   vec2 res = vec2(1e9,0.0);
   float d;
 
@@ -75,5 +73,5 @@ vec2 map(vec3 p){
   return res;
 }
 """
-CAM = dict(ro="vec3(0.10,0.95,-4.30)", ta="vec3(0.03,0.92,0.0)", fl="1.80")
-render("dire_hexcaster", BODY, CAM, "../dire_hexcaster_raw.png", W=512, H=640, SS=1)
+CAM = dict(target=(0.0, 1.03, 0.0), dist=4.3, fl=1.3, elev=0.38)
+RIG = dict(hipY=0.95, shldY=1.38, armZ=0.18, amp=0.55, legAmp=0.0)
