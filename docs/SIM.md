@@ -2,7 +2,7 @@
 
 ## The harness
 
-`sim/harness.js` reads `lane.html`, pulls out the last `<script>` block, and
+`sim/harness.js` reads `index.html`, pulls out the last `<script>` block, and
 string-patches instrumentation into it. Nothing is duplicated: the simulation
 runs the same code the browser does.
 

@@ -8,9 +8,9 @@ where they will be.
 ## Layout
 
 ```
-lane.html          the game — open it in a browser, nothing to install
+index.html         the game — open it in a browser, nothing to install
 sim/               headless simulation harness (Node, no dependencies)
-  harness.js       lifts the game out of lane.html and instruments it
+  harness.js       lifts the game out of index.html and instruments it
   run.js           headline result for the shipped configuration
   parallel.js      same report, one worker per core
   match.js         one match + the report, shared by run.js and parallel.js
@@ -24,6 +24,7 @@ docs/
   AI.md            how the enemy team thinks
   SIM.md           how to run experiments
   MULTIPLAYER.md   LAN plan and what internet play would additionally cost
+  TUTORIAL.md      proposed in-game tutorial: phases and how it is built
 ```
 
 ## Running the simulation
@@ -40,7 +41,7 @@ forks one worker per available core and hands out matches from a shared queue;
 on a 4-core machine it finishes a batch in roughly a third of the time. It
 detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
 
-## Why the harness reads lane.html
+## Why the harness reads index.html
 
 There is deliberately no second copy of the game source. `harness.js` extracts
 the script from the shipped HTML and patches counters into it, so a tuning
