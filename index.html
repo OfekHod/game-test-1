@@ -9084,7 +9084,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   let musicOn = prefGet(MUSIC_PREF, '1') !== '0';
-  let musicCtx = null, musicDead = false;
+  let musicCtx = null, musicDead = false, musicPlayed = false;
   const musicTracks = {};
 
   function musicContext(){
@@ -9139,21 +9139,40 @@ window.addEventListener('DOMContentLoaded', function(){
     if(m && !m.running){
       if(musicCtx.state === 'suspended') musicCtx.resume();
       m.start(fadeIn == null ? 2.4 : fadeIn);
+      musicPlayed = true;
     }
   }
 
-  // The gesture that unlocks audio is very often the tap that starts a match.
-  // Reading the menu state a beat later rather than immediately is what stops
-  // the menu theme swelling for a moment on its way out.
-  let musicArmed = false;
+  // Unlocking audio has to happen INSIDE the gesture. A context built in a
+  // later task is born suspended, and resume() outside a gesture is refused
+  // outright on iOS and only tolerated elsewhere because the browser remembers
+  // the page was touched at some point. Creating it in a timer 200ms after the
+  // tap therefore worked in Chrome and would have been silent on a phone.
+  //
+  // Deciding WHICH piece plays still waits that beat, because the tap that
+  // unlocks audio is very often the tap that starts a match, and reading the
+  // menu state immediately would swell the menu theme for a moment on its way
+  // out. So: unlock now, choose in a moment.
+  let musicPending = false, musicWarmed = false;
   function musicUnlock(){
-    if(musicArmed) return;
-    musicArmed = true;
-    setTimeout(()=>{ musicSync(2.4); }, 200);
+    const ctx = musicContext();
+    if(!ctx) return;
+    if(ctx.state === 'suspended') ctx.resume();
+    // Not latched after one try. If the first gesture fails to get sound out —
+    // a resume the browser quietly refused, a context that came up suspended —
+    // every later gesture gets another go, instead of the page staying silent
+    // for good because of one bad first attempt.
+    if(!musicPending){
+      musicPending = true;
+      setTimeout(()=>{ musicPending = false; musicSync(2.4); }, 200);
+    }
     // Build the match track's strings while the player is still reading the
     // menu. Karplus-Strong is cheap but not free, and paying for it at the
     // whistle would cost a frame at the one moment nobody is looking away.
-    setTimeout(()=>{ const m = musicTrack('play'); if(m) m.prewarm(); }, 1400);
+    if(!musicWarmed){
+      musicWarmed = true;
+      setTimeout(()=>{ const m = musicTrack('play'); if(m) m.prewarm(); }, 1400);
+    }
   }
   window.addEventListener('pointerdown', musicUnlock);
   window.addEventListener('touchend', musicUnlock);
@@ -9168,6 +9187,11 @@ window.addEventListener('DOMContentLoaded', function(){
     musicBtn.setAttribute('aria-pressed', musicOn ? 'true' : 'false');
   }
   function musicToggle(){
+    // Before a note has ever played, this button starts the music rather than
+    // stopping it. Nothing can sound until the page has been touched, so a
+    // player whose first action is pressing "Music" was muting something they
+    // had never heard — and then had to press it twice more to get any sound.
+    if(musicOn && !musicPlayed){ musicSync(1.0); return; }
     musicOn = !musicOn;
     prefSet(MUSIC_PREF, musicOn ? '1' : '0');
     musicPaint();
