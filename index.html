@@ -10022,6 +10022,16 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   musicAutostart();
 
+  // Proof of life, in the one place already on screen before anything is
+  // pressed. A menu that RENDERS is not a menu that RUNS: the markup and the
+  // CSS can arrive while the script is blocked — an embed that refuses to
+  // execute it, a preview pane that never runs one — and then every button is
+  // dead and nothing on the page says why. The cut-off guard above cannot
+  // cover that case, because it is a script too. If the build tag does not end
+  // in "ready", nothing below the markup ran and no button will ever answer.
+  const buildTagEl = document.getElementById('buildTag');
+  if(buildTagEl) buildTagEl.textContent += ' · ready';
+
   window.__laneLoaded = true;
 })();
 </script>
