@@ -1,6 +1,6 @@
 # Tutorial
 
-A third button next to **Match** and **Survival**. Eighteen steps that teach one
+A third button next to **Match** and **Survival**. Sixteen steps that teach one
 mechanic at a time on a map built for the purpose, ending by dropping you into a
 real Match.
 
@@ -68,17 +68,15 @@ drops you back to the menu.
 | 5 | **Levels and stats** | Stat strip pulses; a level granted if you lack one | Spending a point |
 | 6 | **Your squad** | Tank and support walk out of the base | Taking control of each |
 | 7 | **Rocket and heal** | A mob each for them | Casting both skills |
-| 8 | **Stun, then switch** | A huddle of four tough mobs, awake | A rocket that stuns three, then three kills with the carry |
-| 9 | **Orders** | A marked spot on the ground | Posting a hero on it |
-| 10 | **Assemble** | The ALL button pulses | Calling the squad back |
-| 11 | **The forest** | The camp is stocked and ringed | Clearing it |
-| 12 | **Your base** | Your tower's range drawn | Standing inside it |
-| 13 | **The map** | — | Holding on the minimap to scout |
-| 14 | **Pushing a lane** | — | Dragging a hero to a minimap half |
-| 15 | **Waves** | Wave spawning, both sides | Collecting six orbs from the fighting |
-| 16 | **The enemy** | Their carry walks over and spars | Landing a hit on him yourself |
-| 17 | **Their towers** | Nearest enemy outpost marked | Putting a hit on an enemy tower |
-| 18 | **How a round is won** | Scoreboard appears | **Play a Match** |
+| 8 | **Orders** | A marked spot on the ground | Posting a hero on it |
+| 9 | **Assemble** | The ALL button pulses | Calling the squad back |
+| 10 | **The forest** | The camp is stocked and ringed | Clearing it |
+| 11 | **Your base** | Your tower's range drawn | Standing inside it |
+| 12 | **The map** | — | Holding on the minimap to scout |
+| 13 | **Pushing a lane** | — | Dragging a hero to a minimap half |
+| 14 | **The enemy** | Their carry walks over and spars | Landing a hit on him yourself |
+| 15 | **Push a lane, take a tower** | Wave spawning, both sides; their whole team sent home | Assembling, sending the squad down a lane, and destroying an enemy outpost |
+| 16 | **How a round is won** | Scoreboard appears | **Play a Match** |
 
 ### Notes on particular steps
 
@@ -142,52 +140,22 @@ not produce a level-up, the step grants one, so it is always reachable.
 and they arrive at your level — switching to a level-1 tank halfway through a
 tutorial reads as a punishment for switching.
 
-**8 · Stun, then switch.** The one step that needs two heroes to solve. A
-hero's rocket **stuns everything in its blast for three seconds** — the game's
-own design, and towers deliberately do not do it — and a stunned mob cannot
-move, chase or hit back. So the step spawns a huddle of four and asks for the
-pair: rocket three of them with the tank, then take the carry and make three
-kills yourself.
+**8–9 · Orders and Assemble.** The drag gesture is taught here on open ground;
+step 13 points the same gesture at the minimap, and step 15 asks for both at once.
+Orders also clears the practice mobs the shooting steps left standing — the
+removed stun step used to do that on its way past, and without it the ground you
+are asked to post a hero on is dotted with mobs holding perfectly still, since
+the neutral AI does not wake until the forest step.
 
-Four things had to be true for it to teach that rather than something else:
+**10 · The forest.** The map's one camp, stocked by this step and empty until it,
+so the first forest mob you ever meet is one you were sent to. It is also the
+step that wakes the neutral AI for good, which is why the camp is held with an
+infinite respawn timer rather than a zero one — a zero timer stocks the forest
+quietly, several steps before anything mentions it. Its `resetCamps()` empties
+`neutralCreeps` on the way, so nothing the earlier steps spawned can wake up and
+walk at you the moment the hold lifts.
 
-- **The pack is placed from the tank, not from the hero you are driving.** A
-  rocket carries `ROCKET_TRAVEL_MAX` (700) and the tank walks behind you, so a
-  pack 380 in front of the carry can be 750 from the tank: the rocket stops
-  short of its own aim point and the blast lands in empty grass. This was the
-  first thing that went wrong when the step was driven for real.
-- **The huddle is tight** — `ROCKET_SPLASH_RADIUS * 0.38` — so a blast centred
-  on the near mob still reaches the far side. At the first radius a rocket that
-  detonated on contact caught two of four and the step read as broken aim.
-- **They have 200 health**, so the rocket cannot finish them. A stun with
-  nothing left to kill afterwards teaches half the pair.
-- **Only kills made while you are driving the carry count.** The carry is an AI
-  ally whenever you are not driving it, and its auto-attack was closing the step
-  by itself: rocket the pack, stand still as the tank, and the lesson about
-  switching completed without a switch.
-
-If the pack dies with either half unmet — no stun, or the kills made by your
-allies — a fresh one spawns with a line saying which half is missing.
-
-This is also the step that wakes the neutral AI for good. That meant holding the
-map's one camp with an infinite respawn timer rather than a zero one, so the
-forest does not quietly stock itself three steps early.
-
-**9–10 · Orders and Assemble.** The drag gesture is taught here on open ground;
-step 14 points the same gesture at the minimap.
-
-**11 · The forest.** The map's one camp, stocked by this step and empty until it,
-so the first forest mob you ever meet is one you were sent to.
-
-**15 · Waves.** It does not ask for a last hit, because the last hit does not do
-anything here. `killCreep` drops what the kill was carrying whoever landed it —
-creep on creep included, through the filter in `resolveCreepCombat` that passes a
-null attacker — and `lastHits` is a line on the end screen and nothing else.
-Asking for one taught a habit from a different game. What pays is being where
-the wave dies, so the step marks the middle of the nearest lane and asks for six
-orbs.
-
-**16 · The enemy.** Their carry is driven by `tutSparAI` rather than by his own
+**14 · The enemy.** Their carry is driven by `tutSparAI` rather than by his own
 AI: he walks to arm's length, holds there, and fires once every two seconds
 instead of five times a second. He carries `TUT_SPAR_HP` rather than his own, and
 the step wants a hit **from the hero you are driving** — three allied heroes
@@ -196,7 +164,56 @@ nothing if he is a corpse before you have looked at him. Respawning him on their
 side of the map and sending him down a lane, as it did, meant walking into an
 outpost to reach him.
 
-**18 · Into a Match.** The button starts a real round on the real map. It is
+**15 · Push a lane, take a tower.** The payoff step, and the only one that asks
+for the three gestures together: assemble, point the squad down a lane, and walk
+in behind the wave until the outpost falls. It replaces three steps that each
+asked for a fragment of it — a stun combo on a huddle of mobs, six orbs collected
+off a wave, and a single hit landed on a tower — none of which is the thing a
+round is actually made of.
+
+Five things it has to get right:
+
+- **It is the step that lets the waves out — your side's.** A lane push is a
+  wave with heroes behind it, so `tut.holdWaves` lifts here and `spawnTimer` is
+  zeroed rather than making you wait out a full twenty seconds first.
+- **Their base goes quiet too**, and it has to. Two bases feeding one lane at
+  the same rate is a **standoff**, and once their heroes are out of it nothing on
+  the field can break it: driven headless with the carry laning, the support
+  following and the tank levelled to 16, the front line oscillated between 1938
+  and 2760 for six straight minutes, the outpost at 3100 was never touched, and
+  the lane filled with three hundred uncollected orbs. That is correct behaviour
+  for a Match — it is what the enemy heroes exist to break — and an unwinnable
+  lesson here. With `tut.holdFoeWaves` set, the same run takes the outpost at
+  **t=61s** with the player standing still, which is about the time it takes to
+  walk there. The final card lifts the hold again, because a wave left pushing an
+  undefended lane walks on and takes the main tower — ending the round on the win
+  screen while you are still reading about how a round is won.
+- **Their whole team goes home and stays there.** `tut.homeEnemies` skips
+  `updateEnemyMacro`, `applyEnemyMacro`, the carry AI and the enemy half of
+  `updateIdleAI` outright, and `tutEnemiesHome` walks each of them back to his own
+  spawn. Skipping every one of them matters: any single path left running pulls a
+  hero back out to defend the outpost, and three enemy heroes holding an outpost
+  is a fight a level-six squad loses. They are put back on their feet rather than
+  left as the corpses the opening parked, so you can see on the minimap where
+  they went — and their carry gets his own health back, since the sparring step
+  handed him `TUT_SPAR_HP`.
+- **The order of the two gestures is enforced.** Assemble pulls the other two
+  onto whoever you are driving, so a lane order given *first* is undone by the
+  assemble that follows it. A lane order that arrives before the assemble is
+  dropped with a nudge rather than being banked into a goal that then sits at
+  "destroy the outpost" over a squad standing in its own base.
+- **The finish reads the outpost's own hp, not a hook.** A creep takes a tower
+  down without ever going through `applyTowerHit` — `creepsVsTowers` subtracts
+  from `t.hp` directly — so a step watching only the hero's hits would hang on
+  the last seven points while the wave finished the job. The step records which
+  outposts were standing when it began and waits for one of them to fall, so
+  taking the other lane counts too: marking one lane and refusing the other would
+  be a rule the card never stated.
+- **The card and the goal change with the stage**, the way the walking step's do:
+  one line for the assemble, one for the lane, and then the outpost's health as a
+  percentage while you cut it down.
+
+**16 · Into a Match.** The button starts a real round on the real map. It is
 called from the button handler, never from inside `update()` — `startRound`
 rebuilds the world, and nothing good comes of doing that half way through a
 frame.
@@ -212,16 +229,18 @@ a third mode value would have meant auditing every one of them. The tutorial run
 as `gameMode='regular'` with `tutMap` true, so only `buildMap`, `generateWater`
 and `generateForest` behave differently.
 
-**Six holds**, each one guard, each lifted by the step that needs it:
+**Eight holds**, each one guard, each lifted by the step that needs it:
 
 | Hold | Where | Lifted at |
 |---|---|---|
 | Kills drop nothing | `spawnKillDrops` | step 4 |
 | Auto-assist off | `updateActiveControl` | step 4 |
-| Neutral AI asleep | `updateNeutrals` | step 8 |
-| Camp stocked | the forest step's `resetCamps` | step 11 |
+| Neutral AI asleep | `updateNeutrals` | step 10 |
+| Camp stocked | the forest step's `resetCamps` | step 10 |
 | No waves | the spawn timer in `update()` | step 15 |
-| Enemy heroes parked dead | `tutStart` | step 16, then the Match |
+| Enemy heroes parked dead | `tutStart` | step 14, then the Match |
+| Enemy heroes sent home | `tut.homeEnemies`, in `update()` | on at step 15, off at the Match |
+| Enemy waves held | `tut.holdFoeWaves`, in `spawnWave` | on at step 15, off at step 16 |
 | Clock frozen | the `tut.on` branch in `update()` | the Match |
 
 Every hold also lifts in `tutStop`, which runs on **Exit**, on the Match button
@@ -236,8 +255,9 @@ return false while the tutorial is on.
 **Progress detection** is a handful of one-line `tutNote(...)` calls at sites that
 already exist — `killCreep`, `collectXpOrb`, `collectMana`, `applyStatPoint`,
 `focusHero`, `useSkill`, `soloOrder`, `laneOrder`, `assembleOnFocus`,
-`applyTowerHit`, `applyHeroHit` — each behind `if(tut.on)`, so a normal Match and
-the headless sim never enter any of it. `triggerDash` sets `tut.dashWindow`
+`applyHeroHit` — each behind `if(tut.on)`, so a normal Match and
+the headless sim never enter any of it. Buildings have no hook at all: the one
+step that watches a tower reads its `hp`, for the reason given above. `triggerDash` sets `tut.dashWindow`
 around its damage sweep, which is how step 3 knows a kill belonged to the blink.
 No hook string `sim/harness.js` matches on was touched.
 
@@ -273,12 +293,16 @@ read the card twice.
 
 ## The stun, which never worked
 
+No step teaches the stun any more — the combo step that did was replaced by the
+lane push — but the step existed long enough to find that the stun did not work,
+and those fixes are in every mode and stay.
+
 `explodeRocket` says everything caught in the blast is frozen for `STUN_TIME`.
 It was not — three holes, all of them visible as a mob wearing a stun mark while
 it walks at you and hits you:
 
 - **Forest mobs never consulted it at all.** `updateNeutrals` had no stun check,
-  which is the one the combo step runs straight into.
+  which is the one the combo step ran straight into.
 - **A stunned lane creep still slid sideways.** In `moveCreeps` the guard was on
   the x update and the y update sat outside it.
 - **Frozen never covered swinging.** `resolveCreepCombat`, `creepsVsHeroes` and
@@ -304,6 +328,16 @@ are all fixes to things that were broken in every mode:
   assembling and switching quietly stranded the other two behind you. A
   `squadTogether` flag, set by Assemble and cleared by any individual order,
   re-anchors the formation on each switch.
+- **Dragging the hero you are DRIVING onto a minimap half now actually sends
+  him down that lane.** `laneOrder` set `mode='lane'` and then called `focusHero`
+  to hand him over, and `focusHero` deliberately cancels a lane order on the hero
+  you are leaving — "he holds where you left him instead of quietly resuming a
+  lane you never told him to push" — so it wiped the order that had just been
+  given. The floater said TOP LANE, the old step 14 ticked, and the hero stood
+  exactly where he was. Dragging one of the *other* two always worked, which is
+  why it hid for so long. The fix is to hand him over first and write the order
+  second. The siege step is what found it: it is the first thing in the game that
+  cares whether the hero actually walks.
 - **The arrow keys move your hero**, in every mode.
 - **The stun freezes**, in every mode — see above.
 - **A few short lines of trees stand in the Match map's corridor.** Three or four
@@ -331,7 +365,8 @@ are all fixes to things that were broken in every mode:
 
 ## Still open
 
-- **Length.** Eighteen steps is roughly seven to nine minutes.
+- **Length.** Sixteen steps, and the last playable one is a full lane push, so
+  the run is roughly seven to nine minutes and most of the tail is that push.
 - **The match clock.** `ROUND_TIME` is 600 seconds and the timer reads `10:00`,
   but the start screen calls the mode "Match · 5:00". Step 18 deliberately does
   not name a number rather than adding a third claim; the copy and the constant

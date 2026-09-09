@@ -123,11 +123,37 @@ Time ran out with both bases standing and the scoreboard settled it: 1169 to
 ## Survival
 
 No enemy heroes, no enemy base: just our tower in the middle of the arena and
-mobs arriving from all four sides in growing numbers.
+mobs arriving in growing numbers.
+
+### How a wave works
+
+The round is counted in **waves**, not seconds. A wave marches, its number goes
+up in the middle of the screen for a couple of seconds, and **nothing else
+spawns until every mob of that wave is dead** — the HUD's right-hand slot reads
+`Wave 7` where a Match reads a clock. So the pace is yours: meet a wave out on
+the road and the next one is along in a moment; let the outposts grind it down
+and you get a long breather to farm the camps with.
+
+Each wave is bigger than the last — six mobs in wave 1, two more every wave
+after, up to forty — and from wave 3 there is a big one in front, one more every
+second wave. Past the size cap a wave stops getting wider and keeps getting
+heavier: the big count goes on climbing under it. The whole wave shows on the
+minimap, because a wave you have to clear is a wave you have to be able to find.
+
+The end card reports the waves you held, with the clock and the loot under it.
+
+### The frames below
+
+These frames predate both the two-lane arena and the wave counter. The round was
+played on the original map — four straight spokes, mobs arriving from all four
+sides, waves on a shrinking timer — where today there are two snaking lanes, two
+outposts on each, a river, six lakes and waves that wait to be cleared.
 
 ### Wave 23 — 2:06
 
-By wave 23 the mobs come faster than the squad can burn them. The west outpost
+Reached in two minutes, on the old timer. Under the wave counter, twenty-three
+waves is a much longer and much heavier round. By wave 23 the mobs come faster
+than the squad can burn them. The west outpost
 (grey, in the sand circle) is already lost and swarmed, the east outpost is
 being chewed on (**94** landing on it, lower centre), and the big mobs are
 walking straight past the heroes toward the base.
