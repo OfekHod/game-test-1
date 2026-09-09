@@ -92,6 +92,11 @@ const page = `<title>Lane Soundboard</title>
   .row.seq button{ background:transparent; color:var(--ink); border:1px solid var(--line);
                    box-shadow:none; font-weight:600; }
   .row.seq button:hover{ background:#2A241A; }
+  /* A press has to be visible on its own. If the browser will not let the page
+     make a sound, a button that only makes sounds looks broken. */
+  .row{ transition:background .1s ease; }
+  .row.hot{ background:#2E2719; }
+  .status.blocked .dot{ background:var(--hurt); }
 
   .vol{ display:flex; align-items:center; gap:14px; margin:26px 0 0;
         font:400 13px/1 var(--mono); color:var(--dim); }
@@ -106,7 +111,7 @@ const page = `<title>Lane Soundboard</title>
     <p class="lede">Six one-shots, synthesised on the spot from a handful of oscillators and one shared
       noise buffer: no samples, no files, a few hundred bytes in all. This page runs the same code the
       game does. The traces are each sound's real envelope, rendered offline.</p>
-    <div class="status" id="status"><span class="dot"></span><span id="statusText">Click anything to start audio</span></div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Press a button or a key to start audio</span></div>
   </header>
 
   <h2>Impacts</h2>
@@ -157,25 +162,54 @@ ${engine}
 
   /* ------------------------------------------------------------ playback */
 
-  let ctx = null, rig = null, level = 0.55, live = false;
+  let ctx = null, rig = null, level = 0.55, failed = false;
+  const statusEl = () => document.getElementById('status');
+  const statusTx = () => document.getElementById('statusText');
+  // The status line reads the context rather than remembering that we asked it
+  // to start. A page that says "running" while the browser is holding the tap
+  // shut is worse than one that says nothing: the buttons look broken and the
+  // page has just told you they are not.
+  function paint(){
+    const el = statusEl(), t = statusTx();
+    el.classList.remove('live', 'blocked');
+    if(failed || !ctx){ el.classList.add('blocked'); t.textContent = 'This browser will not start audio on this page'; return; }
+    if(ctx.state === 'running'){ el.classList.add('live'); t.textContent = 'Audio running — keys 1-7, Q W E R T Y'; return; }
+    el.classList.add('blocked');
+    t.textContent = 'Audio is ' + ctx.state + ' — press a button again to start it';
+  }
   function ready(){
-    if(!rig){
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      rig = createLaneSfx(ctx);
+    if(failed) return null;
+    try{
+      if(!rig){
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if(!AC) throw new Error('no Web Audio');
+        ctx = new AC();
+        rig = createLaneSfx(ctx);
+      }
+      if(ctx.state === 'suspended'){
+        const r = ctx.resume();
+        if(r && r.then) r.then(paint, paint);
+      }
+      rig.master.gain.value = level;
+    }catch(err){
+      failed = true;
+      console.error('audio unavailable', err);
     }
-    if(ctx.state === 'suspended') ctx.resume();
-    rig.master.gain.value = level;
-    if(!live){
-      live = true;
-      document.getElementById('status').classList.add('live');
-      document.getElementById('statusText').textContent = 'Audio running — keys 1-7, Q W E R T Y';
-    }
+    paint();
     return rig;
   }
   const mid = { pan: 0, gain: 1 };
-  const hit = (k, p) => ready().impact(k, p || mid);
-  const pick = (k, n, p) => ready().pickup(k, n || 0, p || mid);
-  const blink = (a, b) => ready().teleport(a || mid, b || mid, 0.12);
+  const hit = (k, p) => { const r = ready(); if(r) r.impact(k, p || mid); };
+  const pick = (k, n, p) => { const r = ready(); if(r) r.pickup(k, n || 0, p || mid); };
+  const blink = (a, b) => { const r = ready(); if(r) r.teleport(a || mid, b || mid, 0.12); };
+  // Independent of whether a sound came out.
+  function flash(el){
+    const row = el && el.closest ? el.closest('.row') : null;
+    if(!row) return;
+    row.classList.add('hot');
+    clearTimeout(row._t);
+    row._t = setTimeout(() => row.classList.remove('hot'), 220);
+  }
   const later = (ms, fn) => setTimeout(fn, ms);
 
   const DEMOS = {
@@ -194,6 +228,33 @@ ${engine}
     pan(){ for(let i = 0; i < 9; i++) later(i * 130, () => hit('hero', { pan: -0.8 + i * 0.2, gain: 1 })); },
     blinkfar(){ blink({ pan: -0.7, gain: 0.85 }, { pan: 0.6, gain: 1 }); },
   };
+
+  /* ---------------------------------------------------------------- input */
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if(!b){ ready(); return; }
+    flash(b);
+    if(b.dataset.i) hit(b.dataset.i);
+    else if(b.dataset.p) pick(b.dataset.p, 0);
+    else if(b.dataset.t) blink();
+    else if(b.dataset.d) DEMOS[b.dataset.d]();
+  });
+  const KEYS = { '1':()=>hit('creep'), '2':()=>hit('crit'), '3':()=>hit('hero'), '4':()=>hit('hurt'),
+                 '5':()=>pick('gold',0), '6':()=>pick('mana',0), '7':()=>blink(),
+                 q:DEMOS.goldrun, w:DEMOS.manarun, e:DEMOS.wave, r:DEMOS.trade, t:DEMOS.pan,
+                 y:DEMOS.blinkfar };
+  document.addEventListener('keydown', e => {
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    const f = KEYS[e.key.toLowerCase()];
+    if(!f) return;
+    e.preventDefault();
+    const b = document.querySelector('.row .key');
+    const row = [...document.querySelectorAll('.row')].find(r =>
+      r.querySelector('.key') && r.querySelector('.key').textContent.toLowerCase() === e.key.toLowerCase());
+    if(row) flash(row.querySelector('button'));
+    f();
+  });
 
   /* -------------------------------------------------------------- traces
      Each row's picture is that sound rendered through an OfflineAudioContext
@@ -232,27 +293,13 @@ ${engine}
       }
     }).catch(() => {});
   }
-  document.querySelectorAll('canvas[data-wave]').forEach(cv => trace(cv, cv.dataset.wave));
-
-  /* ---------------------------------------------------------------- input */
-
-  document.addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if(!b){ ready(); return; }
-    if(b.dataset.i) hit(b.dataset.i);
-    else if(b.dataset.p) pick(b.dataset.p, 0);
-    else if(b.dataset.t) blink();
-    else if(b.dataset.d) DEMOS[b.dataset.d]();
+  // Never fatal: a picture is worth less than a working button, and this used
+  // to run before the listeners were attached, so one throw in here took the
+  // whole page's interactivity with it.
+  document.querySelectorAll('canvas[data-wave]').forEach(cv => {
+    try{ trace(cv, cv.dataset.wave); }catch(err){ console.error('trace failed', err); }
   });
-  const KEYS = { '1':()=>hit('creep'), '2':()=>hit('crit'), '3':()=>hit('hero'), '4':()=>hit('hurt'),
-                 '5':()=>pick('gold',0), '6':()=>pick('mana',0), '7':()=>blink(),
-                 q:DEMOS.goldrun, w:DEMOS.manarun, e:DEMOS.wave, r:DEMOS.trade, t:DEMOS.pan,
-                 y:DEMOS.blinkfar };
-  document.addEventListener('keydown', e => {
-    if(e.metaKey || e.ctrlKey || e.altKey) return;
-    const f = KEYS[e.key.toLowerCase()];
-    if(f){ e.preventDefault(); f(); }
-  });
+
   const vol = document.getElementById('vol'), volv = document.getElementById('volv');
   vol.addEventListener('input', () => {
     level = vol.value / 100;
