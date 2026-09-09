@@ -154,6 +154,11 @@ cache is rasterising. So the load screen holds until a few real frames have
 been drawn behind it, and those frames take the hit instead of the opening
 seconds of play.
 
+The hold is a flat three seconds by choice, not by measurement — long enough
+for the cloud reveal that follows it to have a run-up. It still waits on the
+warm frames as well, so on a slow device it is the work that sets the length,
+not the constant.
+
 `startRound` itself is one 250-267 ms frame, 121 ms of which is
 `drawBackground` baking the 4000x4000 ground canvas. Note that a plain
 `performance.now()` around it reports only ~28 ms: canvas calls are recorded,

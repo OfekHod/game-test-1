@@ -163,12 +163,124 @@
      frame, ~140ms in a desktop browser and several times that on a phone.
      That frame is lost whatever we do, so spend it under a panel that says
      what is happening instead of on a half-drawn field that reads as a hang. */
+  /* The other overlays dim an olive green over a field. This one sits on a
+     sky, and 45% of anything dark turned it to slate — so it gets the
+     lightest blue veil that still keeps the panel readable. */
+  #loadScreen{background:rgba(120,190,235,.20);}
   .loadPanel{max-width:340px;padding:28px 34px;}
+  /* The panel used to be switched off with display:none, one frame after three
+     seconds of sitting there. It gets to leave properly now, and it leaves
+     BEFORE the clouds move so the two do not compete for the eye. */
+  #loadScreen.leaving{animation:loadVeilOut .26s ease-out forwards;}
+  #loadScreen.leaving .panel{animation:loadPanelOut .26s cubic-bezier(.4,0,.7,.9) forwards;}
+  @keyframes loadVeilOut{to{opacity:0}}
+  @keyframes loadPanelOut{to{opacity:0;transform:scale(1.05) translateY(-6px)}}
   .loadSpin{width:38px;height:38px;margin:0 auto 14px;border-radius:50%;
     border:4px solid rgba(90,200,232,.25);border-top-color:#5AC8E8;
     animation:loadSpin .8s linear infinite;}
   @keyframes loadSpin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){ .loadSpin{animation:none} }
+
+  /* ---- the reveal ----
+     A sky with clouds over the field while the round is built, which then
+     slides apart to uncover it. z-index 9 puts it over every piece of HUD
+     (5-8) and under the overlays (10), so the panel reads on top of the sky
+     and the HUD is uncovered by the same motion as the field.
+
+     The sky is what actually hides the field; the clouds are shapes on it, so
+     they can stay open and airy instead of being a white wall. The sky starts
+     fading a beat after the clouds begin to move, which is what makes the
+     field appear THROUGH the gaps rather than behind a dissolve.
+
+     Everything animated is transform and opacity, which the compositor owns.
+     That is the whole reason this is DOM and not canvas: the main thread is
+     busy drawing the first frames of a match at exactly this moment, and an
+     animation needing layout or paint each frame would stutter precisely when
+     it is most on show. */
+  .curtain{position:absolute;inset:0;z-index:9;pointer-events:none;overflow:hidden;}
+  .curtain.hidden{display:none;}
+  .cSky{position:absolute;inset:-4px;
+    background:linear-gradient(179deg,#3E93CE 0%,#66B6E4 30%,#9AD5F2 62%,#CDECFB 100%);}
+  /* Light spilling through the gap as the banks separate. */
+  .cBloom{position:absolute;inset:-25%;opacity:0;
+    background:radial-gradient(34% 44% at 50% 52%, rgba(255,255,255,.95) 0 22%, rgba(220,242,255,.45) 48%, rgba(255,255,255,0) 74%);}
+  .cBank{position:absolute;top:0;bottom:0;width:66%;will-change:transform,opacity;}
+  .cBank.l{left:-4%;}
+  .cBank.r{right:-4%;}
+  /* One cumulus per element: lumpy top, flatter base, soft all round. */
+  .cloud{position:absolute;will-change:transform,opacity;
+    filter:drop-shadow(0 8px 12px rgba(58,110,152,.20));}
+  .cloud::before{content:'';position:absolute;inset:0;
+    background:
+      radial-gradient(27% 44% at 22% 63%, #fff 0 68%, rgba(255,255,255,0) 100%),
+      radial-gradient(31% 55% at 45% 41%, #fff 0 68%, rgba(255,255,255,0) 100%),
+      radial-gradient(26% 43% at 67% 57%, #fff 0 68%, rgba(255,255,255,0) 100%),
+      radial-gradient(19% 32% at 85% 71%, #fff 0 68%, rgba(255,255,255,0) 100%),
+      radial-gradient(58% 25% at 50% 79%, #fff 0 70%, rgba(255,255,255,0) 100%);}
+  /* Placed so the two banks overlap the middle generously — the seam is what
+     opens, and it must not be a straight edge. */
+  .c1{left:-6%; top:-8%;  width:74%; height:52%;}
+  .c2{left:14%; top:30%;  width:82%; height:56%;}
+  .c3{left:-14%;top:62%;  width:70%; height:48%;}
+  .c4{right:-8%;top:-4%;  width:78%; height:54%;}
+  .c5{right:12%;top:34%;  width:72%; height:50%;}
+  .c6{right:-12%;top:66%; width:80%; height:52%;}
+  .c2,.c5{opacity:.98;}
+  .c3,.c6{opacity:.94;}
+
+  /* Alive but not distracting while the panel is up. */
+  .curtain.hold .c1{animation:cDriftA 11s ease-in-out infinite alternate;}
+  .curtain.hold .c2{animation:cDriftB  9s ease-in-out infinite alternate;}
+  .curtain.hold .c3{animation:cDriftA 13s ease-in-out infinite alternate reverse;}
+  .curtain.hold .c4{animation:cDriftB 12s ease-in-out infinite alternate reverse;}
+  .curtain.hold .c5{animation:cDriftA 10s ease-in-out infinite alternate;}
+  .curtain.hold .c6{animation:cDriftB 14s ease-in-out infinite alternate;}
+  @keyframes cDriftA{from{transform:translate3d(0,0,0)}to{transform:translate3d(1.8%,-1.2%,0) scale(1.02)}}
+  @keyframes cDriftB{from{transform:translate3d(0,0,0)}to{transform:translate3d(-2.2%,1.4%,0) scale(1.03)}}
+
+  /* The parting. Each cloud leaves on its own timing and its own arc, which is
+     what reads as weather rather than as two doors opening. */
+  /* Easing matters more than duration here. A hard ease-out
+     (cubic-bezier(.16,.84,.3,1)) put four fifths of the travel in the first
+     third: the field snapped into view around 400ms and the remaining second
+     was just cloud tails drifting. This curve holds still for a beat, gathers
+     speed, and glides out — so the reveal happens across the whole beat
+     instead of in one jump. */
+  .curtain.part .cBank.l{animation:cBankL 1.55s cubic-bezier(.55,.03,.3,.98) forwards;}
+  .curtain.part .cBank.r{animation:cBankR 1.55s cubic-bezier(.55,.03,.3,.98) forwards;}
+  @keyframes cBankL{to{transform:translate3d(-46%,0,0)}}
+  @keyframes cBankR{to{transform:translate3d(46%,0,0)}}
+  /* Travel and fade are two animations on purpose. Folding the fade into the
+     same keyframe put it under the same front-loaded easing, and the clouds
+     were down to a tenth of their opacity 400ms in — they vanished on the spot
+     instead of sailing off, which loses the whole point of the motion. Each
+     cloud now stays solid for about seven tenths of its travel and only goes
+     translucent as it leaves the frame. */
+  .curtain.part .c1{animation:cGoL 1.42s cubic-bezier(.55,.03,.3,.98) .00s forwards, cPuffOut .34s linear 1.08s forwards;}
+  .curtain.part .c2{animation:cGoL 1.54s cubic-bezier(.55,.03,.3,.98) .06s forwards, cPuffOut .36s linear 1.24s forwards;}
+  .curtain.part .c3{animation:cGoL 1.46s cubic-bezier(.55,.03,.3,.98) .12s forwards, cPuffOut .34s linear 1.24s forwards;}
+  .curtain.part .c4{animation:cGoR 1.48s cubic-bezier(.55,.03,.3,.98) .03s forwards, cPuffOut .35s linear 1.16s forwards;}
+  .curtain.part .c5{animation:cGoR 1.56s cubic-bezier(.55,.03,.3,.98) .09s forwards, cPuffOut .36s linear 1.29s forwards;}
+  .curtain.part .c6{animation:cGoR 1.44s cubic-bezier(.55,.03,.3,.98) .00s forwards, cPuffOut .34s linear 1.10s forwards;}
+  @keyframes cGoL{to{transform:translate3d(-88%,-6%,0) rotate(-7deg) scale(1.22)}}
+  @keyframes cGoR{to{transform:translate3d(88%,-5%,0)  rotate(7deg)  scale(1.22)}}
+  @keyframes cPuffOut{to{opacity:0}}
+  /* Clears while the clouds are still on their way out, so the field is its
+     own colour rather than sitting under a long blue haze. */
+  .curtain.part .cSky{animation:cSkyOut .68s cubic-bezier(.36,0,.5,1) .30s forwards;}
+  .curtain.part .cBloom{animation:cBloomOut .95s ease-out .20s forwards;}
+  @keyframes cSkyOut{to{opacity:0}}
+  @keyframes cBloomOut{0%{opacity:0}30%{opacity:.55}100%{opacity:0}}
+  /* No sliding scenery for anyone who asked not to have it: same beat, plain fade. */
+  @media (prefers-reduced-motion:reduce){
+    .curtain.hold .c1,.curtain.hold .c2,.curtain.hold .c3,
+    .curtain.hold .c4,.curtain.hold .c5,.curtain.hold .c6{animation:none;}
+    .curtain.part .cBank.l,.curtain.part .cBank.r,.curtain.part .cBloom{animation:none;}
+    .curtain.part .c1,.curtain.part .c2,.curtain.part .c3,
+    .curtain.part .c4,.curtain.part .c5,.curtain.part .c6,
+    .curtain.part .cSky{animation:cFadeOut .6s ease-out forwards;}
+    @keyframes cFadeOut{to{opacity:0}}
+  }
   .panel{background:var(--panel);border:3px solid var(--panel-border);border-radius:18px;padding:32px 40px;max-width:520px;box-shadow:0 8px 24px rgba(0,0,0,.25);margin:auto;
     max-height:calc(100% - 6px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
   /* The buttons must never be what falls off the bottom: they stay pinned to the
@@ -407,6 +519,21 @@ window.addEventListener('DOMContentLoaded', function(){
       </div>
     </div>
 
+    <div class="curtain hidden" id="curtain">
+      <div class="cSky"></div>
+      <div class="cBank l">
+        <div class="cloud c1"></div>
+        <div class="cloud c2"></div>
+        <div class="cloud c3"></div>
+      </div>
+      <div class="cBank r">
+        <div class="cloud c4"></div>
+        <div class="cloud c5"></div>
+        <div class="cloud c6"></div>
+      </div>
+      <div class="cBloom"></div>
+    </div>
+
     <div class="overlay hidden" id="loadScreen">
       <div class="panel loadPanel">
         <div class="loadSpin"></div>
@@ -526,6 +653,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const startScreen = document.getElementById('startScreen');
   const endScreen = document.getElementById('endScreen');
   const loadScreen = document.getElementById('loadScreen');
+  const curtainEl = document.getElementById('curtain');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
@@ -4036,6 +4164,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const skillBtnCdEl = document.getElementById('skillBtnCd');
   const skillBtnIconEl = document.getElementById('skillBtnIcon');
   const mobileHintEl = document.getElementById('mobileHint');
+  let mobileHintTimer = 0;
   const abilityEls = document.querySelectorAll('.hud-abilities .ability');
   if(abilityEls[0]) bindTip(abilityEls[0], ()=>skillTipHtml('basic'));
   if(abilityEls[1]) bindTip(abilityEls[1], ()=>skillTipHtml('skill'));
@@ -8054,8 +8183,9 @@ window.addEventListener('DOMContentLoaded', function(){
       // The tutorial's first card says all of this and more, so the hint would
       // be two sets of instructions arguing over the same corner of the screen.
       if(mode !== 'tutorial'){
+        // Shown here, but timed from the reveal — see reveal().
         mobileHintEl.style.display='block';
-        setTimeout(()=>{ mobileHintEl.style.display='none'; }, 4000);
+        clearTimeout(mobileHintTimer);
       }
     }
     if(mode === 'tutorial') tutStart();
@@ -8099,10 +8229,13 @@ window.addEventListener('DOMContentLoaded', function(){
       +'% · enemy '+Math.round(towerHpFrac(enemyTowers)*100)+'%';
     endScreen.classList.remove('hidden');
   }
-  // A floor, not a delay: the panel stays up for as long as the build actually
-  // takes, and this only stops it strobing for a frame and a half on a machine
-  // fast enough to be done almost immediately.
-  const LOAD_MIN_MS = 180;
+  // A full three seconds of sky before the round opens, whether or not the
+  // build needed it. The panel is not only covering work any more — it is the
+  // beat the reveal plays out of, and cutting it short on a fast machine would
+  // cost the reveal its run-up.
+  const LOAD_MIN_MS = 3000;
+  const PART_MS = 1700;        // must match the longest .curtain.part animation
+  const PANEL_OUT_MS = 260;    // must match #loadScreen.leaving
   // The rest of the opening cost is not JavaScript at all. drawWater measures
   // 21ms a frame for the first stretch of EVERY match and 8ms after, on
   // byte-identical op counts — Skia warming its pattern and path caches for a
@@ -8111,8 +8244,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // few real frames have been drawn behind it, and let those frames take the
   // hit instead of the first seconds of play.
   const WARM_FRAMES = 8;
-  const LOAD_MAX_MS = 3000;    // never let the panel outstay its welcome
-  let roundHold = false, loadingRound = false, warmFrames = 0;
+  const LOAD_MAX_MS = 9000;    // never let the panel outstay its welcome
+  let roundHold = false, loadingRound = false, warmFrames = 0, curtainTimer = 0;
   // Every way into a round — Match, Survival, Tutorial, Play Again, the Enter
   // key — goes through here, so none of them can skip the panel.
   function guardedStart(mode){
@@ -8120,6 +8253,11 @@ window.addEventListener('DOMContentLoaded', function(){
     loadingRound = true;
     startScreen.classList.add('hidden');
     endScreen.classList.add('hidden');
+    // Sky first, then the panel on top of it. Both go up in this same tick so
+    // the field is never briefly naked between the click and the cover.
+    clearTimeout(curtainTimer);
+    curtainEl.classList.remove('hidden', 'part');
+    curtainEl.classList.add('hold');
     loadScreen.classList.remove('hidden');
     const shownAt = performance.now();
     // Two frames, not one. The first queues the panel; the second is evidence
@@ -8142,12 +8280,40 @@ window.addEventListener('DOMContentLoaded', function(){
           requestAnimationFrame(tryReveal);
           return;
         }
-        loadScreen.classList.add('hidden');
-        roundHold = false;
-        loadingRound = false;
+        reveal(mode);
       };
       requestAnimationFrame(tryReveal);
     }));
+  }
+  // The panel goes, the banks pull apart, and the match is let loose as they
+  // move rather than after they have gone — a field that only starts moving
+  // once the sky is clear looks like a photograph being uncovered. The clouds
+  // take under a second and a half, and nothing can reach you at your own base
+  // in that time: the truce runs for twenty seconds.
+  function reveal(mode){
+    // Panel out first, clouds a beat later: two things leaving at once reads as
+    // clutter, and the panel is what the eye is already on.
+    loadScreen.classList.add('leaving');
+    setTimeout(()=>{
+      loadScreen.classList.add('hidden');
+      loadScreen.classList.remove('leaving');
+    }, PANEL_OUT_MS);
+    curtainEl.classList.remove('hold');
+    curtainEl.classList.add('part');
+    roundHold = false;
+    loadingRound = false;
+    // The phone hint is a four-second timer started back in startRound, which
+    // the three-second hold would have spent behind the cloud. Restart it now
+    // that there is something to read it against.
+    if(isTouchDevice && mode !== 'tutorial'){
+      clearTimeout(mobileHintTimer);
+      mobileHintEl.style.display = 'block';
+      mobileHintTimer = setTimeout(()=>{ mobileHintEl.style.display='none'; }, 4000);
+    }
+    curtainTimer = setTimeout(()=>{
+      curtainEl.classList.add('hidden');
+      curtainEl.classList.remove('part');
+    }, PART_MS + 140);
   }
   // Everything the render path would otherwise build on first use, built now.
   // These were each a stutter somewhere in the opening seconds of a match.
