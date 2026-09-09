@@ -440,8 +440,21 @@
   .menuBoard button{margin:0;border:none;background:#BC4A40;color:#FFF1E8;cursor:pointer;
     font-family:'Baloo 2',sans-serif;font-weight:800;white-space:nowrap;
     font-size:clamp(12px,2.45vmin,20px);padding:1.5vmin 2vmin;border-radius:1.6vmin;
-    box-shadow:0 0.55vmin 0 #8A2F28;transition:transform .05s;}
-  .menuBoard button:active{transform:translateY(0.4vmin);box-shadow:0 0.15vmin 0 #8A2F28;}
+    box-shadow:0 0.55vmin 0 #8A2F28;transition:transform .05s,background .12s,box-shadow .12s;}
+  /* Only a pointer that can actually hover gets the lighter face. On touch,
+     :hover latches after a tap and the button would sit there lit up as though
+     it were still being pressed. */
+  @media (hover:hover){
+    .menuBoard button:hover{background:#D9695E;box-shadow:0 0.55vmin 0 #A03A31;}
+  }
+  /* Pressed: the same lighter face, and the button drops onto its own shadow.
+     Cream on this lighter red is 3.1:1 rather than the resting 4.53 — over the
+     bar for the bold 20px it is on a desktop, under it for the 12px a phone
+     clamps to. It is the state a finger is on top of for a fraction of a
+     second, not one anybody reads, so the resting colour is the one held to
+     the stricter number. */
+  .menuBoard button:active{background:#D9695E;transform:translateY(0.4vmin);
+    box-shadow:0 0.15vmin 0 #A03A31;}
   /* On a phone the square is only as wide as the screen, so the board — and
      everything scaled to it — comes out small: measured, the buttons were 26px
      tall, which is under half a finger. A floor on the touch target rather than
