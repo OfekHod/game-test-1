@@ -3,7 +3,7 @@ import pathlib
 from PIL import Image
 
 DIR_NAMES = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"]
-CLIPS = {"idle": (4, 2), "walk": (8, 4), "attack": (6, 3)}   # frames, cols
+CLIPS = {"idle": (6, 3), "walk": (12, 4), "attack": (8, 4)}   # frames, cols
 
 def frames(path, cw, ch, count, cols):
     """Frames of one clip/facing sheet, in playback order."""

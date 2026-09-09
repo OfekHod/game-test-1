@@ -24,46 +24,67 @@ variants.
 
 ## Animation sprite sheets
 
-`render3d/sheets/` holds the game-ready sprites: cel-shaded, 8 facings, three
-clips each, at **576x720 per frame**.
+`render3d/sheets/` holds the game-ready sprites: painted 2D look, 8 facings,
+three clips each.
 
-| Clip | Frames | Grid | Sheet size | Loops |
-|---|---|---|---|---|
-| `idle` | 4 | 2x2 | 1152x1440 | yes |
-| `walk` | 8 | 4x2 | 2304x1440 | yes |
-| `attack` | 6 | 3x2 | 1728x1440 | no |
+| Clip | Frames | Grid | Loops |
+|---|---|---|---|
+| `idle` | 6 | 3x2 | yes |
+| `walk` | 12 | 4x3 | yes |
+| `attack` | 8 | 4x2 | no |
 
 **One file per hero per clip per facing**, at
-`sheets/<creep>/<clip>_<DIR>.png` — for example
-`sheets/radiant_vanguard/walk_SE.png`.
+`sheets/<creep>/<clip>_<DIR>.png` — e.g. `sheets/dire_ghoul/walk_SE.png`.
+Frames pack row-major from the top-left, so frame *i* sits at
+`(i % cols * frameW, i / cols * frameH)`.
 
-That split is deliberate. All eight facings in one sheet at this cell size
-would be 4608px wide, past the **4096 max texture size** many GPUs still
-enforce; every file here stays comfortably under it, and each hero's assets sit
-in one folder. Frames are packed row-major (left to right, then top to bottom)
-starting at the top-left, so frame *i* is at
-`(i % cols * 576, i / cols * 720)`.
+### Cell size is per hero
 
-**Direction order** is `E, SE, S, SW, W, NW, N, NE`. `E` is the character
-facing screen-right (the original side profile), and yaw increases clockwise
-viewed from above. Camera elevation is 0.38 rad (~22 degrees), a shallow
-three-quarter view that keeps all eight facings distinguishable.
+| Hero | Cell | Why |
+|---|---|---|
+| `radiant_vanguard` | 648x648 | upright, sword out to the side |
+| `radiant_longbowman` | 664x632 | drawn bow is wider than he is tall |
+| `dire_ghoul` | 568x736 | hunched but tall, arm raised |
+| `dire_hexcaster` | 568x744 | tallest, staff overhead |
+| `neutral_rock_golem` | 712x592 | squat and wide |
 
-Facings are **rendered, not mirrored** — E and W are separate renders, so
-asymmetric details (the vanguard's shield arm, the bowman's draw hand) stay on
-the correct side.
+A single cell shape for everyone wasted a lot of frame: the creeps filled only
+**54%** of their cell height, and the golem is wide where the hexcaster is tall.
+Because each hero ships its own files there is no reason to share a cell, so
+`autoframe.py` measures each creep's own proportions, picks a cell of matching
+aspect at a constant pixel budget, then iterates camera height and zoom until
+the worst pose across all eight facings just fits. They now fill ~94% in both
+axes — roughly three times the pixels on the character, before any change in
+sheet size.
 
-Each hero folder carries a `<creep>.json` describing all of the above for
-engine import. Previews live in `sheets/preview/`.
+Re-run it after changing a model or a pose:
 
 ```sh
-cd render3d/src
-python3 make_sheets.py      # render every sheet (~90 min; skips existing files)
+python3 autoframe.py      # refits CELL, fl and target in each creep script
+```
+
+Splitting per facing also keeps every file under the **4096 max texture size**
+many GPUs still enforce; all eight facings in one sheet would not.
+
+**Direction order** is `E, SE, S, SW, W, NW, N, NE`. `E` faces screen-right,
+yaw increases clockwise viewed from above, camera elevation 0.38 rad (~22 deg).
+Facings are **rendered, not mirrored**, so asymmetric details stay put.
+
+Each hero folder carries a `<creep>.json` with its own cell size and clip
+table. Previews are in `sheets/preview/`.
+
+```sh
+python3 make_sheets.py      # render every sheet (~1 h; skips existing files)
 python3 build_previews.py   # GIFs, strips, facing rows
 ```
 
-`make_sheets.py` skips files that already exist, so an interrupted run can be
-re-run to finish, and deleting one file re-renders just that one.
+### Painted look
+
+Shading matches `assets/sprites/heroes/chibi_marksman`: quantised `patches()`
+tonal blocks rather than continuous grain, no bump mapping, a warm shadow tint
+and a lifted highlight band. Continuous noise and bump both read as real
+surface roughness, which fights a flat 2D style. Per-hero controls live in each
+script's `STYLE` dict; see the chibi's README for what each knob does.
 
 ### How the animation works
 
@@ -81,11 +102,9 @@ Three constraints matter if you edit it:
   bound, which tears the legs into streaks while marching. A hard cut keeps the
   transform rigid below the pivot, so the field stays valid.
 - **`uLip` scales returned distances** (0.85 idle / 0.45 walk / 0.35 attack) to
-  compensate for the shear the arm and torso warps still introduce. Lower it if
-  a new pose streaks; raise it for speed.
-- **Robed figures set `legAmp=0`** in their `RIG` dict. The hip cut splits any
-  hem that crosses it, which tore the hexcaster's robe until his legs were
-  pinned.
+  compensate for the shear the arm and torso warps still introduce.
+- **Robed figures set `legAmp=0`** in their `RIG` dict; the hip cut splits any
+  hem that crosses it.
 
 ## 3D render set
 

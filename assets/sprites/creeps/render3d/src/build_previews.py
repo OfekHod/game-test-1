@@ -7,21 +7,22 @@ from PIL import Image
 
 SHEETS = HERE.parent / "sheets"
 PREV = SHEETS / "preview"
-CW, CH = 576, 720
 NAMES = ["radiant_vanguard", "radiant_longbowman", "dire_ghoul",
          "dire_hexcaster", "neutral_rock_golem"]
 
 def main():
     PREV.mkdir(parents=True, exist_ok=True)
+    import importlib
     for n in NAMES:
+        CW, CH = importlib.import_module(n).CELL
         d = SHEETS / n
         for clip, (count, cols) in st.CLIPS.items():
             if clip == "idle":
                 continue
             st.gif(d/f"{clip}_E.png", PREV/f"{n}_{clip}.gif", CW, CH, count, cols,
-                   ms=110 if clip == "walk" else 130)
-        st.strip(d/"walk_E.png", PREV/f"{n}_walk_strip.png", CW, CH, 8, 4)
-        st.dir_row(d, "walk", PREV/f"{n}_directions.png", CW, CH, 8, 4, frame=2)
+                   ms=80 if clip == "walk" else 100, scale=0.34)
+        st.strip(d/"walk_E.png", PREV/f"{n}_walk_strip.png", CW, CH, 12, 4, scale=0.22)
+        st.dir_row(d, "walk", PREV/f"{n}_directions.png", CW, CH, 12, 4, frame=3, scale=0.30)
         print(f"{n}: previews")
     rows = [Image.open(PREV/f"{n}_directions.png").convert("RGB") for n in NAMES]
     W = max(r.width for r in rows); H = sum(r.height for r in rows)

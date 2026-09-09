@@ -4,12 +4,16 @@ BODY = r"""
 void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
               out float metal, out float bAmp, out float bScale, out vec3 emis){
   emis=vec3(0.0); bAmp=0.0; bScale=1.0;
-  if(id<1.5){      albedo=vec3(0.250,0.330,0.150); metal=0.0;  rough=0.70; }
-  else if(id<2.5){ albedo=vec3(0.780,0.750,0.590); metal=0.0;  rough=0.52; }
-  else if(id<3.5){ albedo=vec3(0.400,0.205,0.100); metal=0.55; rough=0.58; }
-  else if(id<4.5){ albedo=vec3(0.255,0.170,0.090); metal=0.0;  rough=0.78; }
-  else if(id<5.5){ albedo=vec3(0.055,0.050,0.040); metal=0.0;  rough=0.90; }
-  else {           albedo=vec3(0.0); metal=0.0; rough=1.0; emis=vec3(2.4,0.78,0.20); }
+  float big  = patches(p,  6.5, 3.0);   // broad painted blocks
+  float mid  = patches(p, 14.0, 2.0);   // second, smaller pass
+  float tone = mix(0.90, 1.14, big) * mix(0.96, 1.06, mid);
+  if(id<1.5){      albedo=vec3(0.250,0.330,0.150); metal=0.00;  rough=0.70; }
+  else if(id<2.5){ albedo=vec3(0.780,0.750,0.590); metal=0.00;  rough=0.52; }
+  else if(id<3.5){ albedo=vec3(0.400,0.205,0.100); metal=0.40; rough=0.58; }
+  else if(id<4.5){ albedo=vec3(0.255,0.170,0.090); metal=0.00;  rough=0.78; }
+  else if(id<5.5){ albedo=vec3(0.055,0.050,0.040); metal=0.00;  rough=0.90; }
+  else {           albedo=vec3(0.0); metal=0.00; rough=1.0; emis=vec3(2.4,0.78,0.20); }
+  albedo *= tone;
 }
 
 vec2 mapRaw(vec3 p){
@@ -102,5 +106,7 @@ vec2 mapRaw(vec3 p){
   return res;
 }
 """
-CAM = dict(target=(0.0, 0.86, 0.0), dist=4.2, fl=1.26, elev=0.38)
+STYLE = dict(shadowTint=(0.480,0.455,0.420), ink=1.45, spec=0.26, contrast=1.0, lift=0.34)
+CELL = (568, 736)
+CAM = dict(target=(0.0, 0.9976, 0.0), dist=4.2, fl=1.785, elev=0.38)
 RIG = dict(hipY=0.9, shldY=1.24, armZ=0.19, amp=0.9)
