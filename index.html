@@ -171,6 +171,20 @@
   /* The panel used to be switched off with display:none, one frame after three
      seconds of sitting there. It gets to leave properly now, and it leaves
      BEFORE the clouds move so the two do not compete for the eye. */
+  /* A determinate bar, because the wait really is a known three seconds. Its
+     duration is set from LOAD_MIN_MS in script so the two cannot drift apart.
+     If the build outlasts the floor on a slow device the bar simply sits full,
+     which is the honest reading of that: the clock is done, the work is not. */
+  .loadBar{margin:18px auto 2px;width:82%;height:7px;border-radius:99px;
+    background:rgba(70,130,170,.20);overflow:hidden;}
+  .loadBar > i{display:block;height:100%;border-radius:99px;
+    background:linear-gradient(90deg,#4FBEE0,#8FE3F7);
+    transform:scaleX(0);transform-origin:0 50%;}
+  #loadScreen:not(.leaving) .loadBar > i{animation:loadFill 3s cubic-bezier(.3,.62,.35,1) forwards;}
+  @keyframes loadFill{to{transform:scaleX(1)}}
+  /* The panel arrives rather than simply being switched on. */
+  #loadScreen:not(.leaving) .loadPanel{animation:loadPanelIn .36s cubic-bezier(.2,.9,.3,1) both;}
+  @keyframes loadPanelIn{from{opacity:0;transform:scale(.94) translateY(10px)}to{opacity:1;transform:none}}
   #loadScreen.leaving{animation:loadVeilOut .26s ease-out forwards;}
   #loadScreen.leaving .panel{animation:loadPanelOut .26s cubic-bezier(.4,0,.7,.9) forwards;}
   @keyframes loadVeilOut{to{opacity:0}}
@@ -179,7 +193,10 @@
     border:4px solid rgba(90,200,232,.25);border-top-color:#5AC8E8;
     animation:loadSpin .8s linear infinite;}
   @keyframes loadSpin{to{transform:rotate(360deg)}}
-  @media (prefers-reduced-motion:reduce){ .loadSpin{animation:none} }
+  @media (prefers-reduced-motion:reduce){
+    .loadSpin{animation:none}
+    #loadScreen:not(.leaving) .loadPanel{animation:none}
+  }
 
   /* ---- the reveal ----
      A sky with clouds over the field while the round is built, which then
@@ -200,7 +217,7 @@
   .curtain{position:absolute;inset:0;z-index:9;pointer-events:none;overflow:hidden;}
   .curtain.hidden{display:none;}
   .cSky{position:absolute;inset:-4px;
-    background:linear-gradient(179deg,#3E93CE 0%,#66B6E4 30%,#9AD5F2 62%,#CDECFB 100%);}
+    background:linear-gradient(179deg,#2C82C4 0%,#54A9DD 27%,#87C8ED 58%,#BCE4F8 100%);}
   /* Light spilling through the gap as the banks separate. */
   .cBloom{position:absolute;inset:-25%;opacity:0;
     background:radial-gradient(34% 44% at 50% 52%, rgba(255,255,255,.95) 0 22%, rgba(220,242,255,.45) 48%, rgba(255,255,255,0) 74%);}
@@ -208,35 +225,97 @@
   .cBank.l{left:-4%;}
   .cBank.r{right:-4%;}
   /* One cumulus per element: lumpy top, flatter base, soft all round. */
-  .cloud{position:absolute;will-change:transform,opacity;
-    filter:drop-shadow(0 8px 12px rgba(58,110,152,.20));}
-  .cloud::before{content:'';position:absolute;inset:0;
+  /* Two elements per cloud, and the split is load-bearing. The outer one is
+     what leaves during the parting; the inner one hovers, and keeps hovering
+     while the outer slides out. Putting both on one element meant the hover
+     stopped the instant the parting began, and since a `to`-only keyframe
+     starts from the element's underlying value rather than wherever the hover
+     had drifted to, every cloud snapped back a dozen pixels before setting
+     off. Nested, the two transforms just compose. */
+  .cloud{position:absolute;will-change:transform,opacity;}
+  .cloud > i{position:absolute;inset:0;display:block;will-change:transform;
+    filter:drop-shadow(0 8px 12px rgba(58,110,152,.20));
     background:
       radial-gradient(27% 44% at 22% 63%, #fff 0 68%, rgba(255,255,255,0) 100%),
       radial-gradient(31% 55% at 45% 41%, #fff 0 68%, rgba(255,255,255,0) 100%),
       radial-gradient(26% 43% at 67% 57%, #fff 0 68%, rgba(255,255,255,0) 100%),
       radial-gradient(19% 32% at 85% 71%, #fff 0 68%, rgba(255,255,255,0) 100%),
       radial-gradient(58% 25% at 50% 79%, #fff 0 70%, rgba(255,255,255,0) 100%);}
+  /* A distant, faint layer for depth, drifting far slower than the banks. */
+  /* Distant wisps for depth. At .45 opacity with large puffs this was a sheet
+     of haze over the whole sky and flattened everything to white — the sky is
+     the point here, so it is small and faint. */
+  .cFar{position:absolute;inset:-12%;opacity:.22;will-change:transform;
+    background:
+      radial-gradient(13% 7% at 16% 19%, #fff 0 58%, rgba(255,255,255,0) 100%),
+      radial-gradient(15% 8% at 60% 11%, #fff 0 58%, rgba(255,255,255,0) 100%),
+      radial-gradient(11% 6% at 86% 30%, #fff 0 58%, rgba(255,255,255,0) 100%),
+      radial-gradient(14% 7% at 36% 84%, #fff 0 58%, rgba(255,255,255,0) 100%),
+      radial-gradient(10% 6% at 74% 70%, #fff 0 58%, rgba(255,255,255,0) 100%);
+    animation:cFarDrift 15s linear infinite;}
+  @keyframes cFarDrift{to{transform:translate3d(3.5%,-1%,0)}}
   /* Placed so the two banks overlap the middle generously — the seam is what
      opens, and it must not be a straight edge. */
-  .c1{left:-6%; top:-8%;  width:74%; height:52%;}
-  .c2{left:14%; top:30%;  width:82%; height:56%;}
-  .c3{left:-14%;top:62%;  width:70%; height:48%;}
-  .c4{right:-8%;top:-4%;  width:78%; height:54%;}
-  .c5{right:12%;top:34%;  width:72%; height:50%;}
-  .c6{right:-12%;top:66%; width:80%; height:52%;}
+  /* Sized to leave real sky between them. Three clouds per bank at 74-82% of
+     the bank's width covered the whole frame in white, which cost both the
+     blue and the sense of a gap opening. The sky is what hides the field, so
+     the clouds do not have to. */
+  .c1{left:-8%;  top:-10%; width:64%; height:46%;}
+  .c2{left:10%;  top:31%;  width:70%; height:50%;}
+  .c3{left:-16%; top:64%;  width:60%; height:43%;}
+  .c4{right:-10%;top:-6%;  width:66%; height:47%;}
+  .c5{right:8%;  top:35%;  width:62%; height:44%;}
+  .c6{right:-14%;top:68%;  width:68%; height:46%;}
   .c2,.c5{opacity:.98;}
   .c3,.c6{opacity:.94;}
 
-  /* Alive but not distracting while the panel is up. */
-  .curtain.hold .c1{animation:cDriftA 11s ease-in-out infinite alternate;}
-  .curtain.hold .c2{animation:cDriftB  9s ease-in-out infinite alternate;}
-  .curtain.hold .c3{animation:cDriftA 13s ease-in-out infinite alternate reverse;}
-  .curtain.hold .c4{animation:cDriftB 12s ease-in-out infinite alternate reverse;}
-  .curtain.hold .c5{animation:cDriftA 10s ease-in-out infinite alternate;}
-  .curtain.hold .c6{animation:cDriftB 14s ease-in-out infinite alternate;}
-  @keyframes cDriftA{from{transform:translate3d(0,0,0)}to{transform:translate3d(1.8%,-1.2%,0) scale(1.02)}}
-  @keyframes cDriftB{from{transform:translate3d(0,0,0)}to{transform:translate3d(-2.2%,1.4%,0) scale(1.03)}}
+  /* The hover. The first version used 9-to-14 second alternating drifts, which
+     over a three second wait moved each cloud by less than one percent of its
+     width — they read as a still picture. These are closed figure-of-eight
+     paths of four to seven seconds, so a good part of the loop plays out while
+     you are waiting and the clouds visibly float.
+     
+     Every path starts and ends at no offset, so nothing pops when the hover is
+     applied and the loop closes seamlessly. They are desynchronised by having
+     different periods rather than by negative delays, which would have started
+     each cloud already displaced. Eight stops per cycle is enough that linear
+     timing traces a smooth curve; per-segment easing would pulse instead. */
+  .curtain .c1 > i{animation:cHovA 5.2s linear infinite;}
+  .curtain .c2 > i{animation:cHovB 6.4s linear infinite;}
+  .curtain .c3 > i{animation:cHovC 4.6s linear infinite;}
+  .curtain .c4 > i{animation:cHovB 5.8s linear infinite;}
+  .curtain .c5 > i{animation:cHovA 6.9s linear infinite;}
+  .curtain .c6 > i{animation:cHovC 5.0s linear infinite;}
+  @keyframes cHovA{
+    0%{transform:translate3d(0,0,0) scale(1)}
+    12.5%{transform:translate3d(2.26%,-1.6%,0) scale(1.002)}
+    25%{transform:translate3d(3.2%,0,0) scale(1.006)}
+    37.5%{transform:translate3d(2.26%,1.6%,0) scale(1.010)}
+    50%{transform:translate3d(0,0,0) scale(1.012)}
+    62.5%{transform:translate3d(-2.26%,-1.6%,0) scale(1.010)}
+    75%{transform:translate3d(-3.2%,0,0) scale(1.006)}
+    87.5%{transform:translate3d(-2.26%,1.6%,0) scale(1.002)}
+    100%{transform:translate3d(0,0,0) scale(1)}}
+  @keyframes cHovB{
+    0%{transform:translate3d(0,0,0) scale(1)}
+    12.5%{transform:translate3d(-2.47%,-1.9%,0) scale(1.003)}
+    25%{transform:translate3d(-3.5%,0,0) scale(1.008)}
+    37.5%{transform:translate3d(-2.47%,1.9%,0) scale(1.012)}
+    50%{transform:translate3d(0,0,0) scale(1.014)}
+    62.5%{transform:translate3d(2.47%,-1.9%,0) scale(1.012)}
+    75%{transform:translate3d(3.5%,0,0) scale(1.008)}
+    87.5%{transform:translate3d(2.47%,1.9%,0) scale(1.003)}
+    100%{transform:translate3d(0,0,0) scale(1)}}
+  @keyframes cHovC{
+    0%{transform:translate3d(0,0,0) scale(1)}
+    12.5%{transform:translate3d(1.8%,1.98%,0) scale(1.004)}
+    25%{transform:translate3d(0,2.8%,0) scale(1.009)}
+    37.5%{transform:translate3d(-1.8%,1.98%,0) scale(1.013)}
+    50%{transform:translate3d(0,0,0) scale(1.015)}
+    62.5%{transform:translate3d(1.8%,-1.98%,0) scale(1.013)}
+    75%{transform:translate3d(0,-2.8%,0) scale(1.009)}
+    87.5%{transform:translate3d(-1.8%,-1.98%,0) scale(1.004)}
+    100%{transform:translate3d(0,0,0) scale(1)}}
 
   /* The parting. Each cloud leaves on its own timing and its own arc, which is
      what reads as weather rather than as two doors opening. */
@@ -269,12 +348,13 @@
      own colour rather than sitting under a long blue haze. */
   .curtain.part .cSky{animation:cSkyOut .68s cubic-bezier(.36,0,.5,1) .30s forwards;}
   .curtain.part .cBloom{animation:cBloomOut .95s ease-out .20s forwards;}
+  .curtain.part .cFar{animation:cFarDrift 15s linear infinite, cFarOut .8s ease-out .1s forwards;}
+  @keyframes cFarOut{to{opacity:0}}
   @keyframes cSkyOut{to{opacity:0}}
   @keyframes cBloomOut{0%{opacity:0}30%{opacity:.55}100%{opacity:0}}
   /* No sliding scenery for anyone who asked not to have it: same beat, plain fade. */
   @media (prefers-reduced-motion:reduce){
-    .curtain.hold .c1,.curtain.hold .c2,.curtain.hold .c3,
-    .curtain.hold .c4,.curtain.hold .c5,.curtain.hold .c6{animation:none;}
+    .curtain .cloud > i, .cFar, .curtain.part .cFar{animation:none;}
     .curtain.part .cBank.l,.curtain.part .cBank.r,.curtain.part .cBloom{animation:none;}
     .curtain.part .c1,.curtain.part .c2,.curtain.part .c3,
     .curtain.part .c4,.curtain.part .c5,.curtain.part .c6,
@@ -521,15 +601,16 @@ window.addEventListener('DOMContentLoaded', function(){
 
     <div class="curtain hidden" id="curtain">
       <div class="cSky"></div>
+      <div class="cFar"></div>
       <div class="cBank l">
-        <div class="cloud c1"></div>
-        <div class="cloud c2"></div>
-        <div class="cloud c3"></div>
+        <div class="cloud c1"><i></i></div>
+        <div class="cloud c2"><i></i></div>
+        <div class="cloud c3"><i></i></div>
       </div>
       <div class="cBank r">
-        <div class="cloud c4"></div>
-        <div class="cloud c5"></div>
-        <div class="cloud c6"></div>
+        <div class="cloud c4"><i></i></div>
+        <div class="cloud c5"><i></i></div>
+        <div class="cloud c6"><i></i></div>
       </div>
       <div class="cBloom"></div>
     </div>
@@ -539,6 +620,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <div class="loadSpin"></div>
         <h1>Building the map</h1>
         <p>Lanes, forest, river and camps&hellip;</p>
+        <div class="loadBar"><i id="loadBarFill"></i></div>
       </div>
     </div>
 
@@ -654,6 +736,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const endScreen = document.getElementById('endScreen');
   const loadScreen = document.getElementById('loadScreen');
   const curtainEl = document.getElementById('curtain');
+  const loadBarFill = document.getElementById('loadBarFill');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
@@ -8235,6 +8318,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // cost the reveal its run-up.
   const LOAD_MIN_MS = 3000;
   const PART_MS = 1700;        // must match the longest .curtain.part animation
+  // The bar is told how long the wait is rather than being given a duration in
+  // the stylesheet, so changing the floor above cannot leave it out of step.
+  loadBarFill.style.animationDuration = LOAD_MIN_MS + 'ms';
   const PANEL_OUT_MS = 260;    // must match #loadScreen.leaving
   // The rest of the opening cost is not JavaScript at all. drawWater measures
   // 21ms a frame for the first stretch of EVERY match and 8ms after, on
