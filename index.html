@@ -4399,16 +4399,22 @@ window.addEventListener('DOMContentLoaded', function(){
   // the order you cannot otherwise give: everything else posts a hero to a spot.
   function laneOrder(h, laneIdx){
     if(!h || !h.alive) return;
-    h.mode = 'lane'; h.laneIdx = laneIdx % LANE_YS.length; setLanePath(h);
-    h.moveTarget = null; h.followTarget = null; h.standX = null; h.standY = null;
     squadTogether = false;
-    if(tut.on) tutNote('lane');
-    addFloater(h.x, h.y - h.r - 46, laneIdx===0 ? 'TOP LANE' : 'BOTTOM LANE', '#8FD6FF', true);
+    // HAND HIM OVER FIRST, then write the order. focusHero deliberately cancels
+    // a lane order on the hero you are leaving — "he holds where you left him
+    // instead of quietly resuming a lane you never told him to push" — so doing
+    // this the other way round wiped the order that had just been given, and
+    // dragging the hero you were DRIVING onto a minimap half did nothing at all.
+    // Dragging one of the other two always worked, which is why it hid so long.
     if(h === playerTeam[activePlayerIdx]){
       for(let step=1; step<playerTeam.length; step++){
         if(focusHero((activePlayerIdx+step) % playerTeam.length)) break;
       }
     }
+    h.mode = 'lane'; h.laneIdx = laneIdx % LANE_YS.length; setLanePath(h);
+    h.moveTarget = null; h.followTarget = null; h.standX = null; h.standY = null;
+    if(tut.on) tutNote('lane');
+    addFloater(h.x, h.y - h.r - 46, laneIdx===0 ? 'TOP LANE' : 'BOTTOM LANE', '#8FD6FF', true);
   }
   function soloOrder(h, wx, wy){
     if(tut.on) tutNote('solo', wx, wy);
@@ -4971,7 +4977,13 @@ window.addEventListener('DOMContentLoaded', function(){
   function spawnWave(){
     for(let l=0;l<LANE_YS.length;l++){
       spawnLaneWave(l,'player');
-      spawnLaneWave(l,'enemy');
+      // Their base goes quiet for the tutorial's siege phase, along with their
+      // team. Two bases feeding one lane at the same rate is a STANDOFF that
+      // nothing on the field can break once their heroes are out of it: driven
+      // headless with a level-16 tank and two more heroes on the lane, the front
+      // never moved past 2760 in six minutes and the outpost was never touched.
+      // That is the correct behaviour for a Match and an unwinnable lesson here.
+      if(!(tut.on && tut.holdFoeWaves)) spawnLaneWave(l,'enemy');
     }
   }
   function survGap(){ return Math.max(SURV_MIN_GAP, SURV_FIRST_GAP - survWave*SURV_GAP_STEP); }
@@ -5598,13 +5610,21 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!playerTeam[activePlayerIdx].alive) switchToNextLiving();
     updateActiveControl(dt);
     updateAssist();
-    updateEnemyMacro(dt);
-    applyEnemyMacro();
-    if(tut.on && tut.spar) tutSparAI(dt);
+    // While the tutorial has their team sent home, none of the enemy AI runs at
+    // all — not the macro, not the carry, not the idle pass. Every one of them
+    // would otherwise pull a hero back out of the base to defend the outpost the
+    // siege phase is asking you to take.
+    const tutHome = tut.on && tut.homeEnemies;
+    if(!tutHome){
+      updateEnemyMacro(dt);
+      applyEnemyMacro();
+    }
+    if(tutHome) tutEnemiesHome(dt);
+    else if(tut.on && tut.spar) tutSparAI(dt);
     else if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
     else { aiTrySkill(enemyTeam[0], dt); lanePush(enemyTeam[0], dt); tryAutoAttack(enemyTeam[0]); }
     updateIdleAI(playerTeam, activePlayerIdx, enemyTeam, enemyCreeps, dt, true);
-    updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
+    if(!tutHome) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
     for(const h of playerTeam){ if(h.alive) resolveSolidCollision(h); }
     for(const h of enemyTeam){ if(h.alive) resolveSolidCollision(h); }
     // Backstop for the truce. Dash, knockback and any path I have not thought of
@@ -6806,7 +6826,6 @@ window.addEventListener('DOMContentLoaded', function(){
     // Only a hero's rocket stuns; a tower shell does not, or a lane would be
     // unplayable. Everything caught in the blast is frozen for STUN_TIME.
     if(attackerHero){
-      if(tut.on) tutNote('blast', { x, y, r:R, by:attackerHero });
       for(const list of [oppCreeps, neutralCreeps])
         for(const c of list) if(c.hp>0 && dist(x,y,c.x,c.y)<=R) applyStun(c, STUN_TIME);
       for(const oh of oppTeam)
@@ -6895,7 +6914,6 @@ window.addEventListener('DOMContentLoaded', function(){
     const wasUp = tower.hp > 0;
     tower.hp=Math.max(0,tower.hp-dmg);
     if(wasUp && tower.hp<=0) addScore(tower.side==='player' ? 'enemy' : 'player', PTS.tower, tower.x, tower.y);
-    if(tut.on) tutNote('towerHit', tower);
     tower.noHitT = 0;
     tower.flash=0.18;
     addFloater(tower.x, tower.y-tower.r-10, String(dmg), dmgColor(tower.side==='player', isCrit), isCrit, false, isCrit);
@@ -7644,6 +7662,10 @@ window.addEventListener('DOMContentLoaded', function(){
   const tut = {
     on:false, i:-1, t:0, p:null, ready:0, ack:false,
     holdWaves:true, noAuto:false, spar:false, sparCd:0, sparFlee:false,
+    // The siege phase sends their whole team home and keeps it there, and stops
+    // their base sending waves, so the lane the tutorial asks you to push is a
+    // lane with nobody defending it.
+    homeEnemies:false, holdFoeWaves:false,
     // The jungle stays empty until the step that sends you into it, and every
     // early step keeps west of it. Walking into a camp you were never told
     // about is the one surprise the opening cannot afford.
@@ -7700,6 +7722,26 @@ window.addEventListener('DOMContentLoaded', function(){
     if(tut.sparCd <= 0 && d < attackRange(e) && e.mana >= HERO_STATS[e.type].basicManaCost){
       tut.sparCd = TUT_SPAR_RATE;
       fireBasic(e, h.x, h.y, false, 1);
+    }
+  }
+
+  // Every enemy hero walks back to his own base and stands there. The siege
+  // phase asks you to take an outpost with your squad, and a defended outpost is
+  // a different lesson — one about a fight you cannot win at level five. So for
+  // that phase their team goes home: their macro AI is skipped entirely, which
+  // is also what keeps them from shooting anything on the way past.
+  function tutEnemiesHome(dt){
+    for(const e of enemyTeam){
+      if(!e.alive) continue;
+      e.mode = 'idle'; e.followTarget = null; e.moveTarget = null;
+      e.standX = null; e.standY = null; e.pushing = false; e.siegeT = null;
+      const d = dist(e.x, e.y, e.homeX, e.homeY);
+      if(d > 24){
+        moveHeroToward(e, e.homeX, e.homeY, heroSpeed(e), dt);
+        e.facing = Math.atan2(e.homeY-e.y, e.homeX-e.x);
+      } else {
+        e.facing = Math.PI;              // home, and watching the way you come
+      }
     }
   }
 
@@ -7774,13 +7816,6 @@ window.addEventListener('DOMContentLoaded', function(){
   // hero left of centre with the room to the east.
   const TUT_SHOW_ANGLE = -0.42;
   const TUT_PACK = 5;               // mobs in the pack the drops step asks you to clear
-  const TUT_COMBO_PACK = 4;         // and in the huddle the stun step asks you to catch
-  // Tough enough that the rocket cannot finish them on its own — a stun with
-  // nothing left to kill afterwards teaches half the combination.
-  const TUT_COMBO_HP = 200;
-  // Half the blast radius, so the far side of the huddle is inside a blast
-  // centred on the near side — a rocket that touches one touches all of them.
-  const TUT_COMBO_R = ROCKET_SPLASH_RADIUS * 0.38;
   // The sparring pass. He walks into view, holds at arm's length and plinks —
   // one shot every couple of seconds instead of five a second — because the
   // step is for meeting an enemy hero, not for losing to one. Their outposts
@@ -7821,16 +7856,6 @@ window.addEventListener('DOMContentLoaded', function(){
     const p = tut.p;
     if(kind==='kill'){
       if(b) p.dashKill = true;
-      if(a && a.side==='player' && a.type==='carry' && a === playerTeam[activePlayerIdx])
-        p.carryKills = (p.carryKills||0) + 1;
-    }
-    else if(kind==='blast'){
-      // How many of the step's pack that rocket actually caught. The best one
-      // counts, so a poor first throw is not held against you.
-      if(!p.pack || !a || !a.by || a.by.type !== 'tank') return;
-      let n = 0;
-      for(const c of p.pack) if(tutAlive(c) && dist(a.x, a.y, c.x, c.y) <= a.r) n++;
-      p.stunned = Math.max(p.stunned || 0, n);
     }
     else if(kind==='orb')  p.orbs = (p.orbs||0) + 1;
     else if(kind==='mana') p.mana = (p.mana||0) + 1;
@@ -7840,7 +7865,9 @@ window.addEventListener('DOMContentLoaded', function(){
     else if(kind==='solo') p.solo = true;
     else if(kind==='lane') p.lane = true;
     else if(kind==='assemble') p.assemble = true;
-    else if(kind==='towerHit'){ if(a && a.side==='enemy') p.towerHit = true; }
+    // No 'towerHit': the siege phase reads the outpost's own hp, because a
+    // creep takes a tower down without ever going through applyTowerHit and a
+    // phase that watched only the hero's hits would hang on the last 7 points.
     else if(kind==='heroHit'){
       if(a && a.side==='enemy' && b && b === playerTeam[activePlayerIdx]) p.heroHit = true;
     }
@@ -8010,70 +8037,21 @@ window.addEventListener('DOMContentLoaded', function(){
     done:()=>{ const c = tut.p.cast || {}; return !!(c.tank && c.support); }
   },
   {
-    title:'Stun, then switch',
-    text:()=>'Three heroes, not one hero three times. The tank\u2019s rocket <b>freezes everything in the blast for three seconds</b> &mdash; stunned mobs cannot move, chase or hit back. That is a window, and the carry is what you spend it on. '
-      + tutPick('Rocket this pack with the <b>tank</b>, then <k>switch</k> to the carry and cut them down.',
-                'Rocket this pack with the <b>tank</b>, then <k>tap the carry\u2019s portrait</k> and cut them down.'),
-    goal(){
-      const n = tut.p.stunned || 0;
-      const sw = tutTouch() ? 'tap his portrait' : 'key 2';
-      const sw1 = tutTouch() ? 'tap his portrait' : 'key 1';
-      if(n < 3) return '1 · Take the TANK ('+sw+') and rocket 3 of them at once — best so far '+n+' / 3';
-      return '2 · Now take the CARRY ('+sw1+') and kill 3 yourself — '+Math.min(3, tut.p.carryKills||0)+' / 3';
-    },
-    enter(){
-      // These wake up: a stun is worth nothing against something that was never
-      // going to move. This is also where the neutral AI comes on for good.
-      tut.holdCamps = false;
-      // Clear the practice mobs left over from earlier steps, so the only thing
-      // that wakes is the pack this step is about. A tutorial mob is the one
-      // whose camp is not on the map.
-      for(let i=neutralCreeps.length-1;i>=0;i--){
-        if(camps.indexOf(neutralCreeps[i].camp) < 0) neutralCreeps.splice(i,1);
-      }
-      // Placed from the TANK, not from whoever you are driving. A rocket only
-      // carries 700 and the tank walks behind you, so a pack put 380 in front of
-      // the carry can be 750 from the tank — the rocket stops short of its own
-      // aim point and the blast lands in empty grass.
-      const tank = playerTeam.find(x=>x.type==='tank') || tutHero();
-      const c = tutOpenSpot(tank.x, tank.y, 380, TUT_SHOW_ANGLE);
-      tut.p.pack = [];
-      tut.p.spawn = ()=>{
-        tut.p.pack = [];
-        for(let i=0;i<TUT_COMBO_PACK;i++){
-          const a = i/TUT_COMBO_PACK*Math.PI*2;
-          // A tight huddle: at this radius a blast centred on any one of them
-          // still reaches the far side, so a rocket that connects at all catches
-          // the group rather than a corner of it.
-          tut.p.pack.push(tutSpawnCreep(c.x + Math.cos(a)*TUT_COMBO_R, c.y + Math.sin(a)*TUT_COMBO_R, TUT_COMBO_HP));
-        }
-        tut.watch = tut.p.pack;
-      };
-      tut.p.spawn();
-    },
-    tick(){
-      if(!tut.p.pack.length || tut.p.pack.some(tutAlive)) return;
-      // The pack is gone. If both halves are done the step closes on its own;
-      // otherwise a fresh one, because either half missing means the pair was
-      // never performed. Your allies killing them for you counts for nothing
-      // here — that is the situation this step exists to replace.
-      if((tut.p.stunned||0) >= 3 && (tut.p.carryKills||0) >= 3) return;
-      tut.p.spawn();
-      tut.nudge = (tut.p.stunned||0) < 3
-        ? 'You can grind them down &mdash; but the point is the <b>stun</b>. Rocket the next lot with the tank first.'
-        : 'Good rocket. Now take the <b>carry</b> and make the kills yourself &mdash; that is the half that matters.';
-      tut.nudgeT = 4.5;
-      tutPaint();
-    },
-    done:()=>(tut.p.stunned||0) >= 3 && (tut.p.carryKills||0) >= 3
-  },
-  {
     title:'Orders',
     text:()=>tutPick(
       '<k>Right-click a hero and drag</k> him somewhere to detach him and post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.',
       '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; somewhere to post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.'),
     goal:()=>'Post a hero on the marked spot',
     enter(){
+      // The practice targets from the shooting steps have done their job. Clear
+      // them, so the ground you are being asked to post a hero on is empty
+      // rather than dotted with mobs standing perfectly still — the neutral AI
+      // does not wake until the forest step. A tutorial mob is the one whose
+      // camp is not on the map.
+      for(let i=neutralCreeps.length-1;i>=0;i--){
+        if(camps.indexOf(neutralCreeps[i].camp) < 0) neutralCreeps.splice(i,1);
+      }
+      tut.watch = [];
       const h = tutHero(), s = tutOpenSpot(h.x, h.y, 320, TUT_SHOW_ANGLE-0.6);
       tut.mark = { x:s.x, y:s.y, r:54, col:'#5AC8E8', label:'POST A HERO HERE' };
     },
@@ -8141,21 +8119,6 @@ window.addEventListener('DOMContentLoaded', function(){
     done:()=>!!tut.p.lane
   },
   {
-    title:'Waves',
-    text:()=>'Both bases now send a wave down each lane every twenty seconds: one big creep leading three small ones, and they fight each other where they meet. It does not matter who lands the killing blow &mdash; anything that dies drops what it carried, and <b>the first hero to reach an orb keeps it</b>. So the wave is not something to farm politely; it is somewhere to be standing.',
-    goal:()=>'Collect 6 orbs from the fighting — '+Math.min(6, tut.p.orbs||0)+' / 6',
-    enter(){
-      tut.holdWaves = false;
-      spawnTimer = 0;                 // do not make them wait out a full interval
-      const h = tutHero();
-      const li = Math.abs(h.y - LANE_YS[0]) <= Math.abs(h.y - LANE_YS[1]) ? 0 : 1;
-      // The waves set off together from opposite ends, so they meet in the
-      // middle of the lane. That is where the orbs will be.
-      tut.mark = { x:WORLD_W/2, y:LANE_YS[li], r:220, col:'#FFD54F', label:'THE WAVES MEET HERE', mini:true };
-    },
-    done:()=>(tut.p.orbs||0) >= 6
-  },
-  {
     title:'The enemy',
     text:()=>'Their carry has walked over to meet you. He is holding back for this &mdash; one shot every couple of seconds, where a real one fires five times that from under his own tower. A hero kill is worth <b>30 points</b> and a heap of experience, and puts him out of the round for twelve seconds. That window is what you actually win fights with.',
     goal:()=>'Land a hit on the enemy carry',
@@ -8195,21 +8158,82 @@ window.addEventListener('DOMContentLoaded', function(){
     done:()=>!!tut.p.heroHit || !enemyTeam[0].alive
   },
   {
-    title:'Their towers',
-    text:()=>'Two outposts guard each lane and they stand between you and their base. Arrive <b>behind your own wave</b> and let the creeps hold the tower while you hit it. A tower is worth <b>200 points</b>.',
-    goal:()=>'Put a hit on an enemy tower',
-    enter(){
-      const h = tutHero();
-      let best = null, bd = Infinity;
-      for(const t of enemyTowers){
-        if(t.main || t.hp<=0) continue;
-        const d = dist(h.x,h.y,t.x,t.y);
-        if(d < bd){ bd = d; best = t; }
-      }
-      tut.p.tower = best;
-      if(best) tut.mark = { x:best.x, y:best.y, r:TOWER_RANGE, col:'#FF9A8B', label:'THEIR OUTPOST', thin:true, mini:true };
+    title:'Push a lane, take a tower',
+    // Three things in one phase because they are one movement: pull the squad
+    // together, point it down a lane, and walk in behind the wave. Taught apart
+    // they are three gestures; taught together they are how a round is won.
+    text(){
+      const p = tut.p;
+      if(!p.assemble) return 'Your base is now sending a <b>wave</b> down each lane every twenty seconds &mdash; one big creep leading three small ones. A lane is taken by a squad walking behind one of those, never by a hero on his own. For this one their team has pulled back to their base and their waves have stopped, so the lane is yours. Start by <b>pulling your three together</b>.';
+      if(!p.lane) return 'Now point them down the <b>' + p.laneName + ' lane</b>: drag the hero you are driving onto the <b>' + p.laneName + ' half of the minimap</b>. The other two are following him, so all three go and they arrive together.';
+      return 'Walk in <b>behind your creeps</b>. A tower outranges every hero and hits harder than anything else on the map, so let the wave get there first and hold its attention while the three of you cut the outpost down. It is worth <b>200 points</b>.';
     },
-    done:()=>!!tut.p.towerHit
+    goal(){
+      const p = tut.p;
+      if(!p.assemble) return '1 · Assemble your squad';
+      if(!p.lane) return '2 · Send them down the ' + p.laneName + ' lane';
+      const t = p.tower;
+      const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
+      return '3 · Destroy their outpost — ' + left + '% left';
+    },
+    hl:()=>assembleBtn,
+    enter(){
+      // The phase that finally lets the waves out: a lane push is a wave with
+      // heroes behind it, and there is nothing to walk behind without one.
+      tut.holdWaves = false;
+      spawnTimer = 0;                 // do not make them wait out a full interval
+      tut.holdFoeWaves = true;        // and only your side sends one — see spawnWave
+      tut.spar = false; tut.sparFlee = false;
+      // And their team goes home for it. Three enemy heroes holding an outpost
+      // is a fight a squad this size loses, and the phase is about the push.
+      // They are put back on their feet rather than left as the corpses the
+      // opening parked, so the minimap shows where they went.
+      tut.homeEnemies = true;
+      for(const e of enemyTeam){
+        e.respawnTimer = 0;
+        // The sparring step handed their carry TUT_SPAR_HP so he could be shot
+        // at without dying; give him his own health back on the way home.
+        e.maxHp = e.stats.maxHp;
+        respawnHero(e);
+        e.mode = 'idle'; e.followTarget = null; e.moveTarget = null;
+        e.animPrevX = e.x; e.animPrevY = e.y;
+      }
+      const h = tutHero();
+      const li = Math.abs(h.y - LANE_YS[0]) <= Math.abs(h.y - LANE_YS[1]) ? 0 : 1;
+      tut.p.laneIdx = li;
+      tut.p.laneName = li === 0 ? 'top' : 'bottom';
+      // Every outpost still standing. Whichever one falls closes the phase —
+      // marking one lane and refusing the other would be a rule the card never
+      // stated — but the mark and the percentage follow the lane you are nearest.
+      tut.p.standing = enemyTowers.filter(t => !t.main && t.hp > 0);
+      tut.p.tower = tut.p.standing.find(t => Math.abs(t.y - LANE_YS[li]) < 200) || tut.p.standing[0] || null;
+      if(tut.p.tower)
+        tut.mark = { x:tut.p.tower.x, y:tut.p.tower.y, r:TOWER_RANGE, col:'#FF9A8B',
+                     label:'THEIR OUTPOST', thin:true, mini:true };
+    },
+    tick(){
+      const p = tut.p;
+      // Order is the lesson, not pedantry: assemble pulls the other two onto
+      // whoever you are driving, so a lane order given first is undone by the
+      // assemble that follows it. Ask again rather than leaving the squad
+      // standing in the base under a goal that says "destroy the outpost".
+      if(p.lane && !p.assemble){
+        p.lane = false;
+        tut.nudge = 'Pull them <b>together</b> first &mdash; assembling now would call him straight back.';
+        tut.nudgeT = 4;
+        tutPaint();
+        return;
+      }
+      const stage = (p.assemble ? 1 : 0) + (p.lane ? 1 : 0);
+      if(stage !== p.stage){
+        p.stage = stage;
+        tutHighlight(stage === 0 ? assembleBtn : null);
+        tutPaint();                    // the card says something new at each one
+      }
+    },
+    // A beat to watch it come down.
+    hold:2.0,
+    done:()=>!!tut.p.standing && tut.p.standing.some(t => t.hp <= 0)
   },
   {
     title:'How a round is won',
@@ -8218,6 +8242,12 @@ window.addEventListener('DOMContentLoaded', function(){
     button:'Play a Match',
     act(){ tutLaunchMatch(); },
     enter(){
+      // Their base wakes up again the moment the outpost is down. The card has
+      // no timer on it, and a wave left pushing an undefended lane would walk on
+      // and take the main tower — which ends the round on the win screen while
+      // you are still reading about how a round is won. Their heroes stay home
+      // until the handover; it is the waves that need to meet something.
+      tut.holdFoeWaves = false;
       const shud = document.getElementById('scoreHud');
       if(shud) shud.classList.remove('hidden');
     },
@@ -8273,6 +8303,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutStart(){
     tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false; tut.hl = null;
     tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false; tut.sparFlee = false;
+    tut.homeEnemies = false; tut.holdFoeWaves = false;
     // startRound has just stocked every camp. Empty them again: nothing lives in
     // the jungle until step 11 sends you there.
     neutralCreeps.length = 0;
@@ -8312,6 +8343,10 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutStop(){
     tut.on = false; tut.holdWaves = false; tut.holdCamps = false;
     tut.arena = false; tut.noAuto = false; tut.holdDrops = false; tut.spar = false; tut.sparFlee = false;
+    // Their team gets its own AI back, and their base starts sending waves
+    // again — the handover into a real Match runs through here, and a match
+    // against three heroes standing in an empty base is not a match.
+    tut.homeEnemies = false; tut.holdFoeWaves = false;
     tut.rings = []; tut.mark = null; tut.watch = []; tut.p = null;
     tutHighlight(null);
     tutHide();
