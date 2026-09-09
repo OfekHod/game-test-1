@@ -3,6 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- Added to the Home Screen, these are what make iOS drop the browser chrome
+     and hand the page the whole panel. black-translucent puts our own pixels
+     under the status bar and the home indicator rather than behind a bar of
+     Safari's colour; the safe-area insets below then keep the HUD out from
+     under them. In a normal tab or an iframe all three are ignored. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Lane — POC v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,12 +19,31 @@
   :root{
     --panel:#FFF3D6; --panel-border:#D9A85C; --text-strong:#5A3E1B;
     --hud-bg:#FFE7B8; --gold:#D9A029;
+    /* The notch, the rounded corners and the home indicator, as four lengths.
+       Zero everywhere else, including inside an iframe. The fallbacks matter:
+       a bare env() with no second argument is an invalid value in a browser
+       that does not know the keyword, which would poison every calc() below. */
+    --sat:env(safe-area-inset-top,0px);
+    --sar:env(safe-area-inset-right,0px);
+    --sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;background:#1E9419;font-family:'Baloo 2',sans-serif;overflow:hidden;}
-  .wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;
-    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);}
+  /* overscroll-behavior stops the iOS rubber band, which drags the whole fixed
+     layer down and shows this background underneath it as a moving green gap. */
+  html,body{margin:0;height:100%;background:#1E9419;font-family:'Baloo 2',sans-serif;
+    overflow:hidden;overscroll-behavior:none;}
+  /* THE GAME GOES EDGE TO EDGE. The safe-area insets used to be padding here,
+     which pushed the stage in and left the body's grass green showing as a
+     band above the notch and below the home indicator — bright flat green
+     against a cream menu, and a shade off the field in play. The insets have
+     not gone away; they moved onto the things that must not sit under the
+     notch (the party chips, the scoreboard, the dock, the skill button), so
+     the picture fills the screen and only the controls step back. */
+  .wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;padding:0;}
   #stage{position:relative;width:100%;height:100%;overflow:hidden;}
+  #safeProbe{position:absolute;left:0;top:0;width:0;
+    height:var(--sat);pointer-events:none;visibility:hidden;}
   @media (min-width:1100px) and (min-height:700px){
     .wrap{padding:18px;display:flex;align-items:center;justify-content:center;}
     #stage{border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.22);}
@@ -24,13 +51,13 @@
   canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;background:#1E9419;}
   #game{cursor:none;outline:none;touch-action:none;}
 
-  .party{position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:6;}
+  .party{position:absolute;top:calc(16px + var(--sat));left:calc(16px + var(--sal));display:flex;gap:8px;z-index:6;}
   .party.hidden{display:none;}
   /* Drawn as DOM, not on the canvas. The chips are DOM and sit ABOVE the canvas,
      so a canvas-drawn scoreboard is hidden behind them no matter where it is
      placed — which is exactly what kept happening. In the same layer the browser
      guarantees stacking, and it is pinned top-right, opposite the chips. */
-  .scoreHud{position:absolute;top:16px;right:16px;display:flex;gap:8px;z-index:7;
+  .scoreHud{position:absolute;top:calc(16px + var(--sat));right:calc(16px + var(--sar));display:flex;gap:8px;z-index:7;
     pointer-events:none;font-family:'Baloo 2',sans-serif;}
   .scoreHud.hidden{display:none;}
   .scoreBox{min-width:84px;padding:6px 12px 5px;border-radius:11px;text-align:center;overflow:hidden;
@@ -99,7 +126,12 @@
   .asmLabel{display:block;font-size:9px;font-weight:800;letter-spacing:.6px;}
   .pkey{position:absolute;top:-7px;right:-5px;font-size:9px;font-weight:800;background:var(--panel-border);color:#fff;border-radius:50%;width:15px;height:15px;line-height:15px;}
 
-  .bottomDock{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;z-index:5;}
+  /* The dock reaches the bottom edge and pads itself off it, so the strip the
+     home indicator sits on is the dock's own cream rather than a gap. It keeps
+     its own background for that strip; dockH is measured from offsetHeight, so
+     everything that positions itself above the dock follows for free. */
+  .bottomDock{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;z-index:5;
+    padding:0 var(--sar) var(--sab) var(--sal);background:var(--hud-bg);}
   .bottomDock.hidden{display:none;}
 
   .statStrip{display:flex;align-items:center;gap:7px;padding:5px 2.2%;background:rgba(255,231,184,.94);border-top:2px solid var(--panel-border);flex-wrap:wrap;}
@@ -162,7 +194,8 @@
      top overflow cannot be scrolled to. On a short window that put the buttons
      below the bottom edge where no click could reach them. */
   .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-start;flex-direction:column;
-    background:rgba(30,40,20,.45);backdrop-filter:blur(2px);z-index:10;text-align:center;padding:20px;
+    background:rgba(30,40,20,.45);backdrop-filter:blur(2px);z-index:10;text-align:center;
+    padding:calc(20px + var(--sat)) calc(20px + var(--sar)) calc(20px + var(--sab)) calc(20px + var(--sal));
     overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .overlay.hidden{display:none;}
   /* Starting a round is one synchronous burst of work — generating the forest
@@ -426,7 +459,11 @@
      Sizes are in vmin, which on this stage IS a percentage of the picture:
      the square is min(100vw,100vh), so 1vmin is exactly 1% of it and the
      buttons scale with the board instead of drifting off it. */
-  #startScreen{background:#EEEAE2;align-items:center;justify-content:center;padding:0;}
+  /* The art is centred and never wider than the shorter side, so the insets
+     cost it nothing on a phone — they only stop the board sliding under the
+     notch on a screen short enough for the square to touch both edges. */
+  #startScreen{background:#EEEAE2;align-items:center;justify-content:center;
+    padding:var(--sat) var(--sar) var(--sab) var(--sal);}
   .menuStage{position:relative;margin:auto;width:100%;max-width:min(100vw,100vh);}
   .menuShot{display:block;width:100%;height:auto;}
   .menuBoard{position:absolute;left:34%;right:12.9%;top:28.9%;bottom:28.9%;
@@ -470,7 +507,8 @@
      window — so it always lands on the art instead of on the dark band beside
      it, whatever shape the window happens to be. */
   #introScreen{z-index:20;cursor:pointer;background:#0a0f16;
-    align-items:center;justify-content:center;padding:0;}
+    align-items:center;justify-content:center;
+    padding:var(--sat) var(--sar) var(--sab) var(--sal);}
   .introStage{position:relative;margin:auto;display:flex;flex-direction:column;
     width:100%;max-width:min(100vw,100vh);}
   .introShot{display:block;width:100%;height:auto;}
@@ -505,11 +543,15 @@
   .joystick{position:absolute;width:110px;height:110px;border-radius:50%;background:rgba(255,243,214,.35);border:2.5px solid rgba(217,168,92,.7);
     transform:translate(-50%,-50%);display:none;pointer-events:none;}
   .joystick .knob{position:absolute;width:46px;height:46px;left:50%;top:50%;border-radius:50%;background:rgba(90,200,232,.85);border:2px solid rgba(10,58,74,.5);transform:translate(-50%,-50%);}
-  .skillBtn{position:absolute;right:5%;bottom:15%;width:78px;height:78px;border-radius:50%;background:rgba(255,243,214,.9);
+  /* Margins rather than calc() on right/bottom: three media queries below move
+     this button, and a margin steps all of them off the rounded corner without
+     each having to repeat the insets. */
+  .skillBtn{position:absolute;right:5%;bottom:15%;margin:0 var(--sar) var(--sab) 0;
+    width:78px;height:78px;border-radius:50%;background:rgba(255,243,214,.9);
     border:3px solid var(--panel-border);display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:8;}
   .skillBtn .skillIcon{width:34px;height:34px;}
   .skillBtn .cdRing{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(60,40,10,.6) calc(var(--cd,0)*360deg), transparent 0);}
-  .mobileHint{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
+  .mobileHint{position:absolute;left:0;right:0;bottom:calc(6px + var(--sab));text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
      height is measured in JS, because the HUD is a percentage of a stage whose
@@ -575,14 +617,14 @@
     .hud-right{gap:12px;font-size:14px;}
     .xpGem{width:9px;height:9px;margin-right:6px;}
 
-    .party{top:8px;left:8px;gap:5px;}
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;}
     .pchip{width:36px;padding:3px;}
     .pdot{width:12px;height:12px;}
     .asmIcon{width:12px;height:12px;margin:1px auto 3px;border-width:1.5px;}
     .asmIcon::before{width:4px;height:4px;}
     .asmLabel{font-size:7.5px;letter-spacing:.3px;}
 
-    .overlay{padding:8px;}
+    .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
     .panel h1{font-size:19px;margin-bottom:6px;}
     .panel p{font-size:11.5px;line-height:1.4;margin-bottom:4px;}
@@ -605,7 +647,7 @@
     .skillName{display:none;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
-    .party{top:6px;left:6px;}
+    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
     .mobileHint{display:none !important;}
   }
@@ -631,6 +673,12 @@ window.addEventListener('DOMContentLoaded', function(){
 </head>
 <body>
 <div class="wrap">
+  <!-- The one place the safe-area insets can be READ. env() only exists inside
+       a CSS value: getComputedStyle hands back the literal env(...) text, never
+       the pixels. So a zero-width box is sized by them and measured, which is
+       how the canvas HUD — the minimap, which is painted rather than laid out —
+       learns to stay out from under the notch. -->
+  <i id="safeProbe" aria-hidden="true"></i>
   <div id="stage">
     <canvas id="game" tabindex="0"></canvas>
 
@@ -823,14 +871,21 @@ window.addEventListener('DOMContentLoaded', function(){
   let W = BASE_W, H = BASE_H;
   let layoutW = 0, layoutH = 0;
   let canvasScale = DPR;      // world units to canvas pixels; see applyLayout
+  // The notch, in the canvas's own units. The stage now runs under it, so
+  // anything the canvas paints against the top edge has to start below this or
+  // it comes out sitting behind the cutout.
+  const safeProbeEl = document.getElementById('safeProbe');
+  let safeTopUnits = 0;
   function applyLayout(force){
     const r = stageEl.getBoundingClientRect();
     const cw = Math.max(1, r.width), ch = Math.max(1, r.height);
+    const safeTopPx = safeProbeEl ? safeProbeEl.getBoundingClientRect().height : 0;
     if(!force && Math.abs(cw-layoutW)<1 && Math.abs(ch-layoutH)<1) return;
     layoutW = cw; layoutH = ch;
     const aspect = cw/ch;
     H = Math.round(Math.sqrt(VIEW_AREA/aspect));
     W = Math.round(H*aspect);
+    safeTopUnits = safeTopPx * (H/ch);
     // W and H are WORLD UNITS, not pixels: VIEW_AREA fixes how much map is on
     // screen, so on desktop W is ~3200 while the stage is maybe 1300 CSS px
     // wide. Handing that straight to setupCanvas as the pixel size, and then
@@ -7491,7 +7546,11 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   const MM_W = 150, MM_H = 150, MM_TOP = 16;
-  function minimapRect(){ return { x:(W-MM_W)/2, y:MM_TOP, w:MM_W, h:MM_H }; }
+  // Every read of the minimap's box — drawing it, hit-testing a hold, deciding
+  // which lane a drag landed on — goes through this one function, so the notch
+  // offset only has to be added in one place.
+  function mmTop(){ return MM_TOP + safeTopUnits; }
+  function minimapRect(){ return { x:(W-MM_W)/2, y:mmTop(), w:MM_W, h:MM_H }; }
   // Hold on the minimap to look somewhere else. Dragging while held keeps
   // moving the view, and letting go snaps back to whoever you are controlling.
   let scout = null;                       // {x,y} world point, or null
@@ -7510,7 +7569,7 @@ window.addEventListener('DOMContentLoaded', function(){
     return (sy - r.y) < r.h/2 ? 0 : 1;
   }
   function drawMinimap(){
-    const mmW=MM_W, mmH=MM_H, mmX=(W-mmW)/2, mmY=MM_TOP;
+    const mmW=MM_W, mmH=MM_H, mmX=(W-mmW)/2, mmY=mmTop();
     ctx.save();
     ctx.fillStyle='rgba(255,243,214,.88)';
     ctx.strokeStyle='rgba(217,168,92,.9)'; ctx.lineWidth=2;
@@ -8480,7 +8539,10 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function tutPlaceCard(){
     const dockH = bottomDock.classList.contains('hidden') ? 0 : bottomDock.offsetHeight;
-    tutCardEl.style.bottom = (dockH + 10) + 'px';
+    // The dock already carries the bottom inset in its height, so sitting on top
+    // of it clears the home indicator. With no dock there is nothing underneath
+    // and the card has to step off the edge itself.
+    tutCardEl.style.bottom = dockH ? (dockH + 10) + 'px' : 'calc(10px + var(--sab))';
     tutCardEl.classList.toggle('touchPad', isTouchDevice);
   }
   function tutHighlight(el){
