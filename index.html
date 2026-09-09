@@ -9084,7 +9084,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   let musicOn = prefGet(MUSIC_PREF, '1') !== '0';
-  let musicCtx = null, musicDead = false, musicPlayed = false;
+  let musicCtx = null, musicDead = false;
   const musicTracks = {};
 
   function musicContext(){
@@ -9139,9 +9139,17 @@ window.addEventListener('DOMContentLoaded', function(){
     if(m && !m.running){
       if(musicCtx.state === 'suspended') musicCtx.resume();
       m.start(fadeIn == null ? 2.4 : fadeIn);
-      if(!musicPlayed){ musicPlayed = true; musicPaint(); }
     }
+    musicPaint();
   }
+
+  // Whether sound is actually coming out, asked of the context rather than
+  // remembered in a flag. resume() is asynchronous, so a flag set from a state
+  // read at the moment a track starts is a race — and it lost it: the context
+  // was still "suspended" a millisecond after the click, the flag stayed false,
+  // and the toggle then swallowed every press because it kept thinking nothing
+  // had ever played.
+  function musicAudible(){ return !!(musicCtx && musicCtx.state === 'running'); }
 
   // Unlocking audio has to happen INSIDE the gesture. A context built in a
   // later task is born suspended, and resume() outside a gesture is refused
@@ -9157,7 +9165,10 @@ window.addEventListener('DOMContentLoaded', function(){
   function musicUnlock(){
     const ctx = musicContext();
     if(!ctx) return;
-    if(ctx.state === 'suspended') ctx.resume();
+    if(ctx.state === 'suspended'){
+      const r = ctx.resume();
+      if(r && r.then) r.then(musicPaint, ()=>{});
+    }
     // Resuming the context is not, on its own, enough on iOS. Output there stays
     // mute until a node has actually been *started* inside the gesture, and the
     // real music starts a fifth of a second later in a timer — too late to
@@ -9200,7 +9211,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // been clicked or tapped, and a button that says "Music" while the room is
     // silent reads as broken. Until something has actually played it asks to be
     // pressed instead of claiming to be on.
-    musicBtn.textContent = !musicOn ? '♪ Muted' : musicPlayed ? '♪ Music' : '♪ Play music';
+    musicBtn.textContent = !musicOn ? '♪ Muted' : musicAudible() ? '♪ Music' : '♪ Play music';
     musicBtn.classList.toggle('off', !musicOn);
     musicBtn.setAttribute('aria-pressed', musicOn ? 'true' : 'false');
   }
@@ -9209,7 +9220,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // stopping it. Nothing can sound until the page has been touched, so a
     // player whose first action is pressing "Music" was muting something they
     // had never heard — and then had to press it twice more to get any sound.
-    if(musicOn && !musicPlayed){ musicSync(1.0); return; }
+    if(musicOn && !musicAudible()){ musicSync(1.0); return; }
     musicOn = !musicOn;
     prefSet(MUSIC_PREF, musicOn ? '1' : '0');
     musicPaint();
@@ -9217,6 +9228,30 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   bindTap(musicBtn, musicToggle);
   musicPaint();
+
+  // Try to simply play, without waiting to be asked.
+  //
+  // Most browsers refuse until the page has been clicked or tapped, and that
+  // cannot be worked around from in here — it is the autoplay policy, and it is
+  // the whole reason the gesture listeners above exist. But not every browser
+  // refuses: a site the player has allowed autoplay for, a browser with the
+  // policy relaxed, an embed handed the permission. Measured, the old code
+  // never played in any of those either, because it only ever built the context
+  // inside a gesture handler and so never once asked. Where playing is allowed,
+  // waiting for a click nobody needs to make is its own bug.
+  //
+  // If the answer is no, nothing happens and the first gesture still starts it.
+  function musicAutostart(){
+    const ctx = musicContext();
+    if(!ctx) return;
+    const go = ()=>{ if(ctx.state === 'running') musicSync(2.4); };
+    if(ctx.state === 'suspended'){
+      const r = ctx.resume();
+      // A refusal here is the expected case, not an error worth logging.
+      if(r && r.then) r.then(()=>{ go(); musicPaint(); }, ()=>{}); else go();
+    } else go();
+  }
+  musicAutostart();
 
   window.__laneLoaded = true;
 })();
