@@ -5615,6 +5615,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateFireBlasts(dt);
     updateBirds(dt);
     updateHudSparks(dt);
+    updateMusicThreat(dt);
     if(hurtFlash>0) hurtFlash = Math.max(0, hurtFlash - dt*2.4);
     if(noManaT>0) noManaT = Math.max(0, noManaT - dt);
     if(manaDryT>0) manaDryT = Math.max(0, manaDryT - dt);
@@ -7548,6 +7549,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Above the fog on purpose: a tutorial mark is what you are being sent to
     // find, so it must not be hidden by the fact that you have not found it.
     drawTutorialMarks();
+    if(MUSIC_DEBUG && state==='playing') drawThreatRings();
     ctx.restore();
     drawVignetteOverlay();
     drawHurtOverlay();
@@ -7555,6 +7557,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawTutorialMini();
     drawHudSparks();
     drawReticle();
+    if(MUSIC_DEBUG && state==='playing') drawThreatHud();
 
     if(state==='playing'){
       const activeH = playerTeam[activePlayerIdx];
@@ -8496,6 +8499,11 @@ window.addEventListener('DOMContentLoaded', function(){
     xpCountEl.textContent='0';
     timerEl.textContent = fmtTime(ROUND_TIME);
     startScreen.classList.add('hidden');
+    // The music is as calm as the map is. Without this a round that ended with
+    // three of them on top of you would open the next one at full dread and
+    // then take two and a half seconds to work out that nobody is there.
+    threat = 0;
+    if(musicTracks.play) musicTracks.play.setIntensity(0);
     musicSync();                       // into play: the theme fades out
     endScreen.classList.add('hidden');
     bottomDock.classList.remove('hidden');
@@ -9807,6 +9815,18 @@ window.addEventListener('DOMContentLoaded', function(){
       { b: 1.5, k: 'c', i: 5, oct: 1, v: 0.17 },
     ] },
     stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.28 } ] },
+    // TIER 3 again, and the reason it is written as fills rather than as a
+    // faster line of its own: these land on the sixteenths BETWEEN the eighths
+    // above, so switching this layer on does not add a second voice, it halves
+    // the gap in the one already playing. The celeste goes from two notes a
+    // second to four without anything new appearing, which is what running
+    // feels like and what a second voice would not.
+    race: { tier: 3, span: 2, steps: [
+      { b: 0.25, k: 'c', i: 8, oct: 1, v: 0.16 },
+      { b: 0.75, k: 'c', i: 6, oct: 1, v: 0.13 },
+      { b: 1.25, k: 'c', i: 8, oct: 1, v: 0.15 },
+      { b: 1.75, k: 'c', i: 7, oct: 1, v: 0.13 },
+    ] },
     // The one place the piece is allowed a groove. Root-only is what keeps the
     // match theme from ever tapping your foot; the fifth arriving on the third
     // beat is that decision being revoked, and it is worth more than any
@@ -10240,6 +10260,130 @@ window.addEventListener('DOMContentLoaded', function(){
       if(musicCtx.state === 'suspended') musicCtx.resume();
       m.start(fadeIn == null ? 2.4 : fadeIn);
     }
+  }
+
+  /* ---------------------------------------------------------- proximity
+
+     How close the enemy is, as the one number the music acts on.
+
+     A share per living enemy hero, 1 at THREAT_NEAR falling to 0 at THREAT_FAR,
+     added up and capped. Added, not averaged, and capped rather than divided:
+     that is the whole behaviour. One hero close enough is all the danger there
+     is and pins it on its own; three of them get there from further out,
+     because three at 600 is worse than one at 600 and ought to sound it.
+     Anything else — a mean, a divisor big enough for three — makes a hero
+     standing on top of you sound like a third of a problem, which is exactly
+     what the music is there to tell you it is not.
+
+     The curve on the share is what stops "three of them" from meaning "three
+     of them anywhere". Straight-line shares measured, in a real match, as a
+     pinned 1.00 with the nearest enemy 1149 units away and the other two past
+     1300 — nobody near, everything at maximum, and the number useless for the
+     rest of the push. At 2.2 the same three read 0.39. What saturates it is:
+
+       one hero    inside  420        two at   820        three at 1000
+       and the celeste starts at 1117 for one, 1405 for three.
+
+     So distance decides most of it and the head count decides the rest, which
+     is the way round it has to be for "very close" to always mean "loud".
+
+     NEAR is a little outside the longest attack range in the game, so by the
+     time a hero can hit you the music has been saying so for a moment. FAR
+     sits below the 1600 units between the two lanes, so a hero laning in the
+     other one never registers at all. */
+  const THREAT_NEAR  = 420;   // at or inside this, one hero is all the threat there is
+  const THREAT_FAR   = 1900;  // beyond it, none
+  const THREAT_CURVE = 2.2;   // and how sharply a share falls off in between
+  // Fast up and slow down, deliberately unequal. A hero stepping into the ring
+  // is news and should arrive; a hero stepping out of it might be about to step
+  // back in, and music that flickered with them would be worse than none.
+  const THREAT_RISE = 0.35;
+  const THREAT_FALL = 2.4;
+  let threat = 0;
+
+  function threatAt(x, y){
+    let sum = 0;
+    for(const e of enemyTeam){
+      if(!e.alive) continue;
+      const d = dist(x, y, e.x, e.y);
+      sum += Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1), THREAT_CURVE);
+    }
+    return Math.min(1, sum);
+  }
+
+  // Measured from the hero you are driving, not from the team: the question the
+  // music answers is whether YOU are about to be jumped. Dead, it decays to
+  // nothing rather than snapping, so the respawn is quiet without the fade
+  // being audible as an event of its own.
+  function updateMusicThreat(dt){
+    const me = playerTeam[activePlayerIdx];
+    const target = (me && me.alive) ? threatAt(me.x, me.y) : 0;
+    const tau = target > threat ? THREAT_RISE : THREAT_FALL;
+    threat += (target - threat) * (1 - Math.exp(-dt / tau));
+    const m = musicTracks.play;
+    if(m) m.setIntensity(threat);
+    // Readable from outside only when the instrument is switched on, so a
+    // script can wait for a state instead of sleeping and hoping.
+    if(MUSIC_DEBUG) window.__threat = threat;
+  }
+
+  // A window on that number, for tuning it. Off unless the page was opened with
+  // ?musicdebug: it is an instrument, not a feature. The entire point of the
+  // mechanic is that the information reaches you through the music rather than
+  // through the screen, and a readout of it on the screen would answer the only
+  // question the music is there to ask.
+  const MUSIC_DEBUG = typeof location !== 'undefined'
+                   && /(?:^|[?&])musicdebug(?:[=&]|$)/.test(location.search || '');
+
+  function drawThreatRings(){
+    const me = playerTeam[activePlayerIdx];
+    if(!me || !me.alive) return;
+    ctx.save();
+    // Everything here is in world units, and a world unit is about a third of a
+    // pixel on a desktop view — a 2-unit line is invisible.
+    ctx.lineWidth = 7;
+    for(const [r, col] of [[THREAT_FAR, 'rgba(255,190,90,.45)'], [THREAT_NEAR, 'rgba(255,110,90,.75)']]){
+      ctx.beginPath(); ctx.arc(me.x, me.y, r, 0, 7); ctx.strokeStyle = col; ctx.stroke();
+    }
+    for(const e of enemyTeam){
+      if(!e.alive) continue;
+      const d = dist(me.x, me.y, e.x, e.y);
+      const p = Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1), THREAT_CURVE);
+      if(p <= 0) continue;
+      ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(e.x, e.y);
+      ctx.strokeStyle = 'rgba(255,110,90,' + (0.2 + 0.6 * p).toFixed(2) + ')';
+      ctx.stroke();
+      ctx.font = '600 40px ui-monospace, monospace';
+      ctx.fillStyle = '#FFD9A0';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.toFixed(2), (me.x + e.x) / 2, (me.y + e.y) / 2);
+    }
+    ctx.restore();
+  }
+
+  function drawThreatHud(){
+    const me = playerTeam[activePlayerIdx];
+    const lines = ['threat ' + threat.toFixed(2) + '   target ' +
+                   ((me && me.alive) ? threatAt(me.x, me.y) : 0).toFixed(2)];
+    for(const e of enemyTeam){
+      if(!e.alive){ lines.push(e.type + ' dead'); continue; }
+      const d = me ? dist(me.x, me.y, e.x, e.y) : 0;
+      lines.push(e.type + '  ' + Math.round(d) + 'u  ' +
+                 Math.pow(clamp((THREAT_FAR - d) / (THREAT_FAR - THREAT_NEAR), 0, 1),
+                          THREAT_CURVE).toFixed(2));
+    }
+    ctx.save();
+    // Top left, under the party chips: the bottom of the canvas is behind the
+    // dock, which is where the first version of this panel spent its life.
+    const px = 40, py = H * 0.14, lh = H * 0.028, fs = Math.round(H * 0.022);
+    ctx.font = '600 ' + fs + 'px ui-monospace, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const h = lh * lines.length + lh * 0.7;
+    ctx.fillStyle = 'rgba(12,10,7,.78)';
+    ctx.fillRect(px - 14, py - 10, W * 0.20, h);
+    ctx.fillStyle = '#F2E8D4';
+    lines.forEach((t, i) => ctx.fillText(t, px, py + i * lh));
+    ctx.restore();
   }
 
   // Unlocking audio has to happen INSIDE the gesture. A context built in a
