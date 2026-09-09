@@ -1061,7 +1061,68 @@ window.addEventListener('DOMContentLoaded', function(){
   // toward the middle. Mirrored for the enemy at (1 - t).
   const LANE_TOWER_T1 = 0.225, LANE_TOWER_T2 = 0.39;
   const SURV_PLAZA_R = 430;
-  const SURV_DIRS = [[0,-1],[1,0],[0,1],[-1,0]];   // N, E, S, W
+  // ---------- the survival arena's roads ----------
+  // Four straight spokes made the arena a crossroads: every wave arrived on a
+  // ruler-straight line, all four sides needed watching at once, and the ground
+  // between the spokes was never walked. Two snaking lanes instead, 180 degrees
+  // apart so both are the same length and neither side of the plaza is the safe
+  // one. The bends are the point: a wave stays in reach for longer, and the
+  // inside of a curve is a shortcut you can actually cut across.
+  const SURV_RIVER_IN = 900, SURV_RIVER_OUT = 2250;   // the river's reach, from the plaza outwards
+  const SURV_LANE_IN  = 210;      // where a lane meets the plaza
+  const SURV_LANE_OUT = 2450;     // ...and where it leaves the map
+  const SURV_LANE_STEPS = 24;     // the road, the mob path and the keep-out all read this polyline
+  // MOCK OPTIONS. One of these is the map; the others exist so the shape can be
+  // compared as a picture rather than argued about. amp/bends drive the snake,
+  // curl sweeps the whole arm around the plaza, angle is where lane 0 points.
+  const SURV_SHAPES = {
+    sway:      { angle: Math.PI,     amp: 560, bends: 2,   curl: 0    },
+    pinwheel:  { angle: Math.PI,     amp: 190, bends: 2,   curl: 1.25 },
+    switchback:{ angle: Math.PI*0.75,amp: 340, bends: 4,   curl: 0    },
+    bow:       { angle: Math.PI*0.5, amp: 820, bends: 1,   curl: 0    }
+  };
+  const SURV_SHAPE = 'sway';
+  function survLanePath(k){
+    const sh = SURV_SHAPES[SURV_SHAPE];
+    const cx = WORLD_W/2, cy = WORLD_H/2, a0 = sh.angle + k*Math.PI;
+    const pts = [];
+    for(let i=0;i<=SURV_LANE_STEPS;i++){
+      const t = i/SURV_LANE_STEPS;
+      const r = SURV_LANE_IN + (SURV_LANE_OUT-SURV_LANE_IN)*t;
+      const lat = sh.amp*Math.sin(t*Math.PI*sh.bends);
+      const a = a0 + sh.curl*t;
+      pts.push({ x: cx + Math.cos(a)*r - Math.sin(a)*lat,
+                 y: cy + Math.sin(a)*r + Math.cos(a)*lat });
+    }
+    return pts;
+  }
+  // Static geometry: the arena is the same shape every round, so build it once.
+  // Each path runs plaza-outwards; mobs walk it backwards.
+  const SURV_PATHS = [survLanePath(0), survLanePath(1)];
+  // The head of a mob's path, stepped sideways into its slot in the wave, so a
+  // wave spawns in formation instead of stacked on the centre line.
+  function survOffsetPoint(path, off){
+    const a = path[0], b = path[1] || path[0];
+    const dx = b.x-a.x, dy = b.y-a.y, l = Math.sqrt(dx*dx+dy*dy) || 1;
+    return { x: a.x - dy/l*off, y: a.y + dx/l*off };
+  }
+  function survRoadDist(x,y){
+    let d = 1e9;
+    for(const p of SURV_PATHS)
+      for(let i=0;i<p.length-1;i++)
+        d = Math.min(d, pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y));
+    return d;
+  }
+  // Distance along a path, walking it from the plaza out. Used to hang the
+  // outposts off the road and to find where a wave should appear on it.
+  function survPathIndexAt(p, want){
+    let run = 0;
+    for(let i=1;i<p.length;i++){
+      run += dist(p[i-1].x,p[i-1].y,p[i].x,p[i].y);
+      if(run >= want) return i;
+    }
+    return p.length-1;
+  }
   // 220 one-shot most heroes, which meant the AI would never engage a building
   // at all — siegeViable was false for everyone and games could not be finished.
   // At 100 a tower still kills a careless hero in a few shells but can be traded
@@ -1356,7 +1417,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const SURV_FIRST_GAP = 8, SURV_MIN_GAP = 3.0, SURV_GAP_STEP = 0.2;
   const SURV_BASE_COUNT = 3;
   const SURV_CAMPS = 4;
-  const SURV_OUTPOST = 470;       // how far the two side towers sit from the main
+  const SURV_OUTPOST = 470;       // first outpost, at the mouth of each lane
+  const SURV_OUTPOST_FAR = 1080;  // second one, out where the road bends
   // ---------- the tutorial's own map ----------
   // Purpose-built and deliberately bare: the lane skeleton a Match has, one
   // river to wade, one wall of trees to walk around, one camp, and nothing
@@ -1399,8 +1461,15 @@ window.addEventListener('DOMContentLoaded', function(){
     if(gameMode==='survival'){
       const cx=WORLD_W/2, cy=WORLD_H/2;
       playerTowers = [ makeTower(cx, cy, 'player', true) ];
-      for(const [dx,dy] of SURV_DIRS)
-        playerTowers.push(makeTower(cx+dx*SURV_OUTPOST, cy+dy*SURV_OUTPOST, 'player'));
+      // Two lanes, two outposts each — the same count the four spokes carried,
+      // but now a wave has to walk past both of them to reach the base, which is
+      // what makes a lane a gauntlet instead of a corridor.
+      for(const p of SURV_PATHS){
+        for(const d of [SURV_OUTPOST, SURV_OUTPOST_FAR]){
+          const q = p[survPathIndexAt(p, d)];
+          playerTowers.push(makeTower(q.x, q.y, 'player'));
+        }
+      }
       enemyTowers = [];
     } else if(tutMap){
       // The same shape as a Match — a base each side, outposts guarding each
@@ -2427,6 +2496,37 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     return false;
   }
+  // The middle of the widest wedge between the two roads: sample every
+  // direction and keep the one whose whole ray stays furthest from tarmac. The
+  // arena is rotationally symmetric, so the answer at a+PI is identical, which
+  // is what lets the water be laid down as a mirrored pair.
+  function survWidestGap(){
+    const cx=WORLD_W/2, cy=WORLD_H/2;
+    let best=0, bestD=-1;
+    for(let i=0;i<96;i++){
+      const a = i/96*Math.PI*2;
+      let worst = 1e9;
+      for(let r=SURV_RIVER_IN; r<=SURV_RIVER_OUT; r+=70)
+        worst = Math.min(worst, survRoadDist(cx+Math.cos(a)*r, cy+Math.sin(a)*r));
+      if(worst > bestD){ bestD = worst; best = a; }
+    }
+    return { a: best, clear: bestD };
+  }
+  // A lake wants a spot; if the road or another body is already there it walks
+  // sideways and then inwards rather than being dropped on top of them. A lake
+  // ON a lane would be a wall across it — mobs collide with lakes in the arena.
+  function survLake(a, rad, r){
+    const cx=WORLD_W/2, cy=WORLD_H/2;
+    for(let k=0;k<16;k++){
+      const aa = a + (k%2 ? -1 : 1)*Math.floor(k/2)*0.11;
+      const rr = rad - Math.floor(k/6)*110;
+      const x = cx+Math.cos(aa)*rr, y = cy+Math.sin(aa)*rr;
+      if(survRoadDist(x,y) < r*1.35 + LANE_HALF + 40) continue;
+      if(nearWater(x, y, r*1.35 + 60)) continue;
+      makeLake(x, y, r);
+      return;
+    }
+  }
   function generateWater(){
     lakes = []; rivers = [];
     if(tutMap){
@@ -2438,13 +2538,21 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     if(gameMode==='survival'){
-      // Lakes only, one per diagonal wedge. Four roads have to stay symmetric —
-      // a river would ford one of them and slow that lane alone.
-      const cx=WORLD_W/2, cy=WORLD_H/2, D=1180;
-      const rr = [190,160,178,168];
-      for(let i=0;i<4;i++){
-        const a = i/4*Math.PI*2 + Math.PI/4;
-        makeLake(cx+Math.cos(a)*D, cy+Math.sin(a)*D, rr[i]);
+      // The same two ingredients Match has, arranged the way Match arranges
+      // them: the river lies in the gap BETWEEN the lanes, where rotations
+      // happen, so wading it is a choice a hero makes and never a tax on one
+      // lane's wave. Both bodies are laid down as a 180-degree pair, so whatever
+      // the water costs you it costs you the same on either side of the plaza,
+      // and it stops well short of the plaza — the tower clearing is not a moat.
+      const cx=WORLD_W/2, cy=WORLD_H/2;
+      const gap = survWidestGap();
+      const wob = Math.max(30, Math.min(110, (gap.clear-LANE_HALF)*0.35));
+      for(const s of [0, Math.PI]){
+        const a = gap.a + s, ca = Math.cos(a), sa = Math.sin(a);
+        makeRiver(cx+ca*SURV_RIVER_IN, cy+sa*SURV_RIVER_IN,
+                  cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, 14, wob);
+        survLake(a-0.66, 1340, 176);
+        survLake(a+0.66, 1080, 158);
       }
     } else {
       // The river runs the length of the corridor between the lanes — right where
@@ -2492,9 +2600,13 @@ window.addEventListener('DOMContentLoaded', function(){
       // One per diagonal, so each camp sits in the wedge between two roads.
       for(let i=0;i<SURV_CAMPS;i++){
         let placed=null;
-        for(let att=0; att<150 && !placed; att++){
-          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.2,0.2);
-          const rr = rand(760, 1040);
+        // Wider jitter than the four-spoke arena needed: a snaking road sweeps
+        // across a whole quadrant, so a camp slot that used to be reliably empty
+        // is now sometimes tarmac, and the search has to be free to walk away
+        // from it rather than give up and leave that quarter of the map bare.
+        for(let att=0; att<260 && !placed; att++){
+          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.55,0.55);
+          const rr = rand(720, 1260);
           const x = WORLD_W/2+Math.cos(a)*rr, y = WORLD_H/2+Math.sin(a)*rr;
           if(nearAnyTower(x,y,340)) continue;
           if(onRoadway(x,y,CAMP_RING_R+30)) continue;
@@ -3383,13 +3495,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // baked into bgCanvas once per map, so none of it costs a frame.
     const RR = mulberry(0xA17E5);
     if(gameMode==='survival'){
-      const cx=WORLD_W/2, cy=WORLD_H/2;
-      for(const [dx,dy] of SURV_DIRS){
-        bakeRoad([{x:cx+dx*200, y:cy+dy*200},
-                  {x:cx+dx*1150, y:cy+dy*1150},
-                  {x:cx+dx*2400, y:cy+dy*2400}], LANE_HALF, RR);
-      }
-      bakePlaza(cx, cy, SURV_PLAZA_R, RR);
+      for(const p of SURV_PATHS) bakeRoad(p, LANE_HALF, RR);
+      bakePlaza(WORLD_W/2, WORLD_H/2, SURV_PLAZA_R, RR);
     } else {
       for(const path of LANE_PATHS) bakeRoad(path, LANE_HALF, RR);
     }
@@ -3524,15 +3631,8 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function onRoadway(x,y,pad){
     if(gameMode==='survival'){
-      const cx=WORLD_W/2, cy=WORLD_H/2;
-      if(dist(x,y,cx,cy) < SURV_PLAZA_R+pad) return true;
-      for(const [dx,dy] of SURV_DIRS){
-        const along = (x-cx)*dx + (y-cy)*dy;
-        if(along < 150) continue;
-        const side = Math.abs((x-cx)*(-dy) + (y-cy)*dx);
-        if(side < LANE_HALF+pad) return true;
-      }
-      return false;
+      if(dist(x,y,WORLD_W/2,WORLD_H/2) < SURV_PLAZA_R+pad) return true;
+      return survRoadDist(x,y) < LANE_HALF+pad;
     }
     return nearAnyLane(x, y, LANE_HALF+pad);
   }
@@ -4982,23 +5082,28 @@ window.addEventListener('DOMContentLoaded', function(){
     // Both curves are deliberately shallow — steepening either one compounds.
     const n = SURV_BASE_COUNT + Math.floor(survWave/3);
     const bigs = survWave < 4 ? 0 : 1 + Math.floor(survWave/6);
-    const cx = WORLD_W/2, cy = WORLD_H/2;
-    // Spawn on a road and walk it in. Lateral spread is in world units rather
-    // than degrees, so the wave stays inside the roadway at any spawn radius.
-    const base = Math.floor(rand(0,4));
+    // Spawn on a road and walk it in — the whole road, bends and all, rather
+    // than a straight line to the tower: the lane is only a gauntlet if the wave
+    // actually stays on it. Lateral spread is in world units rather than
+    // degrees, so a wave stays inside the roadway at any point along the snake.
+    const base = Math.floor(rand(0,SURV_PATHS.length));
     for(let i=0;i<n;i++){
-      const li = (base + i) % SURV_DIRS.length;
-      const [dx,dy] = SURV_DIRS[li];
-      const rr = SURV_SPAWN_R + rand(-70,70);
+      const li = (base + i) % SURV_PATHS.length;
+      const p = SURV_PATHS[li];
+      let idx = survPathIndexAt(p, SURV_SPAWN_R + rand(-120,120));
+      // The tail of the path, walked backwards: from out there in to the plaza.
+      let path = p.slice(0, idx+1).reverse();
       let off = rand(-LANE_HALF*0.7, LANE_HALF*0.7);
-      let x = cx+dx*rr - dy*off, y = cy+dy*rr + dx*off;
-      for(let att=0; att<6 && nearWater(x,y,40); att++){
+      let s = survOffsetPoint(path, off);
+      for(let att=0; att<6 && nearWater(s.x,s.y,40); att++){
         off = rand(-LANE_HALF*0.7, LANE_HALF*0.7);
-        const r2 = SURV_SPAWN_R + rand(-160,60);
-        x = cx+dx*r2 - dy*off; y = cy+dy*r2 + dx*off;
+        idx = survPathIndexAt(p, SURV_SPAWN_R + rand(-320,120));
+        path = p.slice(0, idx+1).reverse();
+        s = survOffsetPoint(path, off);
       }
-      const big = i < bigs;
-      enemyCreeps.push(makeCreep(x, y, big, dx<0?1:-1, [{x,y},{x:cx,y:cy}], li));
+      const c = makeCreep(s.x, s.y, i < bigs, path[1].x < s.x ? -1 : 1, path, li);
+      c.off = off;
+      enemyCreeps.push(c);
     }
     survWave++;
   }
@@ -7303,7 +7408,10 @@ window.addEventListener('DOMContentLoaded', function(){
     }
 
     ctx.strokeStyle='rgba(200,160,90,.45)'; ctx.lineWidth=3; ctx.lineJoin='round';
-    if(gameMode!=='survival') for(const path of LANE_PATHS){
+    // The arena's roads go on the minimap too. With two snaking lanes instead of
+    // four spokes, which way a wave is coming is no longer obvious from the
+    // shape of the map, so the map has to say.
+    for(const path of (gameMode==='survival' ? SURV_PATHS : LANE_PATHS)){
       ctx.beginPath();
       let q=mp(path[0].x,path[0].y); ctx.moveTo(q.x,q.y);
       for(let i=1;i<path.length;i++){ q=mp(path[i].x,path[i].y); ctx.lineTo(q.x,q.y); }
