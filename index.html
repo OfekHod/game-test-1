@@ -838,7 +838,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // green field, so unexplored ground came out brighter than ground you could
   // see and the fog read as haze rather than as shadow.
   const FOG_COLOR = '#3C5240';
-  const FOG_EDGE_BLUR = 'blur(3px)';   // in mask pixels; see drawFog
+  // How far a fog edge — and so the side of every shadow a tree throws — takes
+  // to fade out, in WORLD units. It has to be world units: the mask is sized
+  // from canvasScale, so a radius fixed in mask pixels would be four times
+  // softer on a laptop than on a phone with the same picture in front of you.
+  // applyLayout turns it into the filter drawFog uses.
+  const FOG_EDGE_SOFT = 11;
+  let fogEdgeFilter = 'none';
   const FOG_ALPHA = 0.82;
   const canvas = document.getElementById('game');
   const stageEl = document.getElementById('stage');
@@ -909,6 +915,8 @@ window.addEventListener('DOMContentLoaded', function(){
     fogCanvas.height = Math.max(1, Math.round(H*FOG_SCALE*canvasScale));
     maskCanvas.width = fogCanvas.width;
     maskCanvas.height = fogCanvas.height;
+    const soft = FOG_EDGE_SOFT * FOG_SCALE * canvasScale;
+    fogEdgeFilter = soft >= 0.5 ? 'blur('+soft.toFixed(2)+'px)' : 'none';
     rimGrads.clear();
   }
   applyLayout(true);
@@ -3136,7 +3144,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // in the geometry, which keeps the vision test itself exact. The mask is
     // drawn at FOG_SCALE and stretched to the screen, so a couple of pixels
     // here spread to a soft band of several once it lands.
-    fogCtx.filter = FOG_EDGE_BLUR;
+    fogCtx.filter = fogEdgeFilter;
     fogCtx.drawImage(maskCanvas, 0, 0);
     fogCtx.filter = 'none';
     fogCtx.globalCompositeOperation = 'source-over';
