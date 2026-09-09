@@ -8704,6 +8704,12 @@ window.addEventListener('DOMContentLoaded', function(){
      Written out by hand into a Float32Array it is about five operations per
      sample and the whole range renders in well under a tenth of a second. */
 
+  /* music:engine begin — tools/music-demo.js lifts everything down to the end
+     marker into a standalone page with an intensity slider on it, so what is
+     auditioned there is exactly what plays here. It depends on nothing else in
+     the game: no camera, no heroes, no DOM. The one thing the game hands it is
+     a number between 0 and 1. */
+
   // Deterministic noise. Every render — the live game, the sample page, the
   // offline WAV — must come out identical, so nothing here calls Math.random.
   function rng(seed){
@@ -8934,6 +8940,12 @@ window.addEventListener('DOMContentLoaded', function(){
     // One bus per instrument: its own tone shaping, its own place in the
     // stereo field, its own amount of room. Instruments stacked in the same
     // register with the same reverb turn into porridge.
+    // A bus hands back its nodes as well as its input, and remembers the level
+    // and cutoff the mix asked for. The intensity control below moves some of
+    // them, and it has to move them relative to what the piece was written
+    // with rather than to an absolute — otherwise every mix change silently
+    // retunes the drama.
+    const buses = {};
     function bus(gain, pan, sendAmt, lpFreq){
       const g = ctx.createGain(); g.gain.value = gain;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
@@ -8945,15 +8957,17 @@ window.addEventListener('DOMContentLoaded', function(){
       tail.connect(master);
       const send = ctx.createGain(); send.gain.value = opts.dry ? 0 : sendAmt;
       tail.connect(send); send.connect(conv);
-      return g;
+      return { g, lp, send, gBase: gain, lpBase: lpFreq };
     }
 
     function chan(key, g, pan, send, lp){
       const o = M[key] || {};
-      return bus((o.g == null ? g : o.g) * LVL,
-                 o.pan  == null ? pan  : o.pan,
-                 o.send == null ? send : o.send,
-                 o.lp   == null ? lp   : o.lp);
+      const rec = bus((o.g == null ? g : o.g) * LVL,
+                      o.pan  == null ? pan  : o.pan,
+                      o.send == null ? send : o.send,
+                      o.lp   == null ? lp   : o.lp);
+      buses[key] = rec;
+      return rec.g;
     }
     const busPiano  = chan('piano',  0.50,  0.10, 0.30, 7200);
     const busGuitar = chan('guitar', 0.60, -0.20, 0.26, 6200);
@@ -9111,7 +9125,12 @@ window.addEventListener('DOMContentLoaded', function(){
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
       const bs = (M.string && M.string.spread == null) ? 16 : (M.string ? M.string.spread : 16);
-      lp.frequency.value = clamp(mtof(midi) * (5 + bs * vel), 700, 9000);
+      // And a player under pressure digs in. This is the one continuous cue
+      // that is a change of TONE rather than of level, which is why it is the
+      // only thing that carries the bottom of the intensity range on its own:
+      // the guitar is the voice that never stops, so opening it up is heard
+      // immediately and everywhere, without a note being added.
+      lp.frequency.value = clamp(mtof(midi) * (5 + bs * (1 + SPREAD_RISE * intensity) * vel), 700, 9000);
       lp.Q.value = 0.5;
       s.connect(lp); lp.connect(g);
       g.connect(kind === 'bass' ? busBass : busGuitar);
@@ -9140,11 +9159,88 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
+    /* ---------------------------------------------------------- intensity */
+
+    /* One number, 0 to 1, for how much trouble is nearby. The game works it
+       out from where the enemy heroes are; this decides what that sounds like.
+
+       Two mechanisms, because "it is getting worse" and "something just
+       arrived" are different jobs and want different machinery:
+
+        - SHADING is continuous and always on. The pad comes up and opens, the
+          guitar's lowpass lifts a little, both of them give up a fraction of a
+          decibel, and the room shrinks. No new note plays: the same piece gets
+          tenser. This is what makes the middle of the range readable instead
+          of a flat wait between two switches.
+        - LAYERS are notes the piece already contains and does not play. Each
+          carries the tier it belongs to — tier 1 is the celeste warning, tier
+          2 the dive pulse — and is skipped entirely while the intensity is
+          below where that tier enters. Over the 0.18 above its threshold it
+          fades up from nothing, so a layer arriving is a player walking into
+          the room rather than a channel being unmuted.
+
+       Tempo is deliberately not one of them. loopStart and position() are both
+       measured in a fixed seconds-per-beat, so moving the tempo would move the
+       loop clock under the scheduler. Urgency comes from register, density and
+       brightness instead — which is the better answer anyway: a piece that
+       speeds up tells you something is happening, and a piece that grows a
+       voice above everything else tells you what. */
+    const TIER_IN = [0, 0.34, 0.70];   // indexed by tier: 0 is everything else
+    const TIER_FADE = 0.18;            // and how far above that it is fully in
+    const SPREAD_RISE = 1.6;           // how much harder the guitar is picked at 1
+    let intensity = 0;
+
+    function layerGain(tier){
+      if(!tier) return 1;
+      const lo = TIER_IN[tier];
+      if(lo == null) return 0;
+      return clamp((intensity - lo) / TIER_FADE, 0, 1);
+    }
+
+    // Targets, never jumps. A fifth of a second is short enough that walking
+    // into range is felt as it happens and long enough that a hero weaving in
+    // and out of the ring cannot make the mix flutter.
+    function shade(){
+      const now = ctx.currentTime, T = 0.22, u = intensity;
+      const set = (prm, v) => prm.setTargetAtTime(v, now, T);
+      const pad = buses.pad, gtr = buses.guitar, pno = buses.piano;
+      if(pad){
+        set(pad.g.gain, pad.gBase * (1 + 1.7 * u));
+        set(pad.lp.frequency, pad.lpBase * (1 + 0.75 * u));
+      }
+      if(gtr){
+        // Down as the layers arrive. The drama is meant to be a change of
+        // colour rather than of loudness, and something has to make room for
+        // it or the whole thing simply gets louder and the information is
+        // lost the moment the player turns the tab down.
+        //
+        // Squared, so it is the top of the range that pays. Linear here made
+        // the bottom of the range measurably DARKER than silence — the duck
+        // and the shorter tail together outran everything that was supposed to
+        // be opening up, and "they are getting closer" came out as the music
+        // quietly dimming.
+        set(gtr.g.gain, gtr.gBase * (1 - 0.16 * u * u));
+        set(gtr.lp.frequency, gtr.lpBase * (1 + 0.30 * u));
+      }
+      if(pno) set(pno.g.gain, pno.gBase * (1 - 0.10 * u));
+      // A shorter tail reads as a smaller room, and a smaller room reads as
+      // close. Most of what makes the match theme sound like it is happening
+      // somewhere else is this one number.
+      set(wet.gain, 0.9 - 0.30 * u);
+    }
+
     /* --------------------------------------------------------- scheduling */
 
     const events = song.events;
     function fire(ev, t){
-      const a = ev.a == null ? 1 : ev.a;
+      let a = ev.a == null ? 1 : ev.a;
+      // A layer note below its tier does not exist: not scheduled, not faded,
+      // no node built for it.
+      if(ev.tier){
+        const lg = layerGain(ev.tier);
+        if(lg < 0.04) return;
+        a *= lg;
+      }
       if(ev.k === 'p') piano(t, ev.p, ev.v, a);
       else if(ev.k === 'g') pluck(t, ev.p, ev.v, 'gtr', a);
       else if(ev.k === 'b') pluck(t, ev.p, ev.v, 'bass', a);
@@ -9195,6 +9291,18 @@ window.addEventListener('DOMContentLoaded', function(){
       loopSeconds,
       prewarm,
       setLevel,
+      setIntensity(v){
+        const n = clamp(v == null ? 0 : v, 0, 1);
+        if(n === intensity) return;
+        intensity = n;
+        shade();
+      },
+      // The demo page draws its meters off these, so the picture on it and the
+      // sound out of it can never disagree about where a layer comes in.
+      layerGain,
+      tiers: TIER_IN.slice(),
+      tierFade: TIER_FADE,
+      get intensity(){ return intensity; },
       get level(){ return level; },
       get running(){ return running; },
       start(fadeSec){
@@ -9263,6 +9371,15 @@ window.addEventListener('DOMContentLoaded', function(){
       return s || song.sections[song.sections.length - 1];
     };
 
+    // A voicing index past the top of the chord keeps climbing in octaves
+    // instead of dropping back to the bottom, so a picking figure written over
+    // four notes still works over a three-note chord.
+    function pickFrom(voicing, i){
+      const n = voicing.length;
+      const oct = Math.floor(i / n);
+      return voicing[((i % n) + n) % n] + 12 * oct;
+    }
+
     function push(k, t, p, v, extra){
       const e = { k, t, p, v: Math.max(0.04, Math.min(1, v)) };
       if(extra) Object.assign(e, extra);
@@ -9290,14 +9407,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const amp = sec.amp == null ? 1 : sec.amp;
       const voicing = ch.notes;
 
-      // A voicing index past the top of the chord keeps climbing in octaves
-      // instead of dropping back to the bottom, so a picking figure written
-      // over four notes still works over a three-note chord.
-      const pick = i => {
-        const n = voicing.length;
-        const oct = Math.floor(i / n);
-        return voicing[((i % n) + n) % n] + 12 * oct;
-      };
+      const pick = i => pickFrom(voicing, i);
 
       const pat = song.patterns[sec.guitar];
       if(pat){
@@ -9327,6 +9437,36 @@ window.addEventListener('DOMContentLoaded', function(){
       }
 
       if(sec.pad) push('d', ch.b, 0, 1, { n: voicing.slice(0, 3), d: ch.dur, a: amp });
+    }
+
+    // --- the threat layers ------------------------------------------------
+    // Notes that only play when the game says something is close. They are
+    // written against the same chord grid as everything else, so whatever
+    // walks in is in the key and on the harmony no matter where in the loop it
+    // happens — which it has to be, because the trigger is a hero's position
+    // and not a bar number.
+    //
+    // Emitted last, after every other voice, on purpose: the jitter comes off
+    // one deterministic stream, and generating these earlier would shift the
+    // micro-timing of every note that was already there. At intensity 0 the
+    // piece has to be the same piece, down to the sample.
+    for(const name in song.threat || {}){
+      const pat = song.threat[name];
+      for(const ch of song.chords){
+        const sec = sectionAt(ch.b);
+        const amp = sec.amp == null ? 1 : sec.amp;
+        for(let cell = 0; cell < ch.dur; cell += pat.span){
+          for(const step of pat.steps){
+            const t = ch.b + cell + step.b;
+            if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
+            // The bass reads off the chord's root like the bass patterns do;
+            // everything else climbs the voicing like the guitar figure does.
+            const p = step.k === 'b' ? ch.bass + (step.rel || 0)
+                                     : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
+            push(step.k || 'c', t + jitter(0.008), p, step.v, { a: amp, tier: pat.tier });
+          }
+        }
+      }
     }
 
     ev.sort((a, b) => a.t - b.t);
@@ -9588,6 +9728,43 @@ window.addEventListener('DOMContentLoaded', function(){
   ],
   counter: [],
 
+  /* What an enemy walking towards you adds to it.
+
+     Everything here is silent at intensity 0 and the piece above is untouched
+     by it, so a quiet match sounds exactly as it always did. The register is
+     the point: the guitar tops out around MIDI 71 and the piano's occasional
+     note sits at 69-78, so a celeste at 74-83 is above everything the piece
+     otherwise contains and cannot be mistaken for part of it.
+
+     Both figures repeat inside a bar rather than once a chord. From the edge
+     of the ring to being hit is about five seconds of walking, so a cue that
+     came round every seven and a half would be a cue you could miss entirely
+     on the way in. */
+  threat: {
+    // TIER 1, "somebody is close". Three celeste notes a bar, rising, so it
+    // reads as something approaching rather than something departing.
+    warn: { tier: 1, span: 4, steps: [
+      { b: 0,   k: 'c', i: 2, oct: 2, v: 0.34 },
+      { b: 2,   k: 'c', i: 4, oct: 2, v: 0.26 },
+      { b: 3.5, k: 'c', i: 3, oct: 2, v: 0.20 },
+    ] },
+    // TIER 2, "more than one of them, and they are on top of you". Straight
+    // eighths, alternating strong and weak so it is a pulse and not an alarm,
+    // with the piano landing on the bar underneath it for weight.
+    dive: { tier: 2, span: 2, steps: [
+      { b: 0,   k: 'c', i: 6, oct: 1, v: 0.30 },
+      { b: 0.5, k: 'c', i: 5, oct: 1, v: 0.17 },
+      { b: 1,   k: 'c', i: 7, oct: 1, v: 0.26 },
+      { b: 1.5, k: 'c', i: 5, oct: 1, v: 0.17 },
+    ] },
+    stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.34 } ] },
+    // The one place the piece is allowed a groove. Root-only is what keeps the
+    // match theme from ever tapping your foot; the fifth arriving on the third
+    // beat is that decision being revoked, and it is worth more than any
+    // amount of extra volume.
+    drive: { tier: 2, span: 4, steps: [ { b: 2, k: 'b', rel: 7, v: 0.30 } ] },
+  },
+
   mix: {
     level: 7.1,
     // The guitar carries it and the piano is a guest.
@@ -9595,7 +9772,11 @@ window.addEventListener('DOMContentLoaded', function(){
     piano:  { g: 0.30, pan:  0.08, send: 0.34, lp: 4200 },
     bass:   { g: 0.58, pan:  0.00, send: 0.10, lp: 1000 },
     pad:    { g: 0.17, pan:  0.00, send: 0.45, lp: 1600 },
-    bell:   { g: 0.00, pan:  0.00, send: 0.00, lp: 8000 },
+    // Silent in the piece as written — nothing routes here below tier 1 — so
+    // this is the celeste's level when it does speak, not a level the calm
+    // track ever reaches. Bright and wet: it is meant to arrive from further
+    // away than the guitar, and to be the one thing in the mix with air.
+    bell:   { g: 0.30, pan:  0.28, send: 0.42, lp: 9000 },
     // A rounder pluck, further from the bridge, ringing longer. `spread` is the
     // one that matters most: it is how far a hard note opens the string up, and
     // dropping it from 16 to 5 is what takes the bite out without taking the
@@ -9610,6 +9791,7 @@ window.addEventListener('DOMContentLoaded', function(){
     master: 0.82,
   },
 };
+  /* music:engine end */
 
   /* ------------------------------------------------------------------ music
      Two pieces. "Before the Lanes" plays over the menu and the end screen;
