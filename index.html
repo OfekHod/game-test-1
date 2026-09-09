@@ -166,7 +166,7 @@
   /* The other overlays dim an olive green over a field. This one sits on a
      sky, and 45% of anything dark turned it to slate — so it gets the
      lightest blue veil that still keeps the panel readable. */
-  #loadScreen{background:rgba(120,190,235,.20);}
+  #loadScreen{background:rgba(120,190,235,.10);}
   .loadPanel{max-width:340px;padding:28px 34px;}
   /* The panel used to be switched off with display:none, one frame after three
      seconds of sitting there. It gets to leave properly now, and it leaves
@@ -221,9 +221,12 @@
   /* Light spilling through the gap as the banks separate. */
   .cBloom{position:absolute;inset:-25%;opacity:0;
     background:radial-gradient(34% 44% at 50% 52%, rgba(255,255,255,.95) 0 22%, rgba(220,242,255,.45) 48%, rgba(255,255,255,0) 74%);}
-  .cBank{position:absolute;top:0;bottom:0;width:66%;will-change:transform,opacity;}
-  .cBank.l{left:-4%;}
-  .cBank.r{right:-4%;}
+  /* Wide enough that the two banks overlap the middle. At 66% their inner
+     edges stopped ~100px short of centre, so the sky was already open down the
+     join before anything moved and the parting had no seam to open. */
+  .cBank{position:absolute;top:0;bottom:0;width:80%;will-change:transform,opacity;}
+  .cBank.l{left:-7%;}
+  .cBank.r{right:-7%;}
   /* One cumulus per element: lumpy top, flatter base, soft all round. */
   /* Two elements per cloud, and the split is load-bearing. The outer one is
      what leaves during the parting; the inner one hovers, and keeps hovering
@@ -234,38 +237,65 @@
      off. Nested, the two transforms just compose. */
   .cloud{position:absolute;will-change:transform,opacity;}
   .cloud > i{position:absolute;inset:0;display:block;will-change:transform;
-    filter:drop-shadow(0 8px 12px rgba(58,110,152,.20));
-    background:
-      radial-gradient(27% 44% at 22% 63%, #fff 0 68%, rgba(255,255,255,0) 100%),
-      radial-gradient(31% 55% at 45% 41%, #fff 0 68%, rgba(255,255,255,0) 100%),
-      radial-gradient(26% 43% at 67% 57%, #fff 0 68%, rgba(255,255,255,0) 100%),
-      radial-gradient(19% 32% at 85% 71%, #fff 0 68%, rgba(255,255,255,0) 100%),
-      radial-gradient(58% 25% at 50% 79%, #fff 0 70%, rgba(255,255,255,0) 100%);}
+    filter:drop-shadow(0 5px 9px rgba(58,110,152,.20));}
+  /* Cumulus: a lumpy skyline over a flat base, in a box four times wider than
+     it is tall. The trick is that a radial-gradient's radii are percentages of
+     the BOX, so in a 4:1 box a lump only reads as round if its y-radius is
+     about four times its x-radius. The first version used near-equal
+     percentages in a near-square box and came out as an amorphous mound that
+     was also clipped flat by its own edges.
+     
+     Three silhouettes rather than one, because six identical clouds is the
+     other half of looking unreal. */
+  .cs1 > i{background:
+    radial-gradient(15% 62% at 34% 46%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(12% 50% at 52% 42%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(13% 54% at 66% 52%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(9% 36% at 19% 60%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(8% 32% at 80% 62%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(6% 24% at 90% 70%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(46% 20% at 50% 76%, #fff 0 76%, rgba(255,255,255,0) 100%);}
+  .cs2 > i{background:
+    radial-gradient(14% 58% at 64% 45%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(12% 50% at 46% 43%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(13% 52% at 32% 53%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(9% 36% at 80% 59%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(8% 30% at 18% 62%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(6% 22% at 9% 70%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(46% 19% at 50% 76%, #fff 0 76%, rgba(255,255,255,0) 100%);}
+  .cs3 > i{background:
+    radial-gradient(12% 50% at 30% 48%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(13% 54% at 58% 45%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(9% 38% at 44% 56%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(8% 32% at 74% 58%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(7% 26% at 16% 62%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(6% 20% at 86% 68%, #fff 0 72%, rgba(255,255,255,0) 100%),
+    radial-gradient(48% 18% at 50% 77%, #fff 0 76%, rgba(255,255,255,0) 100%);}
   /* A distant, faint layer for depth, drifting far slower than the banks. */
-  /* Distant wisps for depth. At .45 opacity with large puffs this was a sheet
-     of haze over the whole sky and flattened everything to white — the sky is
-     the point here, so it is small and faint. */
-  .cFar{position:absolute;inset:-12%;opacity:.22;will-change:transform;
-    background:
-      radial-gradient(13% 7% at 16% 19%, #fff 0 58%, rgba(255,255,255,0) 100%),
-      radial-gradient(15% 8% at 60% 11%, #fff 0 58%, rgba(255,255,255,0) 100%),
-      radial-gradient(11% 6% at 86% 30%, #fff 0 58%, rgba(255,255,255,0) 100%),
-      radial-gradient(14% 7% at 36% 84%, #fff 0 58%, rgba(255,255,255,0) 100%),
-      radial-gradient(10% 6% at 74% 70%, #fff 0 58%, rgba(255,255,255,0) 100%);
+  /* Distance is small clouds of the same build, not soft blobs. As plain
+     radial-gradients they read as smudges on the lens rather than as weather
+     further away, which is worse than having no far layer at all. */
+  .cFar{position:absolute;inset:0;opacity:.5;will-change:transform;
     animation:cFarDrift 15s linear infinite;}
+  .cf1{left:13%; top:15%; width:20%; aspect-ratio:4.3/1;}
+  .cf2{left:47%; top:9%;  width:16%; aspect-ratio:3.9/1;}
+  .cf3{left:73%; top:24%; width:22%; aspect-ratio:4.6/1;}
+  .cf4{left:26%; top:79%; width:18%; aspect-ratio:4.1/1;}
+  .cf5{left:64%; top:68%; width:15%; aspect-ratio:4.4/1;}
+  .cFar .cloud > i{filter:none;}
   @keyframes cFarDrift{to{transform:translate3d(3.5%,-1%,0)}}
   /* Placed so the two banks overlap the middle generously — the seam is what
      opens, and it must not be a straight edge. */
-  /* Sized to leave real sky between them. Three clouds per bank at 74-82% of
-     the bank's width covered the whole frame in white, which cost both the
-     blue and the sense of a gap opening. The sky is what hides the field, so
-     the clouds do not have to. */
-  .c1{left:-8%;  top:-10%; width:64%; height:46%;}
-  .c2{left:10%;  top:31%;  width:70%; height:50%;}
-  .c3{left:-16%; top:64%;  width:60%; height:43%;}
-  .c4{right:-10%;top:-6%;  width:66%; height:47%;}
-  .c5{right:8%;  top:35%;  width:62%; height:44%;}
-  .c6{right:-14%;top:68%;  width:68%; height:46%;}
+  /* Width in percent of the bank, height from aspect-ratio and never from the
+     stage. A percentage height looks right on a wide desktop and turns the
+     clouds back into squares on a portrait phone, where the stage is taller
+     than it is wide. Aspects vary a little per cloud on purpose. */
+  .c1{left:-8%;  top:7%;  width:64%; aspect-ratio:4.1/1;}
+  .c2{left:8%;   top:35%; width:72%; aspect-ratio:4.5/1;}
+  .c3{left:-14%; top:65%; width:58%; aspect-ratio:3.7/1;}
+  .c4{right:-10%;top:13%; width:66%; aspect-ratio:4.3/1;}
+  .c5{right:6%;  top:45%; width:60%; aspect-ratio:3.9/1;}
+  .c6{right:-12%;top:73%; width:70%; aspect-ratio:4.6/1;}
   .c2,.c5{opacity:.98;}
   .c3,.c6{opacity:.94;}
 
@@ -286,6 +316,11 @@
   .curtain .c4 > i{animation:cHovB 5.8s linear infinite;}
   .curtain .c5 > i{animation:cHovA 6.9s linear infinite;}
   .curtain .c6 > i{animation:cHovC 5.0s linear infinite;}
+  .curtain .cf1 > i{animation:cHovA 8.5s linear infinite;}
+  .curtain .cf2 > i{animation:cHovC 9.8s linear infinite;}
+  .curtain .cf3 > i{animation:cHovB 7.9s linear infinite;}
+  .curtain .cf4 > i{animation:cHovB 9.2s linear infinite;}
+  .curtain .cf5 > i{animation:cHovA 8.1s linear infinite;}
   @keyframes cHovA{
     0%{transform:translate3d(0,0,0) scale(1)}
     12.5%{transform:translate3d(2.26%,-1.6%,0) scale(1.002)}
@@ -601,16 +636,22 @@ window.addEventListener('DOMContentLoaded', function(){
 
     <div class="curtain hidden" id="curtain">
       <div class="cSky"></div>
-      <div class="cFar"></div>
+      <div class="cFar">
+        <div class="cloud cs2 cf1"><i></i></div>
+        <div class="cloud cs3 cf2"><i></i></div>
+        <div class="cloud cs1 cf3"><i></i></div>
+        <div class="cloud cs3 cf4"><i></i></div>
+        <div class="cloud cs2 cf5"><i></i></div>
+      </div>
       <div class="cBank l">
-        <div class="cloud c1"><i></i></div>
-        <div class="cloud c2"><i></i></div>
-        <div class="cloud c3"><i></i></div>
+        <div class="cloud cs1 c1"><i></i></div>
+        <div class="cloud cs2 c2"><i></i></div>
+        <div class="cloud cs3 c3"><i></i></div>
       </div>
       <div class="cBank r">
-        <div class="cloud c4"><i></i></div>
-        <div class="cloud c5"><i></i></div>
-        <div class="cloud c6"><i></i></div>
+        <div class="cloud cs2 c4"><i></i></div>
+        <div class="cloud cs3 c5"><i></i></div>
+        <div class="cloud cs1 c6"><i></i></div>
       </div>
       <div class="cBloom"></div>
     </div>
