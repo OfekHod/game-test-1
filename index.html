@@ -433,11 +433,17 @@
   .menuShot{display:block;width:100%;height:auto;}
   .menuBoard{position:absolute;left:34%;right:12.9%;top:28.9%;bottom:28.9%;
     display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2.2vmin;}
-  .menuBoard button{margin:0;border:none;background:#5AC8E8;color:#0a3a4a;cursor:pointer;
+  /* Crimson, taken off the knight's cape. The cyan these started as was the one
+     saturated colour anywhere on this screen — everything in the art sits in a
+     narrow band of warm greys and browns — so it read as interface laid on top
+     of a painting rather than part of it. Cream on crimson measures 4.53:1,
+     which clears AA for body text with almost nothing to spare, so the label
+     colour is not one to lighten the art's way. */
+  .menuBoard button{margin:0;border:none;background:#BC4A40;color:#FFF1E8;cursor:pointer;
     font-family:'Baloo 2',sans-serif;font-weight:800;white-space:nowrap;
     font-size:clamp(12px,2.45vmin,20px);padding:1.5vmin 2vmin;border-radius:1.6vmin;
-    box-shadow:0 0.55vmin 0 #2f9bc4;transition:transform .05s;}
-  .menuBoard button:active{transform:translateY(0.4vmin);box-shadow:0 0.15vmin 0 #2f9bc4;}
+    box-shadow:0 0.55vmin 0 #8A2F28;transition:transform .05s;}
+  .menuBoard button:active{transform:translateY(0.4vmin);box-shadow:0 0.15vmin 0 #8A2F28;}
   /* On a phone the square is only as wide as the screen, so the board — and
      everything scaled to it — comes out small: measured, the buttons were 26px
      tall, which is under half a finger. A floor on the touch target rather than
