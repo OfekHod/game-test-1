@@ -106,8 +106,10 @@ FOOTER = r"""
 vec2 map(vec3 p){ vec2 h=mapRaw(rig(p)); h.x*=uLip; return h; }
 
 uniform vec2  uCell;
-uniform vec2  uGrid;
-uniform float uFrames;
+uniform vec2  uGrid;      // cols, rows of cells in this image
+uniform float uFrames;    // frames in the clip
+uniform float uDirBase;   // first direction index in this image
+uniform float uDirTotal;  // directions in the full set (yaw = i*TAU/uDirTotal)
 uniform float uElev;
 uniform float uDist;
 uniform float uFL;
@@ -115,7 +117,7 @@ uniform vec3  uTarget;
 
 vec2 march(vec3 ro,vec3 rd){
   float t=0.35; vec2 res=vec2(-1.0);
-  for(int i=0;i<300;i++){
+  for(int i=0;i<190;i++){
     vec3 p=ro+rd*t; vec2 h=map(p);
     if(h.x<0.0006*t){ res=vec2(t,h.y); break; }
     t+=h.x*0.80; if(t>7.0) break;
@@ -129,7 +131,7 @@ vec3 calcNormal(vec3 p){
 }
 float softShadow(vec3 ro,vec3 rd,float mint,float maxt,float k){
   float res=1.0,t=mint;
-  for(int i=0;i<40;i++){
+  for(int i=0;i<28;i++){
     float h=map(ro+rd*t).x;
     res=min(res,k*h/t); t+=clamp(h,0.008,0.10);
     if(res<0.004||t>maxt) break;
@@ -138,8 +140,8 @@ float softShadow(vec3 ro,vec3 rd,float mint,float maxt,float k){
 }
 float calcAO(vec3 p,vec3 n){
   float occ=0.0,sca=1.0;
-  for(int i=0;i<5;i++){
-    float h=0.014+0.14*float(i)/4.0;
+  for(int i=0;i<4;i++){
+    float h=0.016+0.14*float(i)/3.0;
     occ+=(h-map(p+n*h).x)*sca; sca*=0.80;
   }
   return clamp(1.0-1.7*occ,0.0,1.0);
@@ -206,9 +208,12 @@ vec3 render(vec3 ro,vec3 rd,out float alpha){
 }
 void main(){
   vec2 cell=floor(gl_FragCoord.xy/uCell);
-  gYaw   = cell.x*TAU/uGrid.x;
   float row = uGrid.y-1.0-cell.y;
-  gPhase = (uFrames>1.0) ? row/uFrames : 0.0;
+  float idx = row*uGrid.x + cell.x;          // row-major, top-left first
+  float dirI   = uDirBase + floor(idx/uFrames);
+  float frameI = mod(idx, uFrames);
+  gYaw   = dirI*TAU/uDirTotal;
+  gPhase = (uFrames>1.0) ? frameI/uFrames : 0.0;
   vec2 fc=mod(gl_FragCoord.xy,uCell);
 
   vec3 col=vec3(0.0); float a=0.0;
@@ -263,6 +268,8 @@ try{
   gl.uniform2f(U('uCell'),%(CW)d,%(CH)d);
   gl.uniform2f(U('uGrid'),%(COLS)d,%(ROWS)d);
   gl.uniform1f(U('uFrames'),%(FRAMES)d);
+  gl.uniform1f(U('uDirBase'),%(DIRBASE)d);
+  gl.uniform1f(U('uDirTotal'),%(DIRTOTAL)d);
   gl.uniform1f(U('uClip'),%(CLIP)d);
   gl.uniform1f(U('uElev'),%(ELEV)f);
   gl.uniform1f(U('uDist'),%(DIST)f);
@@ -283,13 +290,23 @@ try{
 </script></body></html>"""
 
 def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
-           cw=192, ch=240, SS=2, budget=1200000):
-    """Render one sprite sheet: `dirs` columns of camera yaw by `frames` rows."""
+           cw=192, ch=240, SS=2, budget=2400000, cols=None, dir_base=0,
+           dir_total=8):
+    """Render one sprite sheet.
+
+    The image holds `dirs` directions x `frames` frames, packed row-major into
+    `cols` columns. Default cols=dirs reproduces the classic layout (one column
+    per facing). Pass dirs=1 with dir_base=d to get a single-facing sheet.
+    """
+    import math
+    cols = cols or dirs
+    rows = math.ceil(dirs*frames/cols)
     fs = HEADER + body_glsl + FOOTER
     fs = fs.replace(BS, BS + BS).replace("`", BS + "`").replace("${", BS + "${")
-    W, H = cw * dirs, ch * frames
+    W, H = cw * cols, ch * rows
     html = HTML % dict(W=W, H=H, FS=fs, SS=SS, CW=cw, CH=ch,
-                       COLS=dirs, ROWS=frames, FRAMES=frames, CLIP=clip,
+                       COLS=cols, ROWS=rows, FRAMES=frames, CLIP=clip,
+                       DIRBASE=dir_base, DIRTOTAL=dir_total,
                        ELEV=cam["elev"], DIST=cam["dist"], FL=cam["fl"],
                        TX=cam["target"][0], TY=cam["target"][1], TZ=cam["target"][2],
                        HIPY=rig["hipY"], SHLDY=rig["shldY"], ARMZ=rig["armZ"],
@@ -308,5 +325,5 @@ def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
     if not m:
         print(f"[{name}] no image; dom head: {p.stdout[:300]}"); return False
     pathlib.Path(out_png).write_bytes(base64.b64decode(m.group(1)))
-    print(f"[{name}] {W}x{H} ({dirs}dir x {frames}f) SS={SS} in {dt:.0f}s -> {out_png}")
+    print(f"[{name}] {W}x{H} ({cols}x{rows} cells, {dirs}dir x {frames}f) SS={SS} in {dt:.0f}s -> {out_png}")
     return True

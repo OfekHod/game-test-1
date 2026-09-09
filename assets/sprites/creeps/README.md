@@ -16,7 +16,7 @@ Three variants of each creep are provided, in increasing order of realism:
 - **`./`** — 3/4 view, stylized flat vector, `256x288`.
 - **`./side/`** — side profile, detailed vector illustration, `320x400`.
 - **`./render3d/`** — side profile, stylised 3D render, `1024x1280`.
-- **`./render3d/sheets/`** — cel-shaded **8-direction animation sprite sheets**.
+- **`./render3d/sheets/`** — cel-shaded **8-direction animation sprite sheets**, `576x720` per frame.
 
 Each ships as an `.svg` source and a `.png` export with a transparent
 background. Prefer editing the SVG — it rescales and recolors cleanly for team
@@ -24,38 +24,46 @@ variants.
 
 ## Animation sprite sheets
 
-`render3d/sheets/` holds the actual game-ready sprites: cel-shaded, 8 facings,
-three animation clips each.
+`render3d/sheets/` holds the game-ready sprites: cel-shaded, 8 facings, three
+clips each, at **576x720 per frame**.
 
-| Clip | Frames | Loops |
-|---|---|---|
-| `idle` | 4 | yes |
-| `walk` | 8 | yes |
-| `attack` | 6 | no |
+| Clip | Frames | Grid | Sheet size | Loops |
+|---|---|---|---|---|
+| `idle` | 4 | 2x2 | 1152x1440 | yes |
+| `walk` | 8 | 4x2 | 2304x1440 | yes |
+| `attack` | 6 | 3x2 | 1728x1440 | no |
 
-**Sheet layout** — one PNG per creep per clip, named `<creep>_<clip>.png`.
-Columns are the 8 facings, rows are the animation frames, row 0 at the top.
-Cells are `192x240` with a transparent background, so frame *(dir, f)* is at
-`(dir*192, f*240)`. Each creep also ships a `<creep>.json` describing exactly
-that, for engine import.
+**One file per hero per clip per facing**, at
+`sheets/<creep>/<clip>_<DIR>.png` — for example
+`sheets/radiant_vanguard/walk_SE.png`.
 
-**Direction order** is `E, SE, S, SW, W, NW, N, NE` — column 0 is the character
+That split is deliberate. All eight facings in one sheet at this cell size
+would be 4608px wide, past the **4096 max texture size** many GPUs still
+enforce; every file here stays comfortably under it, and each hero's assets sit
+in one folder. Frames are packed row-major (left to right, then top to bottom)
+starting at the top-left, so frame *i* is at
+`(i % cols * 576, i / cols * 720)`.
+
+**Direction order** is `E, SE, S, SW, W, NW, N, NE`. `E` is the character
 facing screen-right (the original side profile), and yaw increases clockwise
 viewed from above. Camera elevation is 0.38 rad (~22 degrees), a shallow
 three-quarter view that keeps all eight facings distinguishable.
 
-Note the eight directions are **rendered, not mirrored** — E and W are separate
-renders, so asymmetric details (the vanguard's shield arm, the bowman's draw
-hand) stay on the correct side.
+Facings are **rendered, not mirrored** — E and W are separate renders, so
+asymmetric details (the vanguard's shield arm, the bowman's draw hand) stay on
+the correct side.
 
-Previews for eyeballing the result live in `render3d/sheets/preview/`: an
-animated GIF per clip, a frame strip, and a row of all eight facings.
+Each hero folder carries a `<creep>.json` describing all of the above for
+engine import. Previews live in `sheets/preview/`.
 
 ```sh
 cd render3d/src
-python3 make_sheets.py      # render every sheet   (~9 min)
-python3 build_previews.py   # metadata + GIFs
+python3 make_sheets.py      # render every sheet (~90 min; skips existing files)
+python3 build_previews.py   # GIFs, strips, facing rows
 ```
+
+`make_sheets.py` skips files that already exist, so an interrupted run can be
+re-run to finish, and deleting one file re-renders just that one.
 
 ### How the animation works
 
@@ -66,15 +74,18 @@ region beyond `uArmZ` in |z| to swing the arms, and the region above the hip to
 lean the torso. `sign(p.z)` picks near limb vs far limb, which is what makes the
 legs counter-swing.
 
-Two constraints matter if you edit it:
+Three constraints matter if you edit it:
 
 - **The leg hinge is a hard cut at the hip plane**, not a smooth falloff. A
   varying rotation angle shears space and breaks the distance field's Lipschitz
   bound, which tears the legs into streaks while marching. A hard cut keeps the
   transform rigid below the pivot, so the field stays valid.
 - **`uLip` scales returned distances** (0.85 idle / 0.45 walk / 0.35 attack) to
-  compensate for the shear that the arm and torso warps still introduce. Lower
-  it if a new pose shows streaking; raise it for speed.
+  compensate for the shear the arm and torso warps still introduce. Lower it if
+  a new pose streaks; raise it for speed.
+- **Robed figures set `legAmp=0`** in their `RIG` dict. The hip cut splits any
+  hem that crosses it, which tore the hexcaster's robe until his legs were
+  pinned.
 
 ## 3D render set
 
