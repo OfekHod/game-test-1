@@ -59,6 +59,9 @@ uniform float uInk;         // silhouette ink line strength
 uniform float uSpec;        // stepped specular strength
 uniform float uContrast;    // 1 = flat cel ramp, >1 deepens the shadow band
 uniform float uLift;        // how far the lit band lifts toward white
+uniform float uShadowMin;   // floor on the key's shadow term. Blocky shapes
+                            // self-shadow hard, which makes some facings of a
+                            // turning unit far darker than others.
 const float TAU = 6.28318530718;
 
 // Hinge the region below a pivot, opposite sign per side of the body.
@@ -167,12 +170,15 @@ float toon(float x){
 vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
   albedo = pow(clamp(albedo,0.0,1.0), vec3(1.0/2.2));
   vec3 V=-rd;
-  vec3 L  = rotY(normalize(vec3( 0.55,0.75,-0.50)), gYaw);
-  vec3 L2 = rotY(normalize(vec3(-0.72,0.28,-0.40)), gYaw);
-  vec3 Lr = rotY(normalize(vec3(-0.35,0.32, 0.88)), gYaw);
+  // Lights are camera-relative so every facing reads the same on screen. The
+  // rotation must be -gYaw: the camera orbits by +gYaw, so rotating the lights
+  // the same way counter-rotates them and back-lights half the facings.
+  vec3 L  = rotY(normalize(vec3( 0.55,0.75,-0.50)), -gYaw);
+  vec3 L2 = rotY(normalize(vec3(-0.72,0.28,-0.40)), -gYaw);
+  vec3 Lr = rotY(normalize(vec3(-0.35,0.32, 0.88)), -gYaw);
 
   float sh  = softShadow(p+n*0.006,L,0.02,3.0,5.0);
-  float key = toon(max(dot(n,L),0.0)*mix(0.55,1.0,sh));
+  float key = toon(max(dot(n,L),0.0)*mix(uShadowMin,1.0,sh));
   float fil = toon(max(dot(n,L2),0.0));
   float aoT = mix(1.0, smoothstep(0.25,0.85,ao), 0.55);
 
@@ -298,6 +304,7 @@ try{
   gl.uniform1f(U('uSpec'),%(SPEC)f);
   gl.uniform1f(U('uContrast'),%(CONTRAST)f);
   gl.uniform1f(U('uLift'),%(LIFT)f);
+  gl.uniform1f(U('uShadowMin'),%(SHMIN)f);
   gl.viewport(0,0,%(W)d,%(H)d);
   gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES,0,3);
@@ -306,7 +313,8 @@ try{
 }
 </script></body></html>"""
 
-DEFAULT_STYLE = dict(shadowTint=(0.44, 0.49, 0.66), ink=1.0, spec=0.42, contrast=1.0, lift=0.16)
+DEFAULT_STYLE = dict(shadowTint=(0.44, 0.49, 0.66), ink=1.0, spec=0.42, contrast=1.0,
+                     lift=0.16, shadowMin=0.55)
 
 
 def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
@@ -335,7 +343,7 @@ def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
                        LEGAMP=rig.get("legAmp", 1.0),
                        STR=st["shadowTint"][0], STG=st["shadowTint"][1],
                        STB=st["shadowTint"][2], INK=st["ink"], SPEC=st["spec"],
-                       CONTRAST=st["contrast"], LIFT=st["lift"])
+                       CONTRAST=st["contrast"], LIFT=st["lift"], SHMIN=st["shadowMin"])
     d = pathlib.Path(f"_{name}.html"); d.write_text(html)
     t0 = time.time()
     p = subprocess.run([CHROME, "--headless", "--no-sandbox", "--enable-unsafe-swiftshader",
