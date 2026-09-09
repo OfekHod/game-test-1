@@ -1465,13 +1465,21 @@ window.addEventListener('DOMContentLoaded', function(){
     let timer = null, loopStart = 0, cursor = 0, running = false;
     const LOOKAHEAD = 0.25, TICK = 45;
 
-    function tick(){
+    // The window is normally LOOKAHEAD, which is as far ahead as a scheduler
+    // wants to commit: notes queued early cannot be taken back, and intensity
+    // shading is applied as each one is fired. prime() widens it for one pass,
+    // for the one moment the caller knows the main thread is about to stop
+    // answering — and then the guard has to come up with it, because a wider
+    // window is more notes.
+    function tick(horizon){
       const now = ctx.currentTime;
+      const ahead = horizon == null ? LOOKAHEAD : horizon;
+      const cap = horizon == null ? 400 : 4000;
       let guard = 0;
-      while(guard++ < 400){
+      while(guard++ < cap){
         const ev = events[cursor];
         const t = loopStart + ev.t * spb;
-        if(t > now + LOOKAHEAD) break;
+        if(t > now + ahead) break;
         if(t > now - 0.05) fire(ev, Math.max(t, now + 0.005));
         cursor++;
         if(cursor >= events.length){ cursor = 0; loopStart += loopSeconds; }
@@ -1491,6 +1499,12 @@ window.addEventListener('DOMContentLoaded', function(){
       loopSeconds,
       prewarm,
       setLevel,
+      // Queue the next few seconds now rather than 45ms at a time. The cursor
+      // carries on from wherever this leaves it, so the interval below simply
+      // finds nothing to do until real time has caught up.
+      prime(seconds){
+        if(running) tick(Math.max(LOOKAHEAD, seconds || 0));
+      },
       setIntensity(v){
         const n = clamp(v == null ? 0 : v, 0, 1);
         if(n === intensity) return;
@@ -10261,12 +10275,6 @@ window.addEventListener('DOMContentLoaded', function(){
     xpCountEl.textContent='0';
     timerEl.textContent = fmtTime(ROUND_TIME);
     startScreen.classList.add('hidden');
-    // The music is as calm as the map is. Without this a round that ended with
-    // three of them on top of you would open the next one at full dread and
-    // then take two and a half seconds to work out that nobody is there.
-    threat = 0;
-    if(musicTracks.play) musicTracks.play.setIntensity(0);
-    musicSync();                       // into play: the theme fades out
     endScreen.classList.add('hidden');
     bottomDock.classList.remove('hidden');
     partyEl.classList.remove('hidden');
@@ -10331,6 +10339,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // beat the reveal plays out of, and cutting it short on a fast machine would
   // cost the reveal its run-up.
   const LOAD_MIN_MS = 3000;
+  // A swap, not a dissolve. The gain ramps are exponential, and an exponential
+  // climbing from silence spends most of its length below anything you can
+  // hear: the old 2.4s fade-in was still under -30dB a second and a half after
+  // the click, which is most of why clicking Match used to be followed by
+  // nothing. A quarter of a second is short enough that the match theme is
+  // simply there, and long enough not to click. The menu theme's own fade is
+  // left at its usual second and a half, because that long tail is what covers
+  // the quarter second before the first bar of the match arrives.
+  const MATCH_FADE = 0.25;
   const PART_MS = 1700;        // must match the longest .curtain.part animation
   // The bar is told how long the wait is rather than being given a duration in
   // the stylesheet, so changing the floor above cannot leave it out of step.
@@ -10359,6 +10376,26 @@ window.addEventListener('DOMContentLoaded', function(){
     curtainEl.classList.remove('hidden', 'part');
     curtainEl.classList.add('hold');
     loadScreen.classList.remove('hidden');
+    // The match theme starts HERE, on the click, and not where it used to —
+    // inside startRound, on the far side of buildMap. The panel is three
+    // seconds of sky with a progress bar on it, and the whole of it used to be
+    // spent waiting for the piece to arrive: the menu theme died away, a second
+    // and a half of nothing followed, and the match theme was still climbing
+    // its fade when the clouds pulled apart. Measured off the audio thread,
+    // silence from 610ms to 2177ms after the click.
+    //
+    // The music is also as calm as the map is. Without this a round that ended
+    // with three of them on top of you would open the next one at full dread
+    // and then take two and a half seconds to work out that nobody is there.
+    threat = 0;
+    if(musicTracks.play) musicTracks.play.setIntensity(0);
+    musicSync(MATCH_FADE);
+    // The main thread is about to disappear into buildMap and the cache warm,
+    // and the scheduler is a setInterval with a quarter-second of lookahead —
+    // it cannot run while that is happening. So hand the audio thread enough
+    // notes to play through the block before walking into it.
+    const matchTheme = musicTracks.play;
+    if(matchTheme) matchTheme.prime(1.5);
     const shownAt = performance.now();
     // Two frames, not one. The first queues the panel; the second is evidence
     // it has actually been painted before the main thread disappears into the
@@ -10809,7 +10846,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!musicContext()) return;
     const want = !document.hidden ? (menuShowing() ? 'menu' : 'play') : null;
     // Stop the other one first so the two fades overlap into a crossfade
-    // rather than leaving a hole between the pieces.
+    // rather than leaving a hole between the pieces. The outgoing one is left
+    // long on purpose: it is what covers the incoming one's first beat.
     for(const key in musicTracks){
       if(key !== want && musicTracks[key].running) musicTracks[key].stop(1.5);
     }
