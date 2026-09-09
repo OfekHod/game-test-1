@@ -10,7 +10,8 @@ Two outputs:
       and rows advance counter-clockwise: S, SE, E, NE, N, NW, W, SW.
 
 Frames are rendered at 4x and downsampled, which is sharper than rendering
-straight to 92x122.
+straight to 92x122, and it lets the procedural surface grain survive the
+reduction as texture rather than noise.
 """
 import importlib, pathlib, sys
 HERE = pathlib.Path(__file__).resolve().parent
@@ -30,7 +31,7 @@ def strip_for(mod, my_dir, tmp):
     """One direction's 8 walk frames, rendered big then downsampled."""
     render(f"chibi_d{my_dir}", mod.BODY, tmp, mod.RIG, mod.CAM, clip=1,
            frames=FRAMES, dirs=1, dir_base=my_dir, cols=FRAMES,
-           cw=CW*UP, ch=CH*UP, SS=SS)
+           cw=CW*UP, ch=CH*UP, SS=SS, style=mod.STYLE)
     big = Image.open(tmp).convert("RGBA")
     return big.resize((CW*FRAMES, CH), Image.LANCZOS)
 

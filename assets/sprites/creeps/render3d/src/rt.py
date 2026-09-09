@@ -48,6 +48,10 @@ uniform float uArmZ;    // |z| beyond which geometry counts as an arm
 uniform float uAmp;     // per-creep amplitude scale
 uniform float uLip;     // Lipschitz compensation for the rig warp
 uniform float uLegAmp;  // 0 disables the leg hinge (robed figures: the cut tears the hem)
+uniform vec3  uShadowTint;  // colour the cel shadow band is tinted toward
+uniform float uInk;         // silhouette ink line strength
+uniform float uSpec;        // stepped specular strength
+uniform float uContrast;    // 1 = flat cel ramp, >1 deepens the shadow band
 const float TAU = 6.28318530718;
 
 // Hinge the region below a pivot, opposite sign per side of the body.
@@ -165,7 +169,7 @@ vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
   float fil = toon(max(dot(n,L2),0.0));
   float aoT = mix(1.0, smoothstep(0.25,0.85,ao), 0.55);
 
-  vec3 shadowCol = albedo*vec3(0.44,0.49,0.66);
+  vec3 shadowCol = albedo*uShadowTint;
   vec3 litCol    = mix(albedo, vec3(1.0), 0.16)*1.04;
   vec3 col = mix(shadowCol, albedo, smoothstep(0.0,0.52,key));
   col = mix(col, litCol, smoothstep(0.52,1.0,key));
@@ -174,14 +178,15 @@ vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
 
   vec3 H=normalize(L+V);
   float spec=pow(max(dot(n,H),0.0), mix(26.0,190.0,1.0-rough));
-  col += mix(vec3(1.0),albedo,metal)*step(0.62,spec)*0.42*sh;
+  col += mix(vec3(1.0),albedo,metal)*step(0.62,spec)*uSpec*sh;
 
   float rim = smoothstep(0.45,0.90, max(dot(n,Lr),0.0))
             * smoothstep(0.30,0.85, 1.0-abs(dot(n,V)));
   col += vec3(0.42,0.58,0.86)*rim*0.42;
 
   float edge = 1.0-abs(dot(n,V));
-  col = mix(col, vec3(0.055,0.048,0.070), smoothstep(0.875,0.960,edge));
+  col = mix(col, vec3(0.055,0.048,0.070), smoothstep(0.875,0.960,edge)*uInk);
+  col = mix(albedo*0.5, col, clamp(uContrast,0.2,3.0));
   return col;
 }
 vec3 bumpNormal(vec3 p,vec3 n,float scale,float amp){
@@ -281,6 +286,10 @@ try{
   gl.uniform1f(U('uAmp'),%(AMP)f);
   gl.uniform1f(U('uLip'),%(LIP)f);
   gl.uniform1f(U('uLegAmp'),%(LEGAMP)f);
+  gl.uniform3f(U('uShadowTint'),%(STR)f,%(STG)f,%(STB)f);
+  gl.uniform1f(U('uInk'),%(INK)f);
+  gl.uniform1f(U('uSpec'),%(SPEC)f);
+  gl.uniform1f(U('uContrast'),%(CONTRAST)f);
   gl.viewport(0,0,%(W)d,%(H)d);
   gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES,0,3);
@@ -289,9 +298,12 @@ try{
 }
 </script></body></html>"""
 
+DEFAULT_STYLE = dict(shadowTint=(0.44, 0.49, 0.66), ink=1.0, spec=0.42, contrast=1.0)
+
+
 def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
            cw=192, ch=240, SS=2, budget=2400000, cols=None, dir_base=0,
-           dir_total=8):
+           dir_total=8, style=None):
     """Render one sprite sheet.
 
     The image holds `dirs` directions x `frames` frames, packed row-major into
@@ -301,6 +313,7 @@ def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
     import math
     cols = cols or dirs
     rows = math.ceil(dirs*frames/cols)
+    st = dict(DEFAULT_STYLE); st.update(style or {})
     fs = HEADER + body_glsl + FOOTER
     fs = fs.replace(BS, BS + BS).replace("`", BS + "`").replace("${", BS + "${")
     W, H = cw * cols, ch * rows
@@ -311,7 +324,10 @@ def render(name, body_glsl, out_png, rig, cam, clip=1, frames=8, dirs=8,
                        TX=cam["target"][0], TY=cam["target"][1], TZ=cam["target"][2],
                        HIPY=rig["hipY"], SHLDY=rig["shldY"], ARMZ=rig["armZ"],
                        AMP=rig["amp"], LIP={0:0.85, 1:0.45, 2:0.35}.get(clip,0.5),
-                       LEGAMP=rig.get("legAmp", 1.0))
+                       LEGAMP=rig.get("legAmp", 1.0),
+                       STR=st["shadowTint"][0], STG=st["shadowTint"][1],
+                       STB=st["shadowTint"][2], INK=st["ink"], SPEC=st["spec"],
+                       CONTRAST=st["contrast"])
     d = pathlib.Path(f"_{name}.html"); d.write_text(html)
     t0 = time.time()
     p = subprocess.run([CHROME, "--headless", "--no-sandbox", "--enable-unsafe-swiftshader",

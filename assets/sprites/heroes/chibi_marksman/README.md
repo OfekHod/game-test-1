@@ -14,6 +14,28 @@ Palette is sampled from the carry sheet itself (`#b3a790`, `#d3c6b0`, `#736652`,
 near-black, plus the gold accent). The one deliberate difference is a teal band
 at the back of the helmet, tying it to the Radiant creeps.
 
+## Surface treatment
+
+Unlike the creep set, this sprite keeps procedural texture: per-material grain
+and bump mapping (scuffed plate, woven gear, grained leather, brushed gold),
+plus modelled hard detail — helmet rim seam, ear cups, collar, diagonal chest
+strap and buckle, hip pouch, knee pads, boot soles, and a sight rail and
+magazine on the weapon. Rendering at 4x and downsampling turns that grain into
+texture rather than noise at 92x122.
+
+Look is tuned per character through the `STYLE` dict in `chibi_marksman.py`,
+passed to `render(..., style=STYLE)`:
+
+| Key | Here | Effect |
+|---|---|---|
+| `shadowTint` | `(0.46,0.435,0.50)` | Colour the cel shadow band leans to. The creep default `(0.44,0.49,0.66)` is cool and reads pale on tan. |
+| `contrast` | `1.05` | Deepens the shadow band. |
+| `ink` | `1.30` | Silhouette line strength. |
+| `spec` | `0.40` | Stepped specular pop. |
+
+Omitting `style` reproduces the creep look exactly, so the creep sheets are
+unaffected by these controls.
+
 ## Files
 
 | File | Size | Format |

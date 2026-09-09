@@ -10,14 +10,29 @@ BODY = r"""
 
 void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
               out float metal, out float bAmp, out float bScale, out vec3 emis){
-  emis=vec3(0.0); bAmp=0.0; bScale=1.0;
-  if(id<1.5){      albedo=vec3(0.610,0.492,0.330); metal=0.0; rough=0.90; }  // bone/tan plate
-  else if(id<2.5){ albedo=vec3(0.030,0.027,0.024); metal=0.3; rough=0.58; }  // near-black gear
-  else if(id<3.5){ albedo=vec3(0.810,0.456,0.040); metal=0.6; rough=0.36; }  // gold accent
-  else if(id<4.5){ albedo=vec3(0.455,0.530,0.560); metal=0.75; rough=0.14; }  // visor lens
-  else if(id<5.5){ albedo=vec3(0.235,0.170,0.098); metal=0.0; rough=0.80; }  // leather strap
-  else if(id<6.5){ albedo=vec3(0.055,0.300,0.220); metal=0.0; rough=0.80; }  // teal (my faction tie-in)
-  else {           albedo=vec3(0.010,0.010,0.012); metal=0.0; rough=0.94; }  // recess
+  emis=vec3(0.0);
+  float fine = fbm(p*46.0);          // close grain
+  float blot = fbm(p*13.0);          // broad mottling, keeps flats from going dead
+  if(id<1.5){                        // bone/tan plate: scuffed, not pale
+    albedo = vec3(0.540,0.442,0.306) * (0.86+0.30*blot) * (0.90+0.22*fine);
+    metal=0.0; rough=0.86; bAmp=0.011; bScale=110.0;
+  } else if(id<2.5){                 // dark gear, woven
+    albedo = vec3(0.048,0.043,0.039) * (0.66+0.74*fbm(p*90.0));
+    metal=0.25; rough=0.62; bAmp=0.020; bScale=210.0;
+  } else if(id<3.5){                 // gold accent, brushed
+    albedo = vec3(0.740,0.404,0.048) * (0.80+0.40*fbm(p*70.0));
+    metal=0.65; rough=0.34; bAmp=0.007; bScale=150.0;
+  } else if(id<4.5){                 // goggle glass, stays clean
+    albedo = vec3(0.400,0.478,0.520); metal=0.80; rough=0.12; bAmp=0.0; bScale=1.0;
+  } else if(id<5.5){                 // leather strap, grained
+    albedo = vec3(0.230,0.156,0.084) * (0.72+0.58*fbm(p*80.0));
+    metal=0.0; rough=0.82; bAmp=0.022; bScale=170.0;
+  } else if(id<6.5){                 // teal band
+    albedo = vec3(0.052,0.250,0.186) * (0.78+0.44*fine);
+    metal=0.0; rough=0.80; bAmp=0.013; bScale=160.0;
+  } else {                           // recessed seam / shadow line
+    albedo = vec3(0.012,0.011,0.012); metal=0.0; rough=0.95; bAmp=0.0; bScale=1.0;
+  }
 }
 
 vec2 mapRaw(vec3 p){
@@ -74,8 +89,41 @@ vec2 mapRaw(vec3 p){
   // teal band at the back, tying it to my creep set
   res = mmin(res, vec2(sdEllip(p-vec3(-0.206,0.848,0.0), vec3(0.092,0.084,0.184)),6.0));
   // jaw shadow
+  // ---------- definition: seams, pads and kit ----------
+  // helmet rim line where the shell meets the face
+  {
+    float ring = max(sdEllip(p-vec3(0.005,0.790,0.0), vec3(0.278,0.284,0.276)),
+                    -sdEllip(p-vec3(0.005,0.790,0.0), vec3(0.258,0.264,0.256)));
+    res = mmin(res, vec2(max(ring, abs(p.y-0.786)-0.013), 7.0));
+  }
+  // ear cups
+  res = mmin(res, vec2(sdEllip(p-vec3(0.038,0.788,-0.244), vec3(0.062,0.062,0.030)),2.0));
+  res = mmin(res, vec2(sdEllip(p-vec3(0.038,0.788, 0.244), vec3(0.062,0.062,0.030)),2.0));
+  // collar
+  res = mmin(res, vec2(sdCap(p, vec3(0.0,0.532,0.0), vec3(0.0,0.500,0.0), 0.118,0.126),5.0));
+  // diagonal chest strap + buckle
+  {
+    vec3 q = p - vec3(0.120,0.398,0.0); q.yz *= rot(0.62);
+    res = mmin(res, vec2(sdBox(q, vec3(0.026,0.026,0.168),0.010),5.0));
+  }
+  res = mmin(res, vec2(sdBox(p-vec3(0.150,0.406,-0.052), vec3(0.020,0.026,0.026),0.008),3.0));
+  // hip pouch
+  res = mmin(res, vec2(sdBox(p-vec3(0.086,0.302,-0.128), vec3(0.044,0.042,0.038),0.018),5.0));
+  // knee pads
+  res = mmin(res, vec2(sdEllip(p-vec3(0.052,0.176,-0.092), vec3(0.058,0.048,0.058)),1.0));
+  res = mmin(res, vec2(sdEllip(p-vec3(0.046,0.176, 0.092), vec3(0.056,0.046,0.056)),1.0));
+  // boot soles
+  res = mmin(res, vec2(sdBox(p-vec3(0.030,0.012,-0.092), vec3(0.078,0.014,0.058),0.010),7.0));
+  res = mmin(res, vec2(sdBox(p-vec3(0.024,0.012, 0.092), vec3(0.076,0.014,0.056),0.010),7.0));
+  // weapon kit: sight rail and magazine
+  {
+    vec3 q = p - vec3(0.250,0.378, 0.186); q.xz *= rot(-0.62); q.xy *= rot(0.05);
+    res = mmin(res, vec2(sdBox(q-vec3(0.030,0.082,0.0), vec3(0.052,0.020,0.016),0.008),7.0));
+    res = mmin(res, vec2(sdBox(q-vec3(-0.040,-0.078,0.0), vec3(0.038,0.052,0.024),0.012),2.0));
+  }
   return res;
 }
 """
+STYLE = dict(shadowTint=(0.46,0.435,0.50), ink=1.30, spec=0.40, contrast=1.05)
 CAM = dict(target=(0.0, 0.55, 0.0), dist=4.20, fl=3.45, elev=0.46)
 RIG = dict(hipY=0.26, shldY=0.47, armZ=0.17, amp=0.42, legAmp=1.0)
