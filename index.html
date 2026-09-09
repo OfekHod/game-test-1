@@ -1501,6 +1501,14 @@ window.addEventListener('DOMContentLoaded', function(){
 
     let timer = null, loopStart = 0, cursor = 0, running = false;
     const LOOKAHEAD = 0.25, TICK = 45;
+    // Where a fade-in starts from. It used to be 0.0001, and that is the reason
+    // every fade in this game arrived late: an exponential ramp from -80dB to
+    // full spends the first 57% of its length below -30dB, so a "2.4 second
+    // fade" was really a 1.4 second wait followed by a one second fade. From
+    // -34dB the whole of the duration is spent somewhere you can hear, which is
+    // what a fade is, and the number in the call finally means what it says.
+    // Only start() uses it: stop() still has to reach true silence.
+    const FADE_FLOOR = 0.02;
 
     // The window is normally LOOKAHEAD, which is as far ahead as a scheduler
     // wants to commit: notes queued early cannot be taken back, and intensity
@@ -1567,7 +1575,7 @@ window.addEventListener('DOMContentLoaded', function(){
         cursor = 0;
         const f = fadeSec == null ? 1.6 : fadeSec;
         out.gain.cancelScheduledValues(ctx.currentTime);
-        out.gain.setValueAtTime(0.0001, ctx.currentTime);
+        out.gain.setValueAtTime(FADE_FLOOR, ctx.currentTime);
         out.gain.exponentialRampToValueAtTime(1, ctx.currentTime + f);
         tick();
         timer = setInterval(tick, TICK);
@@ -2107,6 +2115,12 @@ window.addEventListener('DOMContentLoaded', function(){
      is showing anyway. */
   const api = {
     tracks: {},
+    // The fade the first piece comes in on, once the browser lets any sound
+    // out at all. The player has just clicked to be here and is waiting for
+    // something to happen, so this is a swell you can hear the front of rather
+    // than the long dissolve a piece gets when it is changing over mid-game.
+    // Read by the game too — the gesture can be answered from either script.
+    wakeFade: 0.5,
     // Set by the game once its own gesture listeners are up. See the music
     // section near the bottom of the next script.
     owned: false,
@@ -2155,7 +2169,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(api.owned || document.hidden) return;
     if(!ctx || ctx.state !== 'running') return;
     const m = track('menu');
-    if(m && !m.running) m.start(2.4);
+    if(m && !m.running) m.start(api.wakeFade);
   }
 
   // Try to simply play, without waiting to be asked. Most browsers refuse until
@@ -2202,6 +2216,16 @@ window.addEventListener('DOMContentLoaded', function(){
 
   window.LaneMusic = api;
   autostart();
+
+  // Arrange the menu piece and render its strings as soon as the parser lets
+  // go of the main thread — which is the moment the game script below has
+  // finished, and long before anyone has read the disclaimer. Measured, doing
+  // it inside the click handler instead cost 33ms to build and 80ms to warm,
+  // and all of it landed between the tap and the first note. A timer rather
+  // than a straight call because at this point in the file the parser has a
+  // megabyte still to get through, and the music is no use early if it costs
+  // the game its own arrival.
+  setTimeout(()=>{ const m = track('menu'); if(m) m.prewarm(); }, 0);
 })();
 </script>
 <script>
@@ -10639,6 +10663,11 @@ window.addEventListener('DOMContentLoaded', function(){
   musicContext();
   function musicTrack(key){ return LaneMusic ? LaneMusic.track(key) : null; }
 
+  // The fade the first piece comes in on. It lives up in the early script
+  // because either script can be the one that answers the first gesture, and
+  // the two must not disagree about how the music arrives.
+  const WAKE_FADE = LaneMusic ? LaneMusic.wakeFade : undefined;
+
   // rng, mtof and clamp come back down from the engine rather than being typed
   // out again: the sound effects below are built out of the same three helpers
   // the music is, and a second copy of a helper is a second thing to drift.
@@ -11147,7 +11176,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // for good because of one bad first attempt.
     if(!musicPending){
       musicPending = true;
-      setTimeout(()=>{ musicPending = false; musicSync(2.4); }, 200);
+      setTimeout(()=>{ musicPending = false; musicSync(WAKE_FADE); }, 200);
     }
     musicWarm();
   }
@@ -11189,7 +11218,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function musicAutostart(){
     const ctx = musicContext();
     if(!ctx) return;
-    const go = ()=>{ if(ctx.state === 'running'){ musicSync(2.4); musicWarm(); } };
+    const go = ()=>{ if(ctx.state === 'running'){ musicSync(WAKE_FADE); musicWarm(); } };
     if(ctx.state === 'suspended'){
       const r = ctx.resume();
       // A refusal here is the expected case, not an error worth logging.
