@@ -1542,7 +1542,8 @@ window.addEventListener('DOMContentLoaded', function(){
       invuln:0, flash:0, levelGlow:0, levelPop:0, kx:0, ky:0, kt:0, hitT:0, glowCol:null, muzzleT:0,
       hpLag:1, manaDisp:1, xpDisp:0,
       animDist:0, animPrevX:hx, animPrevY:hy, moving:0, atkT:0,
-      ghosts:[], ghostT:0, dustAt:0, facing: side==='player'?0:Math.PI, r:HERO_STATS[type].r,
+      ghosts:[], ghostT:0, dustAt:0, trail:[], trailBreak:true,
+      facing: side==='player'?0:Math.PI, r:HERO_STATS[type].r,
       siegeT:null, pushing:false, backoffT:0,
       mode:'idle', followTarget:null, moveTarget:null, standX:null, standY:null,
       laneIdx:0, lpath:null, lwp:1 };
@@ -4159,6 +4160,58 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     ctx.restore();
   }
+
+  // ---------- movement trails ----------
+  // The ground a hero has just crossed, smeared faintly onto it. Pitched right
+  // at the edge of visible on purpose: an eye that is looking for it can follow
+  // someone who has broken off into the trees, and an eye that is not never
+  // notices it. Enemy points are only laid down while the enemy is actually in
+  // vision, so the trail says where he went — never where he is now.
+  const TRAIL_LIFE  = 1.5;    // seconds a mark takes to fade to nothing
+  const TRAIL_STEP  = 13;     // world distance between marks
+  const TRAIL_MAX   = 40;     // points kept per hero; a little over one life
+  const TRAIL_JUMP  = 220;    // a hop longer than this is a respawn, not a walk
+  const TRAIL_ALPHA = 0.22;   // opacity of the freshest segment
+  const TRAIL_RGB   = { player:'168,222,255', enemy:'255,168,150' };
+  function updateHeroTrail(h, dt){
+    const tr = h.trail;
+    for(let i=tr.length-1;i>=0;i--){
+      tr[i].life += dt;
+      if(tr[i].life > TRAIL_LIFE) tr.splice(i,1);
+    }
+    if(!h.alive) return;
+    // Out of vision: keep the marks already laid, but remember to start a fresh
+    // stroke when he reappears, so the trail never draws the shortcut he took
+    // while unseen.
+    if(h.side === 'enemy' && !isVisible(h.x, h.y, h.r)){ h.trailBreak = true; return; }
+    const fx = h.x, fy = h.y + h.r*0.58;   // his feet, not his middle
+    const last = tr[tr.length-1];
+    if(last && dist(last.x, last.y, fx, fy) < TRAIL_STEP) return;
+    const cut = !last || h.trailBreak || dist(last.x, last.y, fx, fy) > TRAIL_JUMP;
+    tr.push({ x:fx, y:fy, life:0, cut });
+    h.trailBreak = false;
+    if(tr.length > TRAIL_MAX) tr.shift();
+  }
+  function drawHeroTrails(list, rgb){
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgb('+rgb+')';
+    for(const h of list){
+      const tr = h.trail;
+      for(let i=1;i<tr.length;i++){
+        const a = tr[i-1], b = tr[i];
+        if(b.cut) continue;                       // a jump, not a step
+        if(!onScreen(b.x, b.y, 80)) continue;
+        // Squared fade: it lingers for the first half-second, then leaves
+        // quickly, which is what makes the tail end read as a direction.
+        const soft = Math.pow(1 - b.life/TRAIL_LIFE, 1.6);
+        ctx.globalAlpha = soft * TRAIL_ALPHA;
+        ctx.lineWidth = h.r * (0.34 + 0.22*soft);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
   // Checked against the artwork rather than assumed: row 0 faces DOWN, row 90
   // faces RIGHT, row 180 faces UP, row 270 faces LEFT. Game angle is
   // atan2(dy,dx) with y down, so east=0, south=90, west=180, north=270.
@@ -5851,8 +5904,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // Only survival needs creeps to negotiate terrain — in Match the lanes are
     // routed clear of every solid, so it would be pure cost.
     if(gameMode==='survival'){ for(const c of enemyCreeps) resolveSolidCollision(c); }
-    for(const h of playerTeam) updateHeroAnim(h, dt);
-    for(const h of enemyTeam) updateHeroAnim(h, dt);
+    for(const h of playerTeam){ updateHeroAnim(h, dt); updateHeroTrail(h, dt); }
+    for(const h of enemyTeam){ updateHeroAnim(h, dt); updateHeroTrail(h, dt); }
     updateCamera(dt);
 
     moveCreeps(allyCreeps,dt,'player');
@@ -7636,6 +7689,8 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawBurns();            // scorched ground, under everything that walks on it
     drawRipples();          // on the surface, so units stand in them
+    drawHeroTrails(playerTeam, TRAIL_RGB.player);   // ground level: everything walks over them
+    drawHeroTrails(enemyTeam,  TRAIL_RGB.enemy);
     for(const c of allyCreeps){
       if(!onScreen(c.x,c.y,c.r+30)) continue;
       drawCreep(c,'#7FC4EE','ally');
@@ -7867,7 +7922,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.basicCd=0; h.autoCd=0; h.manualT=0; h.skillCd=0; h.dashing=false; h.invuln=0; h.levelGlow=0; h.levelPop=0; h.kx=0; h.ky=0; h.kt=0;
     h.facing = h.side==='player'?0:Math.PI;
     h.animDist=0; h.animPrevX=hx; h.animPrevY=hy; h.moving=0; h.atkT=0;
-    h.ghosts.length=0; h.ghostT=0; h.dustAt=0;
+    h.ghosts.length=0; h.ghostT=0; h.dustAt=0; h.trail.length=0; h.trailBreak=true;
     h.hpLag=1; h.manaDisp=1; h.xpDisp=0;
     h.mode='idle'; h.followTarget=null; h.moveTarget=null; h.standX=null; h.standY=null;
     h.lpath=null; h.lwp=1;
