@@ -2389,6 +2389,14 @@ window.addEventListener('DOMContentLoaded', function(){
   let rivers = [];    // shallow: you can ford them, they just slow you
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
   const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // Lakes are three times the radius they used to be. A 165-unit pond was
+  // scenery you clipped the corner of on the way past; at 495 it is a piece of
+  // terrain you commit to walking around, which is the only way still water
+  // changes how a fight goes. Every keep-out is written against the lake's own
+  // radius, so the roads, the camps and the trees make room for the new size on
+  // their own — what had to move by hand is where the two Match lakes sit, and
+  // how far out the arena's lakes look for a gap wide enough to hold them.
+  const LAKE_SCALE = 3;
   let neutralCreeps = [];
   const TREE_COUNT = 48;
   const TREE_MIN_R = 26, TREE_MAX_R = 40;
@@ -2449,13 +2457,18 @@ window.addEventListener('DOMContentLoaded', function(){
   function lakeRadiusAt(l, a){
     return l.r * (1 + 0.19*Math.sin(3*a + l.seed) + 0.11*Math.sin(5*a - l.seed*1.7));
   }
-  function makeLake(cx,cy,r){ lakes.push({ x:cx, y:cy, r, seed:rand(0,6.283) }); }
+  const LAKE_WOBBLE_MAX = 1.30;   // the most lakeRadiusAt can return, as a multiple of r
+  // sy squashes a lake north-south. Everything that measures a lake does it in
+  // the lake's own round space — divide the y offset by sy going in, multiply it
+  // back on the way out — so the outline, the splash line and the thing you bump
+  // into stay the same shape, and a lake with no sy is the circle it always was.
+  function makeLake(cx,cy,r,sy){ lakes.push({ x:cx, y:cy, r, sy: sy||1, seed:rand(0,6.283) }); }
   // Uses lakeRadiusAt, the same wobble the shoreline is drawn from, so a splash
   // begins exactly where the water visibly begins rather than at some circle
   // that only roughly matches it.
   function inLake(x,y){
     for(const l of lakes){
-      const dx = x-l.x, dy = y-l.y, d = Math.sqrt(dx*dx+dy*dy);
+      const dx = x-l.x, dy = (y-l.y)/l.sy, d = Math.sqrt(dx*dx+dy*dy);
       if(d > l.r*1.35) continue;
       if(d < lakeRadiusAt(l, Math.atan2(dy,dx))) return true;
     }
@@ -2490,7 +2503,12 @@ window.addEventListener('DOMContentLoaded', function(){
     return false;
   }
   function nearWater(x,y,pad){
-    for(const l of lakes){ if(dist(x,y,l.x,l.y) < l.r*1.3+pad) return true; }
+    // Measured in the lake's round space and then charged the squash, so the
+    // keep-out hugs a squashed lake instead of the circle it was cut from.
+    for(const l of lakes){
+      const dx = x-l.x, dy = (y-l.y)/l.sy;
+      if((Math.sqrt(dx*dx+dy*dy) - l.r*LAKE_WOBBLE_MAX)*l.sy < pad) return true;
+    }
     for(const rv of rivers){
       const p=rv.pts;
       for(let i=0;i<p.length-1;i++)
@@ -2517,17 +2535,44 @@ window.addEventListener('DOMContentLoaded', function(){
   // A lake wants a spot; if the road or another body is already there it walks
   // sideways and then inwards rather than being dropped on top of them. A lake
   // ON a lane would be a wall across it — mobs collide with lakes in the arena.
-  function survLake(a, rad, r){
+  // Tripled, a lake no longer fits where the small one sat, and the old search
+  // — sidestep a little, then walk inwards — could not find the room because
+  // the room is outwards and around the corner. So the wedge is swept instead:
+  // every heading within a rough quadrant of the one asked for, every distance
+  // from the plaza's edge out to the rim, and the legal spot nearest to what was
+  // asked for wins. Nothing about what makes a spot legal changed — off the
+  // roads by a lane's width, clear of the towers, clear of other water — and the
+  // lake must now also sit wholly inside the world: you fight to the rim in the
+  // arena, and half a lake over the boundary is half a lake you cannot walk
+  // around. A spot is scored on how far it drifted, so a lake still lands as
+  // close to its intended heading and distance as the arena allows.
+  const SURV_LAKE_FAN = 1.0;     // radians either side of the heading asked for
+  // The arena is not the match map: two snaking roads and the river between
+  // them leave one genuinely big pocket per side, and the first lake takes it.
+  // Rather than drop the rest — which left three quarters of the arena with no
+  // still water at all — a lake that cannot have the full size settles for the
+  // largest step that fits. Even the smallest step is still comfortably wider
+  // than the pond that used to sit there.
+  const SURV_LAKE_STEPS = [1, 0.78, 0.6];
+  function survLake(a, rad, r0){
     const cx=WORLD_W/2, cy=WORLD_H/2;
-    for(let k=0;k<16;k++){
-      const aa = a + (k%2 ? -1 : 1)*Math.floor(k/2)*0.11;
-      const rr = rad - Math.floor(k/6)*110;
-      const x = cx+Math.cos(aa)*rr, y = cy+Math.sin(aa)*rr;
-      if(survRoadDist(x,y) < r*1.35 + LANE_HALF + 40) continue;
-      if(nearAnyTower(x, y, r*1.35 + 90)) continue;   // never wall a tower in
-      if(nearWater(x, y, r*1.35 + 60)) continue;
-      makeLake(x, y, r);
-      return;
+    for(const f of SURV_LAKE_STEPS){
+      const r = r0*f, reach = r*1.35;
+      let best=null, bestCost=Infinity;
+      for(let da=-SURV_LAKE_FAN; da<=SURV_LAKE_FAN+1e-6; da+=0.05){
+        const aa = a + da, ca = Math.cos(aa), sa = Math.sin(aa);
+        for(let rr=SURV_PLAZA_R+260; rr<=2600; rr+=60){
+          const cost = Math.abs(rr-rad) + Math.abs(da)*900;
+          if(cost >= bestCost) continue;
+          const x = cx+ca*rr, y = cy+sa*rr;
+          if(x < reach || y < reach || x > WORLD_W-reach || y > WORLD_H-reach) continue;
+          if(survRoadDist(x,y) < reach + LANE_HALF + 40) continue;
+          if(nearAnyTower(x, y, reach + 90)) continue;   // never wall a tower in
+          if(nearWater(x, y, reach + 60)) continue;
+          best = { x, y }; bestCost = cost;
+        }
+      }
+      if(best){ makeLake(best.x, best.y, r); return; }
     }
   }
   function generateWater(){
@@ -2538,6 +2583,11 @@ window.addEventListener('DOMContentLoaded', function(){
       // it on purpose: shallow water is a thing you should meet while nothing
       // is chasing you.
       makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 12, 55);
+      // The practice ground is the match map, so it gets the match map's lakes:
+      // both sit in the jungle beyond the lanes, clear of the corridor the
+      // tutorial keeps you in, so they are terrain you can see and learn the
+      // shape of before a real game rather than an obstacle in a lesson.
+      makeMatchLakes();
       return;
     }
     if(gameMode==='survival'){
@@ -2554,21 +2604,71 @@ window.addEventListener('DOMContentLoaded', function(){
         const a = gap.a + s, ca = Math.cos(a), sa = Math.sin(a);
         makeRiver(cx+ca*SURV_RIVER_IN, cy+sa*SURV_RIVER_IN,
                   cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, 14, wob);
-        survLake(a-0.66, 1340, 176);
-        survLake(a+0.66, 1080, 158);
-        // And one close in, at the edge of the base clearing. It is the only
-        // water a defender can actually use: something solid to put between you
-        // and a wave without leaving the tower's cover.
-        survLake(a+0.34, 760, 128);
+        survLake(a-0.66, 1340, 176*LAKE_SCALE);
+        survLake(a+0.66, 1080, 158*LAKE_SCALE);
+        // And one closer in, on the base's side of the wedge. It is the water a
+        // defender can actually use: something solid to put between you and a
+        // wave without leaving the tower's cover. At this size it can no longer
+        // sit at the lip of the plaza — that would be a moat — so it starts its
+        // search further out and takes the nearest gap that will hold it.
+        survLake(a+0.34, 760, 128*LAKE_SCALE);
       }
     } else {
       // The river runs the length of the corridor between the lanes — right where
       // rotations happen, so you actually see it. It is shallow: crossing costs
       // you speed rather than being impossible, which keeps the map connected.
       makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 16, 105);
-      makeLake(1450, 880, 165);
-      makeLake(2550, WORLD_H-880, 155);
+      makeMatchLakes();
     }
+  }
+  // There are 1110 units of jungle between the top lane and the world's rim, and
+  // a tripled lake is 1287 across: round, it does not fit. Pushing it to the rim
+  // was tried first and it is the wrong answer — half the water ends up off the
+  // map, and from the lane all you see is that the world stops in water rather
+  // than a lake that got bigger. So the lakes keep the full width and are
+  // squashed to sit inside the band instead. Both shores are on the map, the
+  // grass either side of the water is a route you can still take, and the lane
+  // itself is untouched.
+  const MATCH_LAKE_Y = 552;      // the middle of the jungle band, north lake
+  const MATCH_LAKE_HALF = 490;   // half the water's north-south spread
+  // And a middle-sized pair in the corridor itself, one either side of the river
+  // and half a map apart, so the ground where rotations happen has water in it
+  // too rather than only the two banks. They are deliberately the smaller size:
+  // the corridor is 1420 deep with the river down the middle of it, and a lake
+  // that fills a half of that is a wall, not a landmark. At this size you can
+  // walk past either end of one, or between it and the river.
+  const MATCH_MID_R = 260, MATCH_MID_HALF = 200;
+  const MATCH_MID_Y = 1560;      // between the top lane and the river's north bank
+  // A squashed lake's distance to a road is not its radius, so a candidate is
+  // tested by walking its own outline: every point on it has to clear the lanes,
+  // the buildings and whatever water is already down.
+  function matchLakeFits(x, y, r, sy, pad){
+    for(let i=0;i<24;i++){
+      const a = i/24*Math.PI*2, rr = r*LAKE_WOBBLE_MAX;
+      const px = x+Math.cos(a)*rr, py = y+Math.sin(a)*rr*sy;
+      if(px < 240 || py < 240 || px > WORLD_W-240 || py > WORLD_H-240) return false;
+      if(nearAnyLane(px, py, LANE_HALF+pad)) return false;
+      if(nearAnyTower(px, py, TOWER_R+pad)) return false;
+      if(nearWater(px, py, pad)) return false;
+    }
+    return true;
+  }
+  // The river wanders, so the spot asked for is a starting point: step along the
+  // corridor until the whole outline is clear rather than dropping the lake on
+  // the water.
+  function matchMidLake(x, y){
+    const sy = MATCH_MID_HALF/(MATCH_MID_R*LAKE_WOBBLE_MAX);
+    for(let k=0;k<24;k++){
+      const xx = x + (k%2 ? -1 : 1)*Math.ceil(k/2)*70;
+      if(matchLakeFits(xx, y, MATCH_MID_R, sy, 55)){ makeLake(xx, y, MATCH_MID_R, sy); return; }
+    }
+  }
+  function makeMatchLakes(){
+    const rN = 165*LAKE_SCALE, rS = 155*LAKE_SCALE;
+    makeLake(1450, MATCH_LAKE_Y, rN, MATCH_LAKE_HALF/(rN*LAKE_WOBBLE_MAX));
+    makeLake(2550, WORLD_H-MATCH_LAKE_Y, rS, MATCH_LAKE_HALF/(rS*LAKE_WOBBLE_MAX));
+    matchMidLake(2750, MATCH_MID_Y);
+    matchMidLake(1250, WORLD_H-MATCH_MID_Y);
   }
   function nearAnyLane(x, y, pad){
     if(gameMode==='survival') return false;   // no lanes in the arena
@@ -2611,9 +2711,14 @@ window.addEventListener('DOMContentLoaded', function(){
         // across a whole quadrant, so a camp slot that used to be reliably empty
         // is now sometimes tarmac, and the search has to be free to walk away
         // from it rather than give up and leave that quarter of the map bare.
+        // And a longer reach outwards than the ring used to need: the lakes are
+        // three times the size, so a slot that was open ground is now sometimes
+        // the middle of a lake, and a camp that cannot step past the water is a
+        // camp that never gets placed — the arena was coming out with two of its
+        // four camps missing.
         for(let att=0; att<260 && !placed; att++){
-          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.55,0.55);
-          const rr = rand(720, 1260);
+          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.7,0.7);
+          const rr = rand(720, 1800);
           const x = WORLD_W/2+Math.cos(a)*rr, y = WORLD_H/2+Math.sin(a)*rr;
           if(nearAnyTower(x,y,340)) continue;
           if(onRoadway(x,y,CAMP_RING_R+30)) continue;
@@ -2755,7 +2860,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // Trees are solid: push anything that ends a frame inside one back out.
   function resolveSolidCollision(e){
     for(const l of lakes){
-      let dx = e.x-l.x, dy = e.y-l.y;
+      let dx = e.x-l.x, dy = (e.y-l.y)/l.sy;
       const lim = l.r*1.35 + e.r;
       const q = dx*dx+dy*dy;
       if(q > lim*lim) continue;                      // reject on squared distance
@@ -2764,7 +2869,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const rr = lakeRadiusAt(l, Math.atan2(dy,dx)) + e.r;
       if(d >= rr) continue;
       e.x = l.x + dx/d*rr;
-      e.y = l.y + dy/d*rr;
+      e.y = l.y + dy/d*rr*l.sy;
       e.kx = 0; e.ky = 0; e.kt = 0;
     }
     for(const t of trees){
@@ -4101,7 +4206,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(let i=0;i<N;i++){
       const a = i/N*Math.PI*2;
       const rr = lakeRadiusAt(l,a) + grow;
-      pts.push({ x:l.x+Math.cos(a)*rr, y:l.y+Math.sin(a)*rr });
+      pts.push({ x:l.x+Math.cos(a)*rr, y:l.y+Math.sin(a)*rr*l.sy });
     }
     l._pts[key] = pts;
     return pts;
@@ -4279,7 +4384,7 @@ window.addEventListener('DOMContentLoaded', function(){
         const a = l.seed + i*1.93 + Math.sin(now*0.3+i)*0.15;
         const rr = l.r*(0.28 + 0.42*((i*7)%5)/5);
         const tw = 0.5+0.5*Math.sin(now*2.2 + i*1.7 + l.seed);
-        drawGlintStar(l.x+Math.cos(a)*rr, l.y+Math.sin(a)*rr*0.9, 2.6+tw*3.4, tw*0.65);
+        drawGlintStar(l.x+Math.cos(a)*rr, l.y+Math.sin(a)*rr*0.9*l.sy, 2.6+tw*3.4, tw*0.65);
       }
     }
     ctx.restore();
