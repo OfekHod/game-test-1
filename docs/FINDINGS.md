@@ -91,3 +91,93 @@ Games that stall need eight or nine minutes, usually after an early death costs
 a full push cycle.
 
 In every match where the base survived, the enemy still led on points.
+
+# Rendering cost
+
+Everything above is balance, measured in the Node harness. This section is
+frame cost, measured in headless Chromium on a 4-core box with no GPU. Absolute
+milliseconds there are much worse than on real hardware — the raster is
+software — but the *ratios* and the op counts hold, and every number below is
+measured, not estimated.
+
+## The one that mattered: the canvas was six times too big
+
+`W` and `H` are **world units**. `VIEW_AREA` fixes how much map is on screen,
+so on desktop `W` is ~3200 while the stage might be 1300 CSS px wide.
+`applyLayout` handed those straight to `setupCanvas` as the pixel size and then
+multiplied by `DPR` on top. At a 1280x800 viewport that is a 6.4-megapixel
+canvas painting a 1.0-megapixel display; on a retina desktop (`devicePixelRatio`
+2) it is 25.6 megapixels. Every full-frame pass paid it: the background blit,
+the water, the fog composite, the vignette.
+
+The browser was only downscaling the surplus away again, so capping the
+world-to-pixel scale at what the display actually has changes no pixel a player
+can see. Verified by magnifying the same seeded map 3x side by side.
+
+| | before | after |
+|---|---|---|
+| frozen scene, med frame | 71.8 ms | 21.1 ms |
+| live match, med frame | 73.3 ms | 26.4 ms |
+| live match, fps | 6.5 | 18.9 |
+| game seconds per 60s of wall clock | 19 | 56 |
+
+That last row is the honest summary: the sim was running at a third of real
+time and now runs at ~93% of it.
+
+## The premise of the bug report did not hold
+
+The report was "slow for the first minute, then it gets better". Frame cost
+does the opposite — it *rises* with game time, because ally creeps, on-screen
+creeps and ground orbs all grow. Nothing in `render()` or any `draw*` function
+is gated on match time; the only reads of `timeLeft` are in the AI.
+
+| per frame | game 10-15s | game 120-125s |
+|---|---|---|
+| `drawImage` | 36.6 | 135.4 |
+| `ctx.save` | 220.2 | 492.2 |
+| `lineTo` | 2128.6 | 3208.4 |
+| vision sources | 16.0 | 28.9 |
+| live xp orbs | 10.6 | 170.4 |
+
+`isEarlyGame()` (120s) and `inEarlyPeace()` (20s) look like first-minute
+suspects and are not: they only widen the AI's orb and camp search radii, over
+3 camps and a handful of orbs.
+
+## What IS elevated at the start, and it is raster, not code
+
+`drawWater` costs ~21 ms/frame for the first ~100 frames of **every** match and
+~8 ms after — on *byte-identical* op counts (same `polyPath` calls, same
+`lineTo` count, same caustic fill area). It is Skia warming its pattern and path
+caches for a freshly generated river, and it recurs per match, not per page.
+Nothing can be precomputed to dodge it: the only thing that warms a raster
+cache is rasterising. So the load screen holds until a few real frames have
+been drawn behind it, and those frames take the hit instead of the opening
+seconds of play.
+
+`startRound` itself is one 250-267 ms frame, 121 ms of which is
+`drawBackground` baking the 4000x4000 ground canvas. Note that a plain
+`performance.now()` around it reports only ~28 ms: canvas calls are recorded,
+not executed, so the cost does not appear until something forces the raster.
+Measure it with a flush or you will conclude there is nothing there.
+
+## Where the rest of the frame goes
+
+`drawFog` is 82-86% of `render()` at every point in a match. Stubbing it out
+took the frame from 65.6 ms to 8.4 ms. Its own off-screen cull at the top of the
+carve loop rejects **nothing**, ever, because `W x H` is 40% of a 4000x4000
+world — every vision source is always on screen.
+
+`rebuildVision` registers every ally creep as a vision source, and
+`carveVision` then sorts a 46-ray fan plus 8 rays per nearby tree and lays down
+a clipped radial-gradient fill per source. It is the largest single op emitter
+in the frame.
+
+The untaken lever: skipping the carve for ally-creep sources only, leaving the
+vision *logic* untouched, measured `drawFog` 47.6 -> 33.1 ms/frame. It is not
+done here because it changes the picture — creeps would stop lighting up
+terrain — and that is a design call, not an optimisation.
+
+Two smaller ones, both late-game growth rather than opening cost:
+`drawCoinSprite` is 61% of all `drawImage` calls after two minutes (170 orbs
+alive with an idle player), and `drawCreep` does 2-4 `ctx.save`/`restore` per
+creep.

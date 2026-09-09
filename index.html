@@ -158,6 +158,17 @@
     background:rgba(30,40,20,.45);backdrop-filter:blur(2px);z-index:10;text-align:center;padding:20px;
     overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .overlay.hidden{display:none;}
+  /* Starting a round is one synchronous burst of work — generating the forest
+     and baking the 4000x4000 ground canvas — and it lands inside a single
+     frame, ~140ms in a desktop browser and several times that on a phone.
+     That frame is lost whatever we do, so spend it under a panel that says
+     what is happening instead of on a half-drawn field that reads as a hang. */
+  .loadPanel{max-width:340px;padding:28px 34px;}
+  .loadSpin{width:38px;height:38px;margin:0 auto 14px;border-radius:50%;
+    border:4px solid rgba(90,200,232,.25);border-top-color:#5AC8E8;
+    animation:loadSpin .8s linear infinite;}
+  @keyframes loadSpin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .loadSpin{animation:none} }
   .panel{background:var(--panel);border:3px solid var(--panel-border);border-radius:18px;padding:32px 40px;max-width:520px;box-shadow:0 8px 24px rgba(0,0,0,.25);margin:auto;
     max-height:calc(100% - 6px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
   /* The buttons must never be what falls off the bottom: they stay pinned to the
@@ -396,6 +407,14 @@ window.addEventListener('DOMContentLoaded', function(){
       </div>
     </div>
 
+    <div class="overlay hidden" id="loadScreen">
+      <div class="panel loadPanel">
+        <div class="loadSpin"></div>
+        <h1>Building the map</h1>
+        <p>Lanes, forest, river and camps&hellip;</p>
+      </div>
+    </div>
+
     <div class="overlay hidden" id="endScreen">
       <div class="panel">
         <h1 id="resultTitle">Round Complete</h1>
@@ -417,6 +436,10 @@ window.addEventListener('DOMContentLoaded', function(){
   const fogCtx = fogCanvas.getContext('2d');
   const maskCanvas = document.createElement('canvas');
   const maskCtx = maskCanvas.getContext('2d');
+  // Fog rim gradients, keyed by radius and dropped whenever the mask canvas is
+  // resized so one never outlives the surface it was made for. Declared up here
+  // because applyLayout clears it and runs long before the fog code below.
+  const rimGrads = new Map();
   const FOG_SCALE = 0.8;
   const FOG_COLOR = '#6E7A70';
   const FOG_ALPHA = 0.82;
@@ -451,6 +474,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // sideways changes.
   let W = BASE_W, H = BASE_H;
   let layoutW = 0, layoutH = 0;
+  let canvasScale = DPR;      // world units to canvas pixels; see applyLayout
   function applyLayout(force){
     const r = stageEl.getBoundingClientRect();
     const cw = Math.max(1, r.width), ch = Math.max(1, r.height);
@@ -459,11 +483,29 @@ window.addEventListener('DOMContentLoaded', function(){
     const aspect = cw/ch;
     H = Math.round(Math.sqrt(VIEW_AREA/aspect));
     W = Math.round(H*aspect);
-    setupCanvas(canvas, ctx, W, H, DPR);
-    fogCanvas.width = Math.max(1, Math.round(W*FOG_SCALE));
-    fogCanvas.height = Math.max(1, Math.round(H*FOG_SCALE));
+    // W and H are WORLD UNITS, not pixels: VIEW_AREA fixes how much map is on
+    // screen, so on desktop W is ~3200 while the stage is maybe 1300 CSS px
+    // wide. Handing that straight to setupCanvas as the pixel size, and then
+    // multiplying by DPR on top, asked for a 6400x4000 backing store to fill a
+    // 3000x1900 display — 4x to 6x more pixels than the screen can show, on
+    // every full-frame pass: the background blit, the water, the fog composite,
+    // the vignette. Measured headless at 1280x800 it cost 71ms a frame; capped
+    // to the display it costs 21ms, and nothing about the image changes because
+    // the browser was only downscaling the surplus away again.
+    //
+    // So the world-to-pixel scale is whatever the display actually has, capped
+    // at DPR and floored at 0.5 so a very wide desktop view keeps a little
+    // supersampling rather than going soft.
+    canvasScale = Math.min(DPR, Math.max(0.5, (cw * (window.devicePixelRatio || 1)) / W));
+    setupCanvas(canvas, ctx, W, H, canvasScale);
+    // The fog is a screen-space overlay, so it follows the same budget. drawFog
+    // reads its own scale back off fogCanvas.width, so shrinking it here is all
+    // that is needed.
+    fogCanvas.width = Math.max(1, Math.round(W*FOG_SCALE*canvasScale));
+    fogCanvas.height = Math.max(1, Math.round(H*FOG_SCALE*canvasScale));
     maskCanvas.width = fogCanvas.width;
     maskCanvas.height = fogCanvas.height;
+    rimGrads.clear();
   }
   applyLayout(true);
   window.addEventListener('resize', ()=>applyLayout());
@@ -483,6 +525,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const hud = document.getElementById('hud');
   const startScreen = document.getElementById('startScreen');
   const endScreen = document.getElementById('endScreen');
+  const loadScreen = document.getElementById('loadScreen');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
@@ -2320,6 +2363,18 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOG_ARC_STEPS = 5;      // samples across each tree's own silhouette
   const RAY_EPS = 0.0007;       // straddles the tangent: one ray each side
   const fogAngles = [];
+  // The world box the mask covers, set by drawFog before it carves. carveVision
+  // trims its rim fill to this; anything outside would be discarded anyway.
+  const fogBox = { l:0, t:0, r:0, b:0 };
+  function rimGradient(fctx, r){
+    let g = rimGrads.get(r);
+    if(g) return g;
+    g = fctx.createRadialGradient(0,0,r*0.86,0,0,r);
+    g.addColorStop(0,'rgba(255,255,255,1)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    rimGrads.set(r, g);
+    return g;
+  }
   function norm2pi(a){ a %= Math.PI*2; return a<0 ? a+Math.PI*2 : a; }
   function carveVision(fctx, s){
     const sNear = nearOf(s);
@@ -2352,11 +2407,25 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     fctx.closePath();
     fctx.clip();
-    const g = fctx.createRadialGradient(s.x,s.y,s.r*0.86,s.x,s.y,s.r);
-    g.addColorStop(0,'rgba(255,255,255,1)');
-    g.addColorStop(1,'rgba(255,255,255,0)');
-    fctx.fillStyle = g;
-    fctx.fillRect(s.x-s.r, s.y-s.r, s.r*2, s.r*2);
+    // Two economies on what used to be four calls and a full-size fill, and the
+    // fog carves once per hero, per ally creep and per standing tower on EVERY
+    // frame — 16 to 32 sources — so both are worth having.
+    //
+    // The rim gradient depends on nothing but the radius, and there are exactly
+    // three radii in the game, so building it at the origin and translating it
+    // into place makes it cacheable instead of rebuilt and thrown away.
+    //
+    // And the fill only needs the part of the rim box that can land on the
+    // mask. It is clipped to the ray polygon either way and the mask discards
+    // the rest, so trimming cannot change a pixel — it just stops Skia walking
+    // a 1400x1400 world-unit rectangle for a source sitting half off screen.
+    const rx0 = Math.max(s.x-s.r, fogBox.l), ry0 = Math.max(s.y-s.r, fogBox.t);
+    const rx1 = Math.min(s.x+s.r, fogBox.r), ry1 = Math.min(s.y+s.r, fogBox.b);
+    if(rx1 > rx0 && ry1 > ry0){
+      fctx.translate(s.x, s.y);
+      fctx.fillStyle = rimGradient(fctx, s.r);
+      fctx.fillRect(rx0-s.x, ry0-s.y, rx1-rx0, ry1-ry0);
+    }
     fctx.restore();
     revealTrees(fctx, s);
   }
@@ -2403,6 +2472,7 @@ window.addEventListener('DOMContentLoaded', function(){
     maskCtx.globalCompositeOperation = 'lighter';
     maskCtx.setTransform(sx,0,0,sy,(-camera.x+shakeX)*sx,(-camera.y+shakeY)*sy);
     const left=camera.x-140, right=camera.x+W+140, top=camera.y-140, bot=camera.y+H+140;
+    fogBox.l = left; fogBox.t = top; fogBox.r = right; fogBox.b = bot;
     for(const s of visionSources){
       if(s.x+s.r<left || s.x-s.r>right || s.y+s.r<top || s.y-s.r>bot) continue;
       carveVision(maskCtx, s);
@@ -3515,17 +3585,32 @@ window.addEventListener('DOMContentLoaded', function(){
     l._pts[key] = pts;
     return pts;
   }
+  // Built once per geometry, then handed straight to fill/stroke/clip. Water
+  // outlines never move — a river's polygon and a lake's rings are fixed at map
+  // generation — but a body takes seven passes a frame (sand, shallow, mid,
+  // deep, the clip for the caustics, the dashed centreline, the outline) and
+  // each pass used to re-issue every moveTo and lineTo. That was the single
+  // largest op count in a frame, ~2000 path calls before anything rasterised.
+  // A cached Path2D also lets the browser keep the tessellation between frames.
+  const polyPaths = new WeakMap();
   function polyPath(pts){
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.closePath();
+    let p = polyPaths.get(pts);
+    if(p) return p;
+    p = new Path2D();
+    p.moveTo(pts[0].x, pts[0].y);
+    for(let i=1;i<pts.length;i++) p.lineTo(pts[i].x, pts[i].y);
+    p.closePath();
+    polyPaths.set(pts, p);
+    return p;
   }
-  function lakePath(l, grow){ polyPath(lakePoints(l, grow)); }
+  function lakePath(l, grow){ return polyPath(lakePoints(l, grow)); }
   function riverPath(rv){
-    ctx.beginPath();
-    ctx.moveTo(rv.pts[0].x, rv.pts[0].y);
-    for(let i=1;i<rv.pts.length;i++) ctx.lineTo(rv.pts[i].x, rv.pts[i].y);
+    if(rv._path) return rv._path;
+    const p = new Path2D();
+    p.moveTo(rv.pts[0].x, rv.pts[0].y);
+    for(let i=1;i<rv.pts.length;i++) p.lineTo(rv.pts[i].x, rv.pts[i].y);
+    rv._path = p;
+    return p;
   }
   // A river as a real polygon, so it can be filled, clipped and outlined like a
   // lake instead of only stroked. Built once and cached.
@@ -3624,22 +3709,23 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const rvRaw of rivers){
       const rv = riverPoly(rvRaw);
       if(!onScreen(rv.cx, rv.cy, rv.ext)) continue;
-      riverPath(rv); ctx.lineWidth = rv.w+30; ctx.strokeStyle = WATER_SAND; ctx.stroke();
-      polyPath(rv.poly); ctx.fillStyle = WATER_SHALLOW; ctx.fill();
-      riverPath(rv); ctx.lineWidth = rv.w*0.78; ctx.strokeStyle = WATER_MID;  ctx.stroke();
-      riverPath(rv); ctx.lineWidth = rv.w*0.4;  ctx.strokeStyle = WATER_DEEP; ctx.stroke();
+      const rpath = riverPath(rv), rpoly = polyPath(rv.poly);
+      ctx.lineWidth = rv.w+30; ctx.strokeStyle = WATER_SAND; ctx.stroke(rpath);
+      ctx.fillStyle = WATER_SHALLOW; ctx.fill(rpoly);
+      ctx.lineWidth = rv.w*0.78; ctx.strokeStyle = WATER_MID;  ctx.stroke(rpath);
+      ctx.lineWidth = rv.w*0.4;  ctx.strokeStyle = WATER_DEEP; ctx.stroke(rpath);
 
-      ctx.save(); polyPath(rv.poly); ctx.clip();
+      ctx.save(); ctx.clip(rpoly);
       drawCaustics(visibleBox(rv.cx-rv.ext, rv.cy-rv.ext, rv.cx+rv.ext, rv.cy+rv.ext), now, 0.8);
       ctx.setLineDash([120,150]); ctx.lineDashOffset = -now*52;
       ctx.strokeStyle='rgba(255,255,255,.17)'; ctx.lineWidth=rv.w*0.2;
-      riverPath(rv); ctx.stroke();
+      ctx.stroke(rpath);
       ctx.setLineDash([]);
       ctx.restore();
 
       drawFoam(rv.left, now, 1.2, 4.5, 0.42);
       drawFoam(rv.right, now, 3.4, 4.5, 0.42);
-      polyPath(rv.poly); ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke(rpoly);
       for(let i=0;i<5;i++){
         const t = ((now*0.05 + i/5) % 1);
         const k = Math.min(rv.pts.length-1, Math.floor(t*(rv.pts.length-1)));
@@ -3651,7 +3737,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const l of lakes){
       if(!onScreen(l.x, l.y, l.r*1.4)) continue;
       const edge = lakePoints(l, 0);
-      polyPath(lakePoints(l, 15)); ctx.fillStyle = WATER_SAND; ctx.fill();
+      ctx.fillStyle = WATER_SAND; ctx.fill(polyPath(lakePoints(l, 15)));
       if(!l._grad){
         const g = ctx.createRadialGradient(l.x, l.y, l.r*0.06, l.x, l.y, l.r*1.15);
         g.addColorStop(0, WATER_DEEP);
@@ -3659,14 +3745,15 @@ window.addEventListener('DOMContentLoaded', function(){
         g.addColorStop(1, WATER_SHALLOW);
         l._grad = g;                     // fixed position and radius: build once
       }
-      polyPath(edge); ctx.fillStyle = l._grad; ctx.fill();
+      const epath = polyPath(edge);
+      ctx.fillStyle = l._grad; ctx.fill(epath);
 
-      ctx.save(); polyPath(edge); ctx.clip();
+      ctx.save(); ctx.clip(epath);
       drawCaustics(visibleBox(l.x-l.r*1.4, l.y-l.r*1.4, l.x+l.r*1.4, l.y+l.r*1.4), now, l.seed);
       ctx.restore();
 
       drawFoam(lakePoints(l, -4), now, l.seed, 5, 0.5);
-      polyPath(edge); ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke(epath);
       for(let i=0;i<7;i++){
         const a = l.seed + i*1.93 + Math.sin(now*0.3+i)*0.15;
         const rr = l.r*(0.28 + 0.42*((i*7)%5)/5);
@@ -5042,6 +5129,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // ---------- update ----------
   function update(dt){
     if(state!=='playing') return;
+    // The round is built but the load panel is still up. Render on — it warms
+    // the draw path — but do not let the match run behind a screen nobody can
+    // see or play through.
+    if(roundHold) return;
     tickScoreHud(dt);
     if(gameMode==='survival'){
       timeLeft += dt;                       // survival counts up: the clock is the score
@@ -6831,7 +6922,20 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.save();
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
 
-    ctx.drawImage(bgCanvas,0,0,WORLD_W,WORLD_H);
+    // Only the slice under the camera, not the whole 4000x4000 bake. The old
+    // call handed the compositor a 16-megapixel source rect every frame and let
+    // it clip; naming the visible rect instead keeps the working set to one
+    // screen, which is what the GPU has to have resident.
+    {
+      const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
+      const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
+      const bx1 = Math.min(WORLD_W, Math.ceil(camera.x - shakeX + W) + 2);
+      const by1 = Math.min(WORLD_H, Math.ceil(camera.y - shakeY + H) + 2);
+      if(bx1 > bx0 && by1 > by0)
+        ctx.drawImage(bgCanvas,
+          bx0*BG_DPR, by0*BG_DPR, (bx1-bx0)*BG_DPR, (by1-by0)*BG_DPR,
+          bx0, by0, bx1-bx0, by1-by0);
+    }
     drawWater();
 
     for(const t of playerTowers){ if(t.hp>0) drawTowerRange(t); }
@@ -7055,7 +7159,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const dt = Math.min(0.05,(now-last)/1000); last=now;
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
-    try { update(dt); render(); }
+    try { update(dt); render(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
@@ -7995,9 +8099,69 @@ window.addEventListener('DOMContentLoaded', function(){
       +'% · enemy '+Math.round(towerHpFrac(enemyTowers)*100)+'%';
     endScreen.classList.remove('hidden');
   }
+  // A floor, not a delay: the panel stays up for as long as the build actually
+  // takes, and this only stops it strobing for a frame and a half on a machine
+  // fast enough to be done almost immediately.
+  const LOAD_MIN_MS = 180;
+  // The rest of the opening cost is not JavaScript at all. drawWater measures
+  // 21ms a frame for the first stretch of EVERY match and 8ms after, on
+  // byte-identical op counts — Skia warming its pattern and path caches for a
+  // freshly generated river. Nothing can be precomputed to avoid that: the only
+  // thing that warms a raster cache is rasterising. So hold the panel until a
+  // few real frames have been drawn behind it, and let those frames take the
+  // hit instead of the first seconds of play.
+  const WARM_FRAMES = 8;
+  const LOAD_MAX_MS = 3000;    // never let the panel outstay its welcome
+  let roundHold = false, loadingRound = false, warmFrames = 0;
+  // Every way into a round — Match, Survival, Tutorial, Play Again, the Enter
+  // key — goes through here, so none of them can skip the panel.
   function guardedStart(mode){
-    try{ startRound(mode); }
-    catch(err){ console.error('startRound failed', err); }
+    if(loadingRound) return;
+    loadingRound = true;
+    startScreen.classList.add('hidden');
+    endScreen.classList.add('hidden');
+    loadScreen.classList.remove('hidden');
+    const shownAt = performance.now();
+    // Two frames, not one. The first queues the panel; the second is evidence
+    // it has actually been painted before the main thread disappears into the
+    // map build. With one frame the browser is free to coalesce the two and
+    // the panel never appears at all.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      try{
+        startRound(mode);
+        roundHold = true;
+        warmFrames = 0;
+        warmRoundCaches();
+      }
+      catch(err){ console.error('startRound failed', err); }
+      // Reveal on a frame boundary, once the field behind has actually been
+      // drawn a few times and the floor has passed.
+      const tryReveal = ()=>{
+        const waited = performance.now() - shownAt;
+        if(waited < LOAD_MAX_MS && (warmFrames < WARM_FRAMES || waited < LOAD_MIN_MS)){
+          requestAnimationFrame(tryReveal);
+          return;
+        }
+        loadScreen.classList.add('hidden');
+        roundHold = false;
+        loadingRound = false;
+      };
+      requestAnimationFrame(tryReveal);
+    }));
+  }
+  // Everything the render path would otherwise build on first use, built now.
+  // These were each a stutter somewhere in the opening seconds of a match.
+  function warmRoundCaches(){
+    try{
+      buildCaustics();
+      // Drawing FROM the fresh bake forces it to be rasterised now. Reading it
+      // back with getImageData would also force it, and would cost the canvas
+      // its hardware acceleration for the rest of the match, so draw instead.
+      ctx.drawImage(bgCanvas, 0, 0, 1, 1, 0, 0, 1, 1);
+      for(const rv of rivers){ const r = riverPoly(rv); riverPath(r); polyPath(r.poly); }
+      for(const l of lakes){ lakePath(l, 15); lakePath(l, 0); lakePath(l, -4); }
+    }
+    catch(err){ console.error('warmRoundCaches failed', err); }
   }
   bindTap(startBtn, ()=>guardedStart('regular'));
   bindTap(startSurvBtn, ()=>guardedStart('survival'));
@@ -8007,7 +8171,7 @@ window.addEventListener('DOMContentLoaded', function(){
   window.addEventListener('keydown', (e)=>{
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
   });
-  bindTap(restartBtn, ()=>startRound(lastMode));
+  bindTap(restartBtn, ()=>guardedStart(lastMode));
   window.__laneLoaded = true;
 })();
 </script>
