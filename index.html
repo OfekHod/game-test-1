@@ -427,10 +427,18 @@
      the square is min(100vw,100vh), so 1vmin is exactly 1% of it and the
      buttons scale with the board instead of drifting off it. */
   #startScreen{background:#EEEAE2;align-items:center;justify-content:center;padding:0;}
-  .menuStage{position:relative;margin:auto;width:100%;max-width:min(100vw,100vh);}
-  .menuShot{display:block;width:100%;height:auto;}
+  /* Sized from the box it is in, not from the viewport. min(100vw,100vh) looks
+     right and is not: at >=1100x700 .wrap takes 18px of padding, so the overlay
+     is 100vh-36px tall while a 100vh square is not, and the art lost 18px off
+     the top and 18px off the bottom on every desktop — unreachable, because the
+     scroll clamps. aspect-ratio against height:100% asks the parent instead.
+     container-type then makes cqw exactly 1% of the picture, which is what the
+     button sizes below have always claimed to be. */
+  .menuStage{position:relative;margin:auto;aspect-ratio:1/1;height:100%;width:auto;
+    max-width:100%;max-height:100%;container-type:inline-size;}
+  .menuShot{display:block;width:100%;height:100%;}
   .menuBoard{position:absolute;left:34%;right:12.9%;top:28.9%;bottom:28.9%;
-    display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2.2vmin;}
+    display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2.2cqw;}
   /* Crimson, taken off the knight's cape. The cyan these started as was the one
      saturated colour anywhere on this screen — everything in the art sits in a
      narrow band of warm greys and browns — so it read as interface laid on top
@@ -439,8 +447,8 @@
      colour is not one to lighten the art's way. */
   .menuBoard button{margin:0;border:none;background:#BC4A40;color:#FFF1E8;cursor:pointer;
     font-family:'Baloo 2',sans-serif;font-weight:800;white-space:nowrap;
-    font-size:clamp(12px,2.45vmin,20px);padding:1.5vmin 2vmin;border-radius:1.6vmin;
-    box-shadow:0 0.55vmin 0 #8A2F28;transition:transform .05s,background .12s,box-shadow .12s;}
+    font-size:clamp(12px,2.45cqw,20px);padding:1.5cqw 2cqw;border-radius:1.6cqw;
+    box-shadow:0 0.55cqw 0 #8A2F28;transition:transform .05s,background .12s,box-shadow .12s;}
   /* Only a pointer that can actually hover gets the lighter face. On touch,
      :hover latches after a tap and the button would sit there lit up as though
      it were still being pressed. */
@@ -453,15 +461,18 @@
      clamps to. It is the state a finger is on top of for a fraction of a
      second, not one anybody reads, so the resting colour is the one held to
      the stricter number. */
-  .menuBoard button:active{background:#D9695E;transform:translateY(0.4vmin);
-    box-shadow:0 0.15vmin 0 #A03A31;}
-  /* On a phone the square is only as wide as the screen, so the board — and
-     everything scaled to it — comes out small: measured, the buttons were 26px
-     tall, which is under half a finger. A floor on the touch target rather than
-     on the type, so the board still holds all three. */
-  @media (max-width:640px){
-    .menuBoard{gap:1.8vmin;}
-    .menuBoard button{min-height:40px;font-size:13px;}
+  .menuBoard button:active{background:#D9695E;transform:translateY(0.4cqw);
+    box-shadow:0 0.15cqw 0 #A03A31;}
+  /* On a phone the square is only as big as the short side of the screen, so
+     the board — and everything scaled to it — comes out small: measured, the
+     buttons were 26px tall, under half a finger. A floor on the touch target
+     rather than on the type, so the board still holds all three.
+     Narrow OR short, because a phone in landscape is ~844px wide and only
+     ~390px tall: a width-only query never fires there and left these back at
+     26px. This file already flags that trap for the compact HUD layout. */
+  @media (max-width:640px), (max-height:640px){
+    .menuBoard{gap:1.8cqw;}
+    .menuBoard button{min-height:40px;}
   }
   /* The front door sits above the menu rather than replacing it, so the menu is
      already there underneath and nothing has to be told the game has started. */
@@ -472,8 +483,8 @@
   #introScreen{z-index:20;cursor:pointer;background:#0a0f16;
     align-items:center;justify-content:center;padding:0;}
   .introStage{position:relative;margin:auto;display:flex;flex-direction:column;
-    width:100%;max-width:min(100vw,100vh);}
-  .introShot{display:block;width:100%;height:auto;}
+    width:auto;height:100%;aspect-ratio:1/1;max-width:100%;max-height:100%;}
+  .introShot{display:block;width:100%;height:100%;}
   .introCard{position:absolute;right:3%;bottom:3.4%;width:min(58%,420px);text-align:left;
     background:rgba(255,255,255,.86);border:1px solid rgba(255,255,255,.7);border-radius:14px;
     padding:14px 17px 15px;color:var(--text-strong);
@@ -489,7 +500,10 @@
   /* A tall phone leaves real room under a square, so there the card drops out of
      the picture and into that room: full width, and nothing covered up. */
   @media (max-width:640px){
-    .introStage{max-width:min(100vw,72vh);}
+    /* Back to a column here: the card sits under the picture on a phone, so the
+       stage is taller than its square and cannot carry the ratio. */
+    .introStage{width:100%;height:auto;aspect-ratio:auto;max-width:min(100%,72vh);}
+    .introShot{height:auto;}
     .introCard{position:static;width:auto;margin:10px 8px 0;padding:12px 14px 13px;}
     .introCard h1{font-size:20px;}
     .introCard p{font-size:12.5px;}
