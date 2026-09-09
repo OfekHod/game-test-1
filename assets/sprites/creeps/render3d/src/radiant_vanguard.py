@@ -7,13 +7,14 @@ void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
   float big  = patches(p,  6.5, 3.0);   // broad painted blocks
   float mid  = patches(p, 14.0, 2.0);   // second, smaller pass
   float tone = mix(0.90, 1.14, big) * mix(0.96, 1.06, mid);
+  float tw = 1.0;   // how much painted tone this material takes
   if(id<1.5){      albedo=vec3(0.720,0.500,0.150); metal=0.46; rough=0.34; }
   else if(id<2.5){ albedo=vec3(0.055,0.300,0.220); metal=0.00;  rough=0.82; }
-  else if(id<3.5){ albedo=vec3(0.760,0.790,0.820); metal=0.46; rough=0.20; }
+  else if(id<3.5){ albedo=vec3(0.815,0.870,0.965); metal=0.62; rough=0.15; tw=0.30; }
   else if(id<4.5){ albedo=vec3(0.185,0.105,0.050); metal=0.00;  rough=0.72; }
   else if(id<5.5){ albedo=vec3(0.215,0.215,0.245); metal=0.44; rough=0.46; }
   else {           albedo=vec3(0.055,0.055,0.065); metal=0.00;  rough=0.90; }
-  albedo *= tone;
+  albedo *= mix(1.0, tone, tw);
 }
 
 vec2 mapRaw(vec3 p){
