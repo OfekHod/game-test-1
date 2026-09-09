@@ -13,9 +13,16 @@ them — and then almost nothing else.
 | The Match map has | The tutorial map has |
 |---|---|
 | five neutral camps in the corridor, each ringed with trees | one camp, where the forest step needs it |
-| ~48 loose trees scattered across the world | nine, in one hedge, where the walking step needs it |
+| ~48 loose trees scattered across the world | nine, in one hedge, where the walking step needs it — and a treeline outside the practice box, which no step can reach |
 | a river down the length of the corridor, and two lakes | one river, across the practice ground, ending short of both lanes |
 | two outposts per lane per side — eight buildings | one per lane per side — four |
+
+Bushes, grass and rocks are the exception to all of that: they are on the
+tutorial map exactly as densely as they are on the other two, practice box
+included. None of them is solid, none blocks a shot or a line of sight, and
+none is something a step can put you in front of — so the practice ground can
+look like the rest of the world without being any harder to teach on than the
+bare field it was.
 
 ### The practice box
 
@@ -38,6 +45,14 @@ only ever targets the other side's *creeps* — it ignores a forest mob standing
 underneath it — so this rule protects the player, not the practice targets.
 Checking every building instead fenced the tutorial out of the open ground
 beside its own base for no reason, which broke the pack step outright.
+
+The box is also what the treeline is cut against. A tutorial tree may only
+stand where `x > TUT_ARENA_X + TUT_ARENA_PAD` or `|y - BASE_Y| > TUT_ARENA_Y +
+TUT_ARENA_PAD`, and never within `TUT_LANE_KEEP` of a lane. Keeping trees off
+the *route* would not do: a step aims at where you are standing, not at the
+route, so the fence has to be the same box the steps are placed in. The 420 of
+padding on top is over half a hero's vision, which is what stops a trunk from
+cutting the fog while you are still inside a lesson.
 
 Three things are held back on top of that — wave spawning, the enemy team
 (parked dead, the trick Survival already uses) and the clock — and each is
