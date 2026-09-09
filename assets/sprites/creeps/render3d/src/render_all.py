@@ -13,7 +13,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from bloom import bloom
 
-W, H, SS = 1024, 1280, 2
+W, H, SS = 1024, 1280, 3
 NAMES = ["radiant_vanguard", "radiant_longbowman", "dire_ghoul",
          "dire_hexcaster", "neutral_rock_golem"]
 

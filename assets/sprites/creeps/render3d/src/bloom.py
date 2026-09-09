@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image, ImageFilter
 
-def bloom(src, dst, thresh=0.70, radius=16, strength=0.80):
+def bloom(src, dst, thresh=0.72, radius=14, strength=0.62):
     im = Image.open(src).convert("RGBA")
     arr = np.asarray(im).astype(np.float32) / 255.0
     rgb, a = arr[..., :3], arr[..., 3:4]

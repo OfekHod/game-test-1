@@ -69,7 +69,7 @@ float calcAO(vec3 p,vec3 n){
     float d=map(p+n*h).x;
     occ+=(h-d)*sca; sca*=0.82;
   }
-  return clamp(1.0-2.4*occ,0.0,1.0);
+  return clamp(1.0-1.9*occ,0.0,1.0);
 }
 // GGX
 float D_GGX(float NoH,float a){ float a2=a*a; float d=NoH*NoH*(a2-1.0)+1.0; return a2/(3.14159*d*d); }
@@ -88,11 +88,11 @@ vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
   {
     vec3 L=normalize(vec3(0.55,0.75,-0.50)); vec3 H=normalize(L+V);
     float NoL=max(dot(n,L),0.0), NoV=max(dot(n,V),1e-4), NoH=max(dot(n,H),0.0), VoH=max(dot(V,H),0.0);
-    float sh=softShadow(p+n*0.004,L,0.02,3.0,11.0);
+    float sh=softShadow(p+n*0.004,L,0.02,3.0,5.5);
     vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);
     float a=max(rough*rough,0.002);
     vec3 spec=F*D_GGX(NoH,a)*V_Smith(NoV,NoL,a);
-    col += (diffC/3.14159 + spec) * vec3(1.0,0.94,0.84) * 3.6 * NoL * sh;
+    col += (diffC/3.14159 + spec) * vec3(1.0,0.95,0.88) * 2.35 * NoL * mix(0.40,1.0,sh);
   }
   // cool fill
   {
@@ -101,19 +101,19 @@ vec3 shade(vec3 p,vec3 n,vec3 rd,vec3 albedo,float rough,float metal,float ao){
     vec3 F=F0+(1.0-F0)*pow(1.0-VoH,5.0);
     float a=max(rough*rough,0.002);
     vec3 spec=F*D_GGX(NoH,a)*V_Smith(NoV,NoL,a);
-    col += (diffC/3.14159 + spec*0.6) * vec3(0.40,0.52,0.72) * 0.95 * NoL;
+    col += (diffC/3.14159 + spec*0.6) * vec3(0.44,0.54,0.72) * 0.80 * NoL;
   }
   // back rim
   {
     vec3 L=normalize(vec3(-0.35,0.32,0.88));
     float NoL=max(dot(n,L),0.0);
     float fres=pow(clamp(1.0-max(dot(n,V),0.0),0.0,1.0),2.5);
-    col += diffC * vec3(0.62,0.80,1.0) * 1.5 * NoL * (0.35+0.85*fres);
+    col += diffC * vec3(0.66,0.82,1.0) * 0.85 * NoL * (0.45+0.55*fres);
   }
   // hemisphere ambient
   {
     float up=0.5+0.5*n.y;
-    vec3 amb=mix(vec3(0.10,0.10,0.12), vec3(0.30,0.36,0.46), up);
+    vec3 amb=mix(vec3(0.105,0.115,0.140), vec3(0.290,0.330,0.410), up);
     col += diffC*amb*ao;
     float NoV=max(dot(n,V),1e-4);
     vec3 F=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NoV,5.0);

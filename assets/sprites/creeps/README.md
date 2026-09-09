@@ -15,7 +15,7 @@ Three variants of each creep are provided, in increasing order of realism:
 
 - **`./`** — 3/4 view, stylized flat vector, `256x288`.
 - **`./side/`** — side profile, detailed vector illustration, `320x400`.
-- **`./render3d/`** — side profile, raymarched 3D render, `1024x1280`.
+- **`./render3d/`** — side profile, stylised 3D render, `1024x1280`.
 
 Each ships as an `.svg` source and a `.png` export with a transparent
 background. Prefer editing the SVG — it rescales and recolors cleanly for team
@@ -25,9 +25,22 @@ variants.
 
 `render3d/` is not illustration — each creep is a signed-distance-field model
 raymarched in a GLSL fragment shader, so the shading is computed rather than
-drawn: physically-based metal/dielectric response, raymarched soft shadows,
-ambient occlusion, procedural surface texture with bump mapping, and a bloom
-pass over the emissive materials (ember eyes, witchfire, the golem's core).
+drawn: soft shadows, ambient occlusion, and a bloom pass over the emissive
+materials (ember eyes, witchfire, the golem's core).
+
+The look is deliberately **stylised, not photoreal**: flat unnoised albedo,
+no bump mapping or procedural surface grain, and smooth-union (`smin`) blending
+so parts flow into one another instead of meeting at hard seams. Three knobs
+control that, if you want to push it either way:
+
+| Knob | Where | Effect |
+|---|---|---|
+| `KSM` | `#define` at the top of each creep's `BODY` | Blend radius between parts. Higher = softer, more melted forms. |
+| `material()` | each creep script | Flat colour, roughness, metalness. Add `fbm(p*N)` terms back in for surface noise. |
+| `bAmp` / `bScale` | `material()` outputs | Bump mapping. Currently `0` — raise `bAmp` for surface relief. |
+
+Lighting lives in `rt.py`: a warm key with soft raymarched shadows, a cool
+fill, a back rim, and a hemisphere ambient.
 
 The renderer runs the shader through headless Chromium's WebGL2 (SwiftShader)
 and reads the framebuffer back as a PNG — no GPU and no external 3D library
@@ -82,8 +95,8 @@ figure rather than moving path data by hand.
 - Single idle pose only — no walk, attack, or death frames yet.
 - Side-view sprites face right only; mirror horizontally for the other facing.
 - The vector sets are illustration, not painted or photoreal art.
-- The 3D set is modelled from primitives, so forms are chunky and hard-surface;
-  it is stylised realism, not a sculpted character asset.
+- The 3D set is modelled from primitives, so forms are chunky and rounded; it is
+  a stylised render, not a sculpted character asset.
 
 ## Provenance
 
