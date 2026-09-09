@@ -833,6 +833,1327 @@ window.addEventListener('DOMContentLoaded', function(){
 </div>
 
 <script>
+/* The music, and only the music, ahead of the game.
+
+   Everything in here runs while the rest of the page is still arriving. It is
+   about sixty kilobytes; the game script under it is well over a megabyte, and
+   no browser runs a line of an inline script until it has parsed the last one —
+   so a theme that lived down there could not make a sound until the whole file
+   had landed. Opened off disk that is most of a second; pulled over a phone's
+   network it is the entire load, spent in silence. Up here the synth is ready
+   in a twentieth of the bytes, and the music is playing while the game loads.
+
+   That is the only reason for the split. Nothing in here touches the DOM, the
+   canvas or the game, and the game reaches all of it through window.LaneMusic.
+   It has to: sim/harness.js lifts the LAST <script> out of this file, so what
+   runs under Node is still the game on its own, with none of these names in
+   scope. */
+(function(){
+
+  /* ===== music: two themes, synthesised ===== */
+  /* Lane's music — two piano-and-nylon-guitar loops, synthesised from nothing:
+     one for the menu and one for the match. No sample files, no library, no
+     network, which is the same promise the rest of the game makes and also the
+     only approach that works in all three places this has to run — the published
+     artifact's CSP blocks media from every host, and index.html has to keep
+     working opened straight off disk.
+
+     Two different synthesis strategies, because the two instruments want
+     different things:
+
+     PIANO is a live Web Audio graph — one sine oscillator per partial, each with
+     its own decay. Additive synthesis is a lot of arithmetic, and doing it in JS
+     to fill a buffer froze the main thread for seconds; handing the same job to
+     the browser's own oscillators costs a few dozen node allocations per note and
+     runs on the audio thread instead.
+
+     GUITAR is a pre-rendered buffer — Karplus-Strong, which needs a delay line
+     tuned to a fraction of a sample. A DelayNode fed back on itself can't do
+     that: a cycle in the graph is forced to at least one render quantum of delay
+     (128 samples), which caps the pitch at ~344Hz and our voicings go above it.
+     Written out by hand into a Float32Array it is about five operations per
+     sample and the whole range renders in well under a tenth of a second. */
+
+  /* music:engine begin — tools/music-demo.js lifts everything down to the end
+     marker into a standalone page with an intensity slider on it, so what is
+     auditioned there is exactly what plays here. It depends on nothing else in
+     the game: no camera, no heroes, no DOM. The one thing the game hands it is
+     a number between 0 and 1. */
+
+  // Deterministic noise. Every render — the live game, the sample page, the
+  // offline WAV — must come out identical, so nothing here calls Math.random.
+  function rng(seed){
+    let a = seed >>> 0;
+    return function(){
+      a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+
+  /* ---------------------------------------------------------------- reverb */
+
+  // A plausible small hall, built as decaying noise. The early reflections are
+  // a handful of discrete taps in the first 80ms — without them the tail reads
+  // as a wash rather than a room. L and R use independent noise so the result
+  // is wide instead of a mono blob sitting between the speakers.
+  function makeIR(ctx, seconds, decay, seed){
+    const sr = ctx.sampleRate;
+    const n = Math.floor(sr * seconds);
+    const buf = ctx.createBuffer(2, n, sr);
+    const preDelay = Math.floor(sr * 0.018);
+    for(let ch = 0; ch < 2; ch++){
+      const d = buf.getChannelData(ch);
+      const rand = rng(seed + ch * 7919);
+      // early reflections
+      const taps = 9;
+      for(let i = 0; i < taps; i++){
+        const at = preDelay + Math.floor(rand() * sr * 0.075);
+        if(at < n) d[at] += (rand() * 2 - 1) * (0.55 - i * 0.05);
+      }
+      // diffuse tail, rolling off as it decays the way real air does
+      let lp = 0;
+      for(let i = preDelay; i < n; i++){
+        const t = (i - preDelay) / sr;
+        const env = Math.pow(1 - (i - preDelay) / (n - preDelay), decay);
+        const white = rand() * 2 - 1;
+        const a = clamp(0.55 - t * 0.13, 0.12, 0.55);
+        lp = lp + a * (white - lp);
+        d[i] += lp * env * 0.42;
+      }
+    }
+    return buf;
+  }
+
+  /* ------------------------------------------------- nylon string (buffer) */
+
+  // Extended Karplus-Strong. The numbers below are what make it read as nylon
+  // rather than steel: a darker excitation burst, a lower loop-filter cutoff
+  // and a shorter decay than a steel string would have.
+  function renderString(sr, midi, opts){
+    const f0 = mtof(midi);
+    const bright = opts.bright == null ? 0.5 : opts.bright;
+    const t60 = opts.t60 == null ? 2.6 : opts.t60;
+    const pickPos = opts.pickPos == null ? 0.13 : opts.pickPos;
+
+    // Loop gain from the decay we asked for: after f0*t60 trips round the loop
+    // the signal should be down 60dB.
+    const rho = Math.pow(0.001, 1 / (f0 * t60));
+    const S = clamp(0.5 - bright * 0.22, 0.16, 0.5);   // loop filter stretch
+
+    // The loop filter is part of the delay, so the delay line has to be short
+    // by however much the filter itself holds the signal up. Assuming that is
+    // half a sample — the usual shortcut — is true near DC and wrong further
+    // up: it left the top of the guitar's range measurably flat, which in a
+    // chord is the difference between warm and sour. So take the one-pole's
+    // actual phase delay at this pitch.
+    const w = 2 * Math.PI * f0 / sr;
+    const lpDelay = Math.atan2(S * Math.sin(w), 1 - S * Math.cos(w)) / w;
+
+    const total = sr / f0;
+    const N = Math.floor(total - lpDelay) - 1;
+    if(N < 2) return null;
+    // Whatever fraction of a sample is left over is made up by a one-pole
+    // allpass. Kept inside [0.1, 1.1) because an allpass coefficient near +/-1
+    // rings on its own.
+    const frac = total - lpDelay - N;
+    const apC = (1 - frac) / (1 + frac);
+
+    const dur = Math.min(6, t60 * 0.95) + 0.02;
+    const n = Math.ceil(sr * dur);
+    const out = new Float32Array(n);
+    const rand = rng(opts.seed || 1);
+
+    // Excitation: noise, lowpassed hard (a fingertip on nylon has almost no
+    // top end), then combed by where the string was plucked. The comb is the
+    // difference between a plucked string and a filtered noise burst.
+    const line = new Float32Array(N);
+    const combLen = Math.max(1, Math.round(N * pickPos));
+    const raw = new Float32Array(N);
+    let lp = 0;
+    const exA = clamp(0.16 + bright * 0.34, 0.1, 0.6);
+    for(let i = 0; i < N; i++){
+      lp = lp + exA * ((rand() * 2 - 1) - lp);
+      raw[i] = lp;
+    }
+    // Plucking a string a fraction of the way along cancels the harmonics with
+    // a node at that point — but a full-depth comb also guts the fundamental,
+    // and measured, that is exactly what happened: the first render's guitar
+    // had its second partial 6dB LOUDER than its first, which reads as banjo,
+    // not nylon. A partial comb keeps the character and the body.
+    const combDepth = opts.combDepth == null ? 0.55 : opts.combDepth;
+    for(let i = 0; i < N; i++) line[i] = raw[i] - combDepth * (i >= combLen ? raw[i - combLen] : 0);
+    // taper the burst so it starts from silence instead of a click
+    for(let i = 0; i < N; i++){
+      const w = i < 8 ? i / 8 : 1;
+      line[i] *= w;
+    }
+
+    let idx = 0, lpz = 0, apz = 0, apzOut = 0;
+    for(let i = 0; i < n; i++){
+      const x = line[idx];
+      out[i] = x;
+      // one-pole loop filter: the string loses its top end every round trip
+      lpz = (1 - S) * x + S * lpz;
+      // fractional-delay allpass
+      const ap = apC * lpz + apz - apC * apzOut;
+      apz = lpz; apzOut = ap;
+      line[idx] = ap * rho;
+      idx = idx + 1 === N ? 0 : idx + 1;
+    }
+
+    // Body. A classical guitar has an air resonance near 100Hz and a top-plate
+    // one near 200Hz; without them the string sounds stretched in a vacuum. The
+    // wide peak at the note's own fundamental is not physical modelling, it is
+    // the correction that puts the fundamental back on top where a listener
+    // expects it.
+    if(opts.body !== false){
+      biquadInPlace(out, sr, 'peak', 100, 1.3, 4.5);
+      biquadInPlace(out, sr, 'peak', 205, 2.0, 3.0);
+    }
+    biquadInPlace(out, sr, 'peak', clamp(f0, 60, 700), 0.9, opts.fundBoost == null ? 5.0 : opts.fundBoost);
+    biquadInPlace(out, sr, 'hp', opts.hp == null ? 68 : opts.hp, 0.7, 0);
+    biquadInPlace(out, sr, 'lp', clamp(f0 * 14, 2200, 8000), 0.7, 0);
+
+    // fade the last 30ms so stopping the buffer can never click
+    const fade = Math.min(n, Math.floor(sr * 0.03));
+    for(let i = 0; i < fade; i++) out[n - fade + i] *= 1 - i / fade;
+
+    // normalise to a predictable peak so voice levels are about mixing, not
+    // about whichever pitch happened to resonate
+    let peak = 0;
+    for(let i = 0; i < n; i++){ const a = out[i] < 0 ? -out[i] : out[i]; if(a > peak) peak = a; }
+    if(peak > 0){ const g = 0.85 / peak; for(let i = 0; i < n; i++) out[i] *= g; }
+    return out;
+  }
+
+  // RBJ cookbook biquad, applied in place. Used on the string buffers only —
+  // everything live goes through real BiquadFilterNodes.
+  function biquadInPlace(buf, sr, type, freq, Q, gainDb){
+    const w0 = 2 * Math.PI * freq / sr;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / (2 * Q);
+    let b0, b1, b2, a0, a1, a2;
+    if(type === 'lp'){
+      b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0;
+      a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
+    } else if(type === 'hp'){
+      b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0;
+      a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
+    } else {
+      const A = Math.pow(10, gainDb / 40);
+      b0 = 1 + alpha * A; b1 = -2 * cw; b2 = 1 - alpha * A;
+      a0 = 1 + alpha / A; a1 = -2 * cw; a2 = 1 - alpha / A;
+    }
+    b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for(let i = 0; i < buf.length; i++){
+      const x = buf[i];
+      const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      buf[i] = y;
+    }
+  }
+
+  /* The instruments and the scheduler. Depends on LaneMusicDSP. */
+
+  function createLaneMusic(ctx, song, opts){
+    opts = opts || {};
+    const lite = !!opts.lite;                 // phones get a thinner voice
+    const sr = ctx.sampleRate;
+    const nyq = sr / 2;
+    const spb = 60 / song.bpm;                // seconds per beat
+    const loopSeconds = song.loopBeats * spb;
+
+    // Each piece brings its own balance. The menu theme wants to be noticed;
+    // the one that plays under a match wants the opposite — same loudness, but
+    // darker, flatter and with the attack taken off it, so it sits under the
+    // game instead of competing with it. Levels are calibrated against an
+    // offline render: peak near -2dBFS, average around -23.
+    const M = song.mix || {};
+    const LVL = M.level == null ? 4.8 : M.level;
+
+    /* ------------------------------------------------------------- mixing */
+
+    // Everything lands on `out`; the caller decides where that goes so the
+    // same graph can drive speakers or an offline render.
+    const out = ctx.createGain();
+    out.gain.value = 1;
+
+    const master = ctx.createGain();
+    const MASTER = M.master == null ? 0.82 : M.master;
+    master.gain.value = MASTER;
+
+    if(opts.raw){
+      master.connect(out);                     // measurement path
+    } else {
+      const comp = ctx.createDynamicsCompressor();
+      // Not for loudness — a backstop for the few beats where a piano chord, a
+      // guitar roll and a ringing tail all land together. Measured with a
+      // faster attack it swelled every piano onset: the note's peak arrived
+      // 155ms late and struck notes came out sounding blown. Set so it only
+      // reaches the true peaks and lets go slowly.
+      comp.threshold.value = -6; comp.knee.value = 14;
+      comp.ratio.value = 2.2; comp.attack.value = 0.08; comp.release.value = 0.5;
+      master.connect(comp); comp.connect(out);
+    }
+
+    const conv = ctx.createConvolver();
+    conv.buffer = makeIR(ctx, M.irSeconds || 2.9, M.irDecay || 2.1, 20240);
+    const wet = ctx.createGain(); wet.gain.value = 0.9;
+    conv.connect(wet); wet.connect(master);
+
+    // One bus per instrument: its own tone shaping, its own place in the
+    // stereo field, its own amount of room. Instruments stacked in the same
+    // register with the same reverb turn into porridge.
+    // A bus hands back its nodes as well as its input, and remembers the level
+    // and cutoff the mix asked for. The intensity control below moves some of
+    // them, and it has to move them relative to what the piece was written
+    // with rather than to an absolute — otherwise every mix change silently
+    // retunes the drama.
+    const buses = {};
+    function bus(gain, pan, sendAmt, lpFreq){
+      const g = ctx.createGain(); g.gain.value = gain;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.value = lpFreq; lp.Q.value = 0.6;
+      const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      g.connect(lp);
+      const tail = p ? (lp.connect(p), p) : lp;
+      if(p) p.pan.value = pan;
+      tail.connect(master);
+      const send = ctx.createGain(); send.gain.value = opts.dry ? 0 : sendAmt;
+      tail.connect(send); send.connect(conv);
+      return { g, lp, send, gBase: gain, lpBase: lpFreq };
+    }
+
+    function chan(key, g, pan, send, lp){
+      const o = M[key] || {};
+      const rec = bus((o.g == null ? g : o.g) * LVL,
+                      o.pan  == null ? pan  : o.pan,
+                      o.send == null ? send : o.send,
+                      o.lp   == null ? lp   : o.lp);
+      buses[key] = rec;
+      return rec.g;
+    }
+    const busPiano  = chan('piano',  0.50,  0.10, 0.30, 7200);
+    const busGuitar = chan('guitar', 0.60, -0.20, 0.26, 6200);
+    const busBass   = chan('bass',   0.48,  0.00, 0.08, 1400);
+    const busBell   = chan('bell',   0.26,  0.30, 0.46, 9000);
+    const busPad    = chan('pad',    0.11,  0.00, 0.40, 2200);
+
+    /* -------------------------------------------------- one-shot noise buf */
+
+    // The hammer thock. One buffer, reused, re-pitched per note by the
+    // bandpass it plays through.
+    const hammerBuf = (function(){
+      const n = Math.floor(sr * 0.03);
+      const b = ctx.createBuffer(1, n, sr);
+      const d = b.getChannelData(0);
+      const rand = rng(4242);
+      for(let i = 0; i < n; i++){
+        const env = Math.pow(1 - i / n, 3.5);
+        d[i] = (rand() * 2 - 1) * env;
+      }
+      return b;
+    })();
+
+    /* -------------------------------------------------------------- piano */
+
+    // Real strings are stiff, so their partials sit progressively sharp of the
+    // harmonic series: f_n = n*f0*sqrt(1 + B*n^2). Without this a piano note is
+    // an organ note. B rises steeply towards the treble, where the strings are
+    // short and thick relative to their length.
+    function inharmonicity(f0){
+      return clamp(0.00007 * Math.pow(f0 / 261.6, 1.45) + 0.00004, 0.00004, 0.007);
+    }
+    // A real grand with the pedal down rings for ten seconds or more at middle
+    // C. Measured, that was the single worst thing about the first render: by
+    // the third bar every note ever played was still sounding and the piece was
+    // a chord soup. Half a dozen seconds of tail is all a menu bed can carry.
+    function pianoT60(f0){
+      return clamp(4.2 * Math.pow(261.6 / f0, 0.62), 0.8, 6.5);
+    }
+
+    const PIANO_PARTIALS = lite ? 7 : 13;
+    const PIANO_UNISON   = lite ? 0 : 4;
+
+    function piano(t, midi, vel, ampScale){
+      const f0 = mtof(midi);
+      const B = inharmonicity(f0);
+      const t60 = pianoT60(f0) * (0.82 + 0.34 * vel);
+      const peak = 0.34 * ampScale * Math.pow(vel, M.pianoCurve == null ? 1.25 : M.pianoCurve);
+      // Struck about an eighth of the way along, which is what silences every
+      // eighth partial and gives a piano its particular hollowness.
+      const strike = 0.125;
+      const stop = t + Math.min(t60 * 0.95, 6.5) + 0.1;
+
+      for(let k = 1; k <= PIANO_PARTIALS; k++){
+        const fk = k * f0 * Math.sqrt(1 + B * k * k);
+        if(fk > nyq * 0.92) break;
+        let amp = Math.pow(k, -1.18) * Math.abs(Math.sin(Math.PI * k * strike));
+        if(amp < 0.0015) continue;
+        // Play softly and the top of the spectrum goes first. Velocity has to
+        // change the colour, not just the volume, or quiet notes are simply
+        // the same note further away.
+        amp *= Math.pow(vel, 0.18 + 0.13 * (k - 1));
+        const dk = t60 / (1 + 0.66 * Math.pow(k - 1, 0.82));
+
+        const voices = k <= PIANO_UNISON ? 2 : 1;
+        for(let u = 0; u < voices; u++){
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          // Two or three strings per note, never quite in tune with each
+          // other. The slow beating that produces is most of what separates a
+          // piano from a sine bank.
+          osc.frequency.value = fk * (u ? 1 + 0.00035 * k : 1);
+          const g = ctx.createGain();
+          const a = amp * peak * (u ? 0.5 : 1);
+          const atk = 0.004 + 0.004 / k;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(a, t + atk);
+          // Double decay: strings lose energy fast while both polarisations
+          // ring, then far more slowly once only one is left.
+          g.gain.setTargetAtTime(a * 0.32, t + atk, dk * 0.10);
+          g.gain.setTargetAtTime(0, t + atk + dk * 0.14, dk * 0.17);
+          osc.connect(g); g.connect(busPiano);
+          osc.start(t); osc.stop(stop);
+        }
+      }
+
+      const hs = ctx.createBufferSource();
+      hs.buffer = hammerBuf;
+      const hb = ctx.createBiquadFilter();
+      hb.type = 'bandpass'; hb.frequency.value = clamp(f0 * 3.4, 200, 5200); hb.Q.value = 0.9;
+      const hg = ctx.createGain();
+      hg.gain.value = 0.10 * ampScale * Math.pow(vel, 2.1);
+      hs.connect(hb); hb.connect(hg); hg.connect(busPiano);
+      hs.start(t);
+    }
+
+    /* ------------------------------------------------------ bell / celeste */
+
+    function bell(t, midi, vel, ampScale){
+      const f0 = mtof(midi);
+      const parts = [[1, 1, 1.6], [2, 0.40, 1.0], [3, 0.14, 0.62], [4.16, 0.08, 0.42]];
+      const peak = 0.20 * ampScale * Math.pow(vel, 1.2);
+      for(const [r, a, dscale] of parts){
+        const f = f0 * r;
+        if(f > nyq * 0.9) continue;
+        const osc = ctx.createOscillator();
+        osc.type = 'sine'; osc.frequency.value = f;
+        const g = ctx.createGain();
+        const dur = 1.5 * dscale;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(a * peak, t + 0.005);
+        g.gain.setTargetAtTime(0, t + 0.005, dur * 0.28);
+        osc.connect(g); g.connect(busBell);
+        osc.start(t); osc.stop(t + dur + 0.2);
+      }
+    }
+
+    /* ----------------------------------------------------------- strings */
+
+    // Karplus-Strong buffers, rendered on demand and kept. Only the pitches the
+    // piece actually uses ever get built, so this is a few dozen short renders
+    // rather than a full instrument range.
+    const stringCache = new Map();
+    function stringBuf(midi, kind){
+      const key = kind + ':' + midi;
+      let b = stringCache.get(key);
+      if(b) return b;
+      // The bass is the same string model with the comb almost off and the
+      // fundamental pushed hard: down there the note IS the fundamental, and
+      // anything that thins it just makes the piece feel like it has no floor.
+      const base = kind === 'bass'
+        ? { bright: 0.26, t60: 2.8, pickPos: 0.11, combDepth: 0.22, fundBoost: 8.0, hp: 42, body: false, seed: 1000 + midi }
+        : { bright: 0.52, t60: 2.5, pickPos: 0.16, combDepth: 0.55, fundBoost: 5.0, seed: 2000 + midi };
+      const cfg = Object.assign(base, (M.string && M.string[kind]) || {});
+      cfg.seed = base.seed;
+      const data = renderString(sr, midi, cfg);
+      if(!data) return null;
+      b = ctx.createBuffer(1, data.length, sr);
+      b.copyToChannel(data, 0);
+      stringCache.set(key, b);
+      return b;
+    }
+
+    function pluck(t, midi, vel, kind, ampScale){
+      const b = stringBuf(midi, kind);
+      if(!b) return;
+      const s = ctx.createBufferSource();
+      s.buffer = b;
+      // A fraction of a semitone, different per note, so repeated notes are
+      // not bit-identical copies of each other.
+      s.playbackRate.value = 1;
+      const g = ctx.createGain();
+      g.gain.value = (kind === 'bass' ? 0.42 : 0.30) * ampScale * Math.pow(vel, 1.2);
+      // Pluck harder and you get more than volume: a brighter string.
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      const bs = (M.string && M.string.spread == null) ? 16 : (M.string ? M.string.spread : 16);
+      // And a player under pressure digs in. This is the one continuous cue
+      // that is a change of TONE rather than of level, which is why it is the
+      // only thing that carries the bottom of the intensity range on its own:
+      // the guitar is the voice that never stops, so opening it up is heard
+      // immediately and everywhere, without a note being added.
+      lp.frequency.value = clamp(mtof(midi) * (5 + bs * sh.spread * vel), 700, 9000);
+      lp.Q.value = 0.5;
+      s.connect(lp); lp.connect(g);
+      g.connect(kind === 'bass' ? busBass : busGuitar);
+      s.start(t);
+    }
+
+    /* --------------------------------------------------------------- pad */
+
+    function pad(t, notes, durSec, ampScale){
+      const stop = t + durSec + 1.4;
+      for(const midi of notes){
+        for(let u = 0; u < 2; u++){
+          const osc = ctx.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.value = mtof(midi);
+          osc.detune.value = u ? 7 : -7;
+          const g = ctx.createGain();
+          const a = 0.06 * ampScale / notes.length;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(a, t + 0.9);
+          g.gain.setValueAtTime(a, t + durSec * 0.7);
+          g.gain.linearRampToValueAtTime(0, stop);
+          osc.connect(g); g.connect(busPad);
+          osc.start(t); osc.stop(stop + 0.05);
+        }
+      }
+    }
+
+    /* ---------------------------------------------------------- intensity */
+
+    /* One number, 0 to 1, for how much trouble is nearby. The game works it
+       out from where the enemy heroes are; this decides what that sounds like.
+
+       Two mechanisms, because "it is getting worse" and "something just
+       arrived" are different jobs and want different machinery:
+
+        - SHADING is continuous and always on. The pad comes up and opens, the
+          guitar's lowpass lifts a little, both of them give up a fraction of a
+          decibel, and the room shrinks. No new note plays: the same piece gets
+          tenser. This is what makes the middle of the range readable instead
+          of a flat wait between two switches.
+        - LAYERS are notes the piece already contains and does not play. Each
+          carries the tier it belongs to — 1 is the celeste warning, 2 the dive
+          pulse, 3 the dread — and is skipped entirely while the intensity is
+          below where that tier enters. Over the 0.18 above its threshold it
+          fades up from nothing, so a layer arriving is a player walking into
+          the room rather than a channel being unmuted.
+
+       The three thresholds are placed against what the game can actually
+       produce, so the ladder counts heads. The game's plan is to add up a
+       share per enemy hero, 1 at point blank falling to 0 at the edge of the
+       ring, and divide by 2.5 — so a whole team on top of you is 1, two is
+       0.80 and one is 0.40. Solve the thresholds against those three numbers
+       and each layer means exactly one more enemy: one gets the celeste and
+       cannot reach the pulse, two get the pulse and cannot reach the dread,
+       and only three get all of it. That is the whole mechanic — the layer
+       you can hear is a head count — so the numbers below are not free.
+
+       Tempo is deliberately not one of them. loopStart and position() are both
+       measured in a fixed seconds-per-beat, so moving the tempo would move the
+       loop clock under the scheduler. Urgency comes from register, density and
+       brightness instead — which is the better answer anyway: a piece that
+       speeds up tells you something is happening, and a piece that grows a
+       voice above everything else tells you what. */
+    const TIER_IN = [0, 0.24, 0.55, 0.86];  // indexed by tier: 0 is everything else
+    const TIER_FADE = 0.14;                 // and how far above that it is fully in
+    let intensity = 0;
+
+    function layerGain(tier){
+      if(!tier) return 1;
+      const lo = TIER_IN[tier];
+      if(lo == null) return 0;
+      return clamp((intensity - lo) / TIER_FADE, 0, 1);
+    }
+
+    // Every continuous move in one place, as numbers rather than as
+    // side-effects, because the audition page shows them and a panel that
+    // describes the mix instead of reading it is a panel that goes stale.
+    //
+    // The curve on the early ones is the point of the exponent. Linear, the
+    // bottom of the range is the part that does least, and the bottom of the
+    // range is exactly where the information is worth most: it is the only
+    // warning you get before you can see anybody. At 0.7 a fifth of the way in
+    // is already a third of the effect.
+    function shadeValues(u){
+      const e = Math.pow(u, 0.7);
+      return {
+        u,
+        padMul:  1 + 1.9 * e,
+        padLp:   (buses.pad ? buses.pad.lpBase : 0) * (1 + 1.1 * e),
+        // Down as the layers arrive, so the top of the range is a change of
+        // colour and not only of level. Squared, so it is the top that pays:
+        // linear here made the bottom of the range measurably DARKER than
+        // silence — the duck and the shorter tail together outran everything
+        // that was supposed to be opening up, and "they are getting closer"
+        // came out as the music quietly dimming.
+        gtrMul:  1 - 0.26 * u * u,
+        gtrLp:   (buses.guitar ? buses.guitar.lpBase : 0) * (1 + 0.55 * e),
+        pnoMul:  1 - 0.16 * u * u,
+        // The celeste is the voice carrying the warning, so it grows after it
+        // has arrived as well as while it is arriving.
+        bellMul: 1 + 0.8 * u,
+        // How much harder the guitar is picked. 5 to 18 across the range, which
+        // takes it past the menu theme's 16: at the top this is not the same
+        // instrument played louder, it is somebody digging in.
+        spread:  1 + 2.6 * e,
+        // A shorter tail reads as a smaller room, and a smaller room reads as
+        // close. Most of what makes the match theme sound like it is happening
+        // somewhere else is this one number.
+        wet:     0.9 - 0.38 * e,
+      };
+    }
+    let sh = shadeValues(0);
+
+    // Targets, never jumps. A fifth of a second is short enough that walking
+    // into range is felt as it happens and long enough that a hero weaving in
+    // and out of the ring cannot make the mix flutter.
+    function shade(){
+      const now = ctx.currentTime, T = 0.22;
+      const set = (prm, v) => prm.setTargetAtTime(v, now, T);
+      const pad = buses.pad, gtr = buses.guitar, pno = buses.piano, bel = buses.bell;
+      if(pad){ set(pad.g.gain, pad.gBase * sh.padMul); set(pad.lp.frequency, sh.padLp); }
+      if(gtr){ set(gtr.g.gain, gtr.gBase * sh.gtrMul); set(gtr.lp.frequency, sh.gtrLp); }
+      if(pno) set(pno.g.gain, pno.gBase * sh.pnoMul);
+      if(bel) set(bel.g.gain, bel.gBase * sh.bellMul);
+      set(wet.gain, sh.wet);
+    }
+
+    /* --------------------------------------------------------- scheduling */
+
+    const events = song.events;
+    function fire(ev, t){
+      let a = ev.a == null ? 1 : ev.a;
+      // A layer note below its tier does not exist: not scheduled, not faded,
+      // no node built for it.
+      if(ev.tier){
+        const lg = layerGain(ev.tier);
+        if(lg < 0.04) return;
+        a *= lg;
+      }
+      if(ev.k === 'p') piano(t, ev.p, ev.v, a);
+      else if(ev.k === 'g') pluck(t, ev.p, ev.v, 'gtr', a);
+      else if(ev.k === 'b') pluck(t, ev.p, ev.v, 'bass', a);
+      else if(ev.k === 'c') bell(t, ev.p, ev.v, a);
+      else if(ev.k === 'd') pad(t, ev.n, ev.d * spb, a);
+    }
+
+    // Warm the string cache for the pitches the piece uses, so the first pass
+    // through the loop does not stutter while it renders a delay line.
+    function prewarm(){
+      const seen = new Set();
+      for(const ev of events){
+        if(ev.k !== 'g' && ev.k !== 'b') continue;
+        const key = (ev.k === 'b' ? 'bass' : 'gtr') + ':' + ev.p;
+        if(seen.has(key)) continue;
+        seen.add(key);
+        stringBuf(ev.p, ev.k === 'b' ? 'bass' : 'gtr');
+      }
+      return seen.size;
+    }
+
+    let timer = null, loopStart = 0, cursor = 0, running = false;
+    const LOOKAHEAD = 0.25, TICK = 45;
+
+    function tick(){
+      const now = ctx.currentTime;
+      let guard = 0;
+      while(guard++ < 400){
+        const ev = events[cursor];
+        const t = loopStart + ev.t * spb;
+        if(t > now + LOOKAHEAD) break;
+        if(t > now - 0.05) fire(ev, Math.max(t, now + 0.005));
+        cursor++;
+        if(cursor >= events.length){ cursor = 0; loopStart += loopSeconds; }
+      }
+    }
+
+    // The listener's own volume, kept apart from the fade envelope on `out` so
+    // a fade in progress cannot stamp on it or be stamped on.
+    let level = 1;
+    function setLevel(v){
+      level = clamp(v, 0, 1);
+      master.gain.setTargetAtTime(MASTER * level, ctx.currentTime, 0.03);
+    }
+
+    return {
+      out,
+      loopSeconds,
+      prewarm,
+      setLevel,
+      setIntensity(v){
+        const n = clamp(v == null ? 0 : v, 0, 1);
+        if(n === intensity) return;
+        intensity = n;
+        sh = shadeValues(n);
+        shade();
+      },
+      // The demo page draws its meters and its mix panel off these, so the
+      // picture on it and the sound out of it can never disagree about where a
+      // layer comes in or what the mix is doing when it does.
+      layerGain,
+      shading(){ return sh; },
+      tiers: TIER_IN.slice(),
+      tierFade: TIER_FADE,
+      get intensity(){ return intensity; },
+      get level(){ return level; },
+      get running(){ return running; },
+      start(fadeSec){
+        if(running) return;
+        running = true;
+        prewarm();
+        loopStart = ctx.currentTime + 0.14;
+        cursor = 0;
+        const f = fadeSec == null ? 1.6 : fadeSec;
+        out.gain.cancelScheduledValues(ctx.currentTime);
+        out.gain.setValueAtTime(0.0001, ctx.currentTime);
+        out.gain.exponentialRampToValueAtTime(1, ctx.currentTime + f);
+        tick();
+        timer = setInterval(tick, TICK);
+      },
+      stop(fadeSec){
+        if(!running) return;
+        running = false;
+        const f = fadeSec == null ? 1.2 : fadeSec;
+        const now = ctx.currentTime;
+        out.gain.cancelScheduledValues(now);
+        out.gain.setValueAtTime(Math.max(out.gain.value, 0.0001), now);
+        out.gain.exponentialRampToValueAtTime(0.0001, now + f);
+        if(timer){ clearInterval(timer); timer = null; }
+      },
+      // Where the playhead is, in beats. The scheduler runs ahead of the sound
+      // by up to a lookahead window, so just after a wrap this can go briefly
+      // negative — the modulo folds it back rather than flashing to the end.
+      position(){
+        if(!running) return 0;
+        const el = ctx.currentTime - loopStart;
+        return ((el % loopSeconds) + loopSeconds) % loopSeconds / spb;
+      },
+      // Offline path: no wall clock, so every event in the window is queued up
+      // front against a fixed origin.
+      renderAll(baseTime, seconds){
+        prewarm();
+        let n = 0, c = 0, base = baseTime;
+        for(let pass = 0; pass < 200; pass++){
+          for(c = 0; c < events.length; c++){
+            const t = base + events[c].t * spb;
+            if(t >= baseTime + seconds) return n;
+            fire(events[c], t);
+            n++;
+          }
+          base += loopSeconds;
+        }
+        return n;
+      }
+    };
+  }
+
+  /* Turns the written piece — chords, melody, a picking figure — into the flat,
+     time-ordered event list the scheduler walks. Depends on LaneMusicDSP. */
+
+  function arrangeLaneSong(song){
+    const ev = [];
+    const rand = rng(song.seed || 7);
+    // Baked in once rather than rolled per loop: a groove that changes every
+    // time round is not a groove, and an offline render has to come out
+    // identical to what the game plays.
+    const jitter = amt => (rand() * 2 - 1) * amt;
+
+    const sectionAt = b => {
+      const s = song.sections.find(s => b >= s.from && b < s.to);
+      return s || song.sections[song.sections.length - 1];
+    };
+
+    // A voicing index past the top of the chord keeps climbing in octaves
+    // instead of dropping back to the bottom, so a picking figure written over
+    // four notes still works over a three-note chord.
+    function pickFrom(voicing, i){
+      const n = voicing.length;
+      const oct = Math.floor(i / n);
+      return voicing[((i % n) + n) % n] + 12 * oct;
+    }
+
+    function push(k, t, p, v, extra){
+      const e = { k, t, p, v: Math.max(0.04, Math.min(1, v)) };
+      if(extra) Object.assign(e, extra);
+      ev.push(e);
+    }
+
+    // --- lead line -------------------------------------------------------
+    for(const m of song.melody){
+      const sec = sectionAt(m.b);
+      if(sec.melody === false) continue;
+      push('p', m.b + jitter(0.012), m.p, m.v * (sec.melodyAmp == null ? 1 : sec.melodyAmp) + jitter(0.03),
+           { a: sec.amp == null ? 1 : sec.amp });
+    }
+
+    // --- bells / second voice --------------------------------------------
+    for(const c of song.counter || []){
+      const sec = sectionAt(c.b);
+      if(sec.counter === false) continue;
+      push('c', c.b + jitter(0.014), c.p, c.v + jitter(0.03), { a: sec.amp == null ? 1 : sec.amp });
+    }
+
+    // --- accompaniment ----------------------------------------------------
+    for(const ch of song.chords){
+      const sec = sectionAt(ch.b);
+      const amp = sec.amp == null ? 1 : sec.amp;
+      const voicing = ch.notes;
+
+      const pick = i => pickFrom(voicing, i);
+
+      const pat = song.patterns[sec.guitar];
+      if(pat){
+        for(let cell = 0; cell < ch.dur; cell += pat.span){
+          for(const step of pat.steps){
+            const t = ch.b + cell + step.b;
+            if(t >= ch.b + ch.dur - 0.001) continue;
+            if(t >= song.loopBeats) continue;
+            // A hand does not land on six strings at once; the spread is what
+            // makes it a chord rather than a stab.
+            const spread = (step.roll || 0) * 0.018 / (60 / song.bpm);
+            push('g', t + spread + jitter(0.009), pick(step.i),
+                 step.v * (sec.guitarAmp == null ? 1 : sec.guitarAmp) + jitter(0.035), { a: amp });
+          }
+        }
+      }
+
+      const bp = song.bassPatterns[sec.bass];
+      if(bp){
+        for(let cell = 0; cell < ch.dur; cell += bp.span){
+          for(const step of bp.steps){
+            const t = ch.b + cell + step.b;
+            if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
+            push('b', t + jitter(0.010), ch.bass + (step.o || 0), step.v + jitter(0.03), { a: amp });
+          }
+        }
+      }
+
+      if(sec.pad) push('d', ch.b, 0, 1, { n: voicing.slice(0, 3), d: ch.dur, a: amp });
+    }
+
+    // --- the threat layers ------------------------------------------------
+    // Notes that only play when the game says something is close. They are
+    // written against the same chord grid as everything else, so whatever
+    // walks in is in the key and on the harmony no matter where in the loop it
+    // happens — which it has to be, because the trigger is a hero's position
+    // and not a bar number.
+    //
+    // Emitted last, after every other voice, on purpose: the jitter comes off
+    // one deterministic stream, and generating these earlier would shift the
+    // micro-timing of every note that was already there. At intensity 0 the
+    // piece has to be the same piece, down to the sample.
+    for(const name in song.threat || {}){
+      const pat = song.threat[name];
+      for(const ch of song.chords){
+        const sec = sectionAt(ch.b);
+        const amp = sec.amp == null ? 1 : sec.amp;
+        for(let cell = 0; cell < ch.dur; cell += pat.span){
+          for(const step of pat.steps){
+            const t = ch.b + cell + step.b;
+            if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
+            // A held cluster, written against the root rather than the voicing
+            // because the whole point of it is the note the chord does NOT
+            // contain. Its length is the pattern's, so a swell written over a
+            // chord lasts exactly as long as the chord does.
+            if(step.k === 'd'){
+              push('d', t, 0, 1, { a: amp, tier: pat.tier,
+                                   n: step.rel.map(r => ch.bass + r),
+                                   d: Math.min(pat.span, ch.b + ch.dur - t) });
+              continue;
+            }
+            // A step written as `rel` is an interval off the chord's root, the
+            // way the bass patterns are written, and a step written as `i`
+            // climbs the voicing the way the guitar figure does. Which one a
+            // layer wants is not about its instrument: a note that is meant to
+            // be IN the chord has to be picked out of the voicing, and a note
+            // that is meant to clash with it has to be measured from the root,
+            // or it lands on a chord tone half the time and the clash is only
+            // there in the bars nobody planned it for.
+            const p = step.rel != null ? ch.bass + step.rel
+                                       : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
+            push(step.k || 'c', t + jitter(0.008), p, step.v, { a: amp, tier: pat.tier });
+          }
+        }
+      }
+    }
+
+    ev.sort((a, b) => a.t - b.t);
+    // Nothing may sit at a negative beat: jitter on the very first event would
+    // otherwise schedule it before the loop starts and it would be dropped.
+    for(const e of ev) if(e.t < 0) e.t = 0;
+    return ev;
+  }
+
+/* "Before the Lanes" — the menu theme.
+
+   D major, 84bpm, 36 bars, one minute forty-three. Written to the shape the
+   idiom actually uses rather than to "slow equals calm": the guitar runs
+   straight eighths the whole way through while the melody moves at half that
+   speed, so the piece reads as unhurried and alive at the same time.
+
+   The loop is built not to announce itself. It ends on V7sus4 with the bass on
+   the fifth — unresolved, so the ear is pulled across the seam — and the two
+   bars either side of the join carry the same guitar figure at the same
+   density, which is what stops a loop sounding like a restart. */
+  const LANE_SONGS = {};
+  LANE_SONGS.menu = {
+  title: 'Before the Lanes',
+  pitch: 'D major',
+  bpm: 84, meter: '4/4', loopBeats: 144, seed: 24,
+  form: 'Intro 2 bars · A 8 · A′ 8 (pad and celeste enter) · B 8 (the minor turn and the borrowed iv) · A″ 8 · turnaround 2, unresolved.',
+  standfirst: 'A minute and forty-three of nylon guitar, piano and a little celeste, for the screen you read before a match. It is not a recording &mdash; press play and your browser builds it, note by note, from nothing.',
+  footer: 'Written in D major at 84 beats a minute. The guitar figure never stops, including across the loop, which is the trick that makes the join hard to hear.',
+
+  patterns: {
+    // p-i-m-a, straight eighths. The one element that plays identically in
+    // every bar of the piece — including the two either side of the loop — so
+    // the ear has a thread to follow across the join.
+    pick: { span: 4, steps: [
+      { b: 0,   i: 0, v: 0.56, roll: 0 }, { b: 0.5, i: 2, v: 0.36 },
+      { b: 1,   i: 3, v: 0.43 }, { b: 1.5, i: 1, v: 0.34 },
+      { b: 2,   i: 2, v: 0.47 }, { b: 2.5, i: 3, v: 0.35 },
+      { b: 3,   i: 1, v: 0.41 }, { b: 3.5, i: 2, v: 0.33 },
+    ] },
+  },
+  // Two-feel with the fifth anticipated: root on the downbeat, fifth on the
+  // "and" of three. No fills — down there, fills are just mud.
+  bassPatterns: { two: { span: 4, steps: [ { b: 0, o: 0, v: 0.62 }, { b: 2.5, o: 7, v: 0.33 } ] } },
+
+  // The pad is absent from bar one on purpose: it enters at A' and withdraws
+  // for the return, so its arrival means something on every pass.
+  sections: [
+    { from: 0,   to: 8,   name: 'Intro',  guitar: 'pick', bass: 'two', pad: false, amp: 1.02, shade: 0.30 },
+    { from: 8,   to: 40,  name: 'A',      guitar: 'pick', bass: 'two', pad: false, amp: 0.96, shade: 0.10 },
+    { from: 40,  to: 72,  name: 'A′', guitar: 'pick', bass: 'two', pad: true,  amp: 1.00, shade: 0.18 },
+    { from: 72,  to: 104, name: 'B',      guitar: 'pick', bass: 'two', pad: true,  amp: 1.05, shade: 0.26 },
+    { from: 104, to: 136, name: 'A″', guitar: 'pick', bass: 'two', pad: false, amp: 0.93, shade: 0.10 },
+    { from: 136, to: 144, name: 'Turn',   guitar: 'pick', bass: 'two', pad: false, amp: 1.02, shade: 0.30 },
+  ],
+
+  chords: [
+    { b: 0,   dur: 4, name: 'D6/9',   roman: 'I6/9',   notes: [50, 54, 59, 64], bass: 38 },
+    { b: 4,   dur: 4, name: 'D6/9',   roman: 'I6/9',   notes: [50, 54, 59, 64], bass: 38 },
+    { b: 8,   dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
+    { b: 12,  dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
+    { b: 16,  dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
+    { b: 20,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 24,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
+    { b: 28,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
+    { b: 32,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
+    { b: 36,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
+    { b: 40,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
+    { b: 44,  dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
+    { b: 48,  dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
+    { b: 52,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 56,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
+    { b: 60,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
+    { b: 64,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
+    { b: 68,  dur: 4, name: 'F#7',    roman: 'V7/vi',  notes: [52, 54, 58, 61], bass: 42 },
+    { b: 72,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 76,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
+    { b: 80,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
+    { b: 84,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
+    { b: 88,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 92,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
+    { b: 96,  dur: 4, name: 'Gm6',    roman: 'iv6',    notes: [50, 55, 58, 62], bass: 43 },
+    { b: 100, dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
+    { b: 104, dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
+    { b: 108, dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
+    { b: 112, dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
+    { b: 116, dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 120, dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
+    { b: 124, dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
+    { b: 128, dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
+    { b: 132, dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
+    { b: 136, dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
+    { b: 140, dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
+  ],
+
+  // The tune. It opens on a rising major sixth — the one leap in the piece —
+  // and everything after it is stepwise, which is what makes the opening
+  // stick without the rest of it demanding attention.
+  melody: [
+    { b: 7.5, p: 74, d: 0.5, v: 0.42 },
+    { b: 8,    p: 83, d: 1.5, v: 0.66 }, { b: 9.5,  p: 81, d: 0.5, v: 0.50 },
+    { b: 10,   p: 79, d: 2.0, v: 0.58 },
+    { b: 12,   p: 81, d: 1.5, v: 0.62 }, { b: 13.5, p: 83, d: 0.5, v: 0.48 },
+    { b: 14,   p: 85, d: 1.5, v: 0.60 }, { b: 15.5, p: 83, d: 0.5, v: 0.46 },
+    { b: 16,   p: 81, d: 2.5, v: 0.60 }, { b: 19.5, p: 78, d: 0.5, v: 0.44 },
+    { b: 20,   p: 78, d: 1.5, v: 0.58 }, { b: 21.5, p: 76, d: 0.5, v: 0.46 },
+    { b: 22,   p: 74, d: 2.0, v: 0.55 },
+    { b: 24,   p: 76, d: 1.5, v: 0.58 }, { b: 25.5, p: 78, d: 0.5, v: 0.46 },
+    { b: 26,   p: 79, d: 2.0, v: 0.60 },
+    { b: 28,   p: 81, d: 1.5, v: 0.64 }, { b: 29.5, p: 79, d: 0.5, v: 0.48 },
+    { b: 30,   p: 78, d: 1.0, v: 0.56 }, { b: 31,   p: 76, d: 1.0, v: 0.52 },
+    { b: 32,   p: 78, d: 2.0, v: 0.62 }, { b: 34,   p: 76, d: 1.0, v: 0.50 },
+    { b: 35,   p: 74, d: 3.0, v: 0.58 },
+
+    { b: 39.5, p: 74, d: 0.5, v: 0.44 },
+    { b: 40,   p: 83, d: 1.5, v: 0.66 }, { b: 41.5, p: 81, d: 0.5, v: 0.50 },
+    { b: 42,   p: 79, d: 2.0, v: 0.58 },
+    { b: 44,   p: 81, d: 1.5, v: 0.62 }, { b: 45.5, p: 83, d: 0.5, v: 0.48 },
+    { b: 46,   p: 85, d: 1.5, v: 0.60 }, { b: 47.5, p: 83, d: 0.5, v: 0.46 },
+    { b: 48,   p: 81, d: 2.5, v: 0.60 }, { b: 51.5, p: 78, d: 0.5, v: 0.44 },
+    { b: 52,   p: 78, d: 1.5, v: 0.58 }, { b: 53.5, p: 76, d: 0.5, v: 0.46 },
+    { b: 54,   p: 74, d: 2.0, v: 0.55 },
+    { b: 56,   p: 76, d: 1.5, v: 0.58 }, { b: 57.5, p: 78, d: 0.5, v: 0.46 },
+    { b: 58,   p: 79, d: 2.0, v: 0.60 },
+    { b: 60,   p: 81, d: 1.5, v: 0.64 }, { b: 61.5, p: 79, d: 0.5, v: 0.48 },
+    { b: 62,   p: 78, d: 1.0, v: 0.56 }, { b: 63,   p: 76, d: 1.0, v: 0.52 },
+    { b: 64,   p: 78, d: 2.0, v: 0.62 }, { b: 66,   p: 76, d: 1.0, v: 0.50 },
+    { b: 67,   p: 74, d: 1.0, v: 0.54 },
+    // the secondary dominant: A# is the only note outside the key, and it
+    // leans up a semitone into the B section's home note
+    { b: 68,   p: 76, d: 1.5, v: 0.56 }, { b: 69.5, p: 78, d: 0.5, v: 0.46 },
+    { b: 70,   p: 82, d: 1.5, v: 0.62 }, { b: 71.5, p: 83, d: 0.5, v: 0.48 },
+
+    { b: 72,   p: 83, d: 2.0, v: 0.64 },
+    { b: 74,   p: 86, d: 1.5, v: 0.62 }, { b: 75.5, p: 85, d: 0.5, v: 0.48 },
+    { b: 76,   p: 83, d: 2.0, v: 0.60 }, { b: 78,   p: 81, d: 1.0, v: 0.54 },
+    { b: 79,   p: 79, d: 1.0, v: 0.52 },
+    { b: 80,   p: 78, d: 2.0, v: 0.58 }, { b: 82,   p: 79, d: 1.0, v: 0.52 },
+    { b: 83,   p: 81, d: 1.0, v: 0.54 },
+    { b: 84,   p: 83, d: 3.0, v: 0.62 }, { b: 87.5, p: 86, d: 0.5, v: 0.50 },
+    { b: 88,   p: 85, d: 1.5, v: 0.66 }, { b: 89.5, p: 83, d: 0.5, v: 0.50 },
+    { b: 90,   p: 81, d: 2.0, v: 0.58 },
+    { b: 92,   p: 83, d: 1.5, v: 0.60 }, { b: 93.5, p: 81, d: 0.5, v: 0.46 },
+    { b: 94,   p: 79, d: 2.0, v: 0.56 },
+    // the borrowed minor fourth. One flat note, once a loop, and it is the
+    // whole reason the piece reads as nostalgic rather than merely pleasant.
+    { b: 96,   p: 82, d: 2.0, v: 0.60 }, { b: 98,   p: 81, d: 2.0, v: 0.54 },
+    { b: 100,  p: 78, d: 2.0, v: 0.58 }, { b: 102,  p: 76, d: 1.5, v: 0.48 },
+    { b: 103.5, p: 74, d: 0.5, v: 0.44 },
+
+    { b: 104,  p: 83, d: 1.5, v: 0.60 }, { b: 105.5, p: 81, d: 0.5, v: 0.46 },
+    { b: 106,  p: 79, d: 2.0, v: 0.54 },
+    { b: 108,  p: 81, d: 1.5, v: 0.58 }, { b: 109.5, p: 83, d: 0.5, v: 0.44 },
+    { b: 110,  p: 85, d: 1.5, v: 0.56 }, { b: 111.5, p: 83, d: 0.5, v: 0.42 },
+    { b: 112,  p: 81, d: 2.5, v: 0.56 }, { b: 115.5, p: 78, d: 0.5, v: 0.40 },
+    { b: 116,  p: 78, d: 1.5, v: 0.54 }, { b: 117.5, p: 76, d: 0.5, v: 0.42 },
+    { b: 118,  p: 74, d: 2.0, v: 0.51 },
+    { b: 120,  p: 76, d: 1.5, v: 0.54 }, { b: 121.5, p: 78, d: 0.5, v: 0.42 },
+    { b: 122,  p: 79, d: 2.0, v: 0.56 },
+    { b: 124,  p: 81, d: 1.5, v: 0.58 }, { b: 125.5, p: 79, d: 0.5, v: 0.44 },
+    { b: 126,  p: 78, d: 1.0, v: 0.50 }, { b: 127,  p: 76, d: 1.0, v: 0.48 },
+    { b: 128,  p: 78, d: 2.0, v: 0.56 }, { b: 130,  p: 76, d: 1.0, v: 0.46 },
+    { b: 131,  p: 74, d: 1.0, v: 0.48 },
+    // lands on the sixth instead of home, and then gets out of the way: the
+    // last two bars are guitar and bass alone, exactly like the first two.
+    { b: 132,  p: 78, d: 3.0, v: 0.50 },
+  ],
+
+  // Celeste. Held back until the thirteenth bar so that its first note is an
+  // event, then used only in the gaps the tune leaves. The last one, alone
+  // over the turnaround, is the loop's signature.
+  counter: [
+    { b: 55,   p: 86, d: 0.5, v: 0.34 },
+    { b: 62.5, p: 83, d: 0.5, v: 0.30 },
+    { b: 71.5, p: 90, d: 0.5, v: 0.32 },
+    { b: 86.5, p: 86, d: 0.5, v: 0.34 },
+    { b: 95,   p: 86, d: 0.5, v: 0.30 },
+    { b: 99,   p: 79, d: 0.5, v: 0.28 },
+    { b: 118.5, p: 83, d: 0.5, v: 0.26 },
+    { b: 142,  p: 86, d: 0.5, v: 0.30 },
+  ],
+};
+
+/* "The Long Push" — what plays under a match.
+
+   The menu theme's job is to be liked. This one's job is to be forgotten, and
+   those are different pieces of writing, not the same piece turned down.
+
+   So: the same key family as the menu, so the switch is not a key change; the
+   guitar moved down about a fifth into the register where it has body rather
+   than definition; chords held eight beats instead of four, so nothing asks to
+   be followed; no celeste at all, because a bell is an event; and no tune —
+   the piano gets about one note every ten seconds, which is punctuation, not
+   melody. It is mixed to the same loudness as the menu theme and nowhere near
+   the same intensity: darker filters, a rounder pluck, and the velocity range
+   that normally opens a string up narrowed almost flat, so nothing in it ever
+   catches the ear on a transient while you are trying to last-hit a creep. */
+  LANE_SONGS.play = {
+  title: 'The Long Push',
+  pitch: 'D mixolydian',
+  bpm: 63, meter: '4/4', loopBeats: 160, seed: 41,
+  form: 'One texture, three passes. Chords change every two bars and the piano speaks about once every ten seconds. Ends unresolved on Asus4.',
+  standfirst: 'Two and a half minutes of low nylon guitar for the match itself &mdash; deeper, slower, and written to be under you rather than in front of you.',
+  footer: 'D mixolydian at 63 beats a minute. The flattened seventh is what keeps it from ever sounding like it wants to resolve and go home.',
+
+  // Five notes where the menu theme has eight, and no note on the fourth beat,
+  // so the bar has somewhere to breathe.
+  patterns: {
+    slow: { span: 4, steps: [
+      { b: 0,   i: 0, v: 0.50, roll: 0 }, { b: 1,   i: 2, v: 0.34 },
+      { b: 2,   i: 1, v: 0.40 }, { b: 2.5, i: 3, v: 0.30 },
+      { b: 3.5, i: 2, v: 0.28 },
+    ] },
+  },
+  // Root only. The menu theme's anticipated fifth is a groove, and a groove is
+  // the thing a player's foot starts tapping to.
+  bassPatterns: { root: { span: 4, steps: [ { b: 0, o: 0, v: 0.50 } ] } },
+
+  sections: [
+    { from: 0,   to: 64,  name: 'A',  guitar: 'slow', bass: 'root', pad: true, amp: 0.95, shade: 0.12 },
+    { from: 64,  to: 128, name: 'B',  guitar: 'slow', bass: 'root', pad: true, amp: 1.00, shade: 0.20 },
+    { from: 128, to: 160, name: 'A′', guitar: 'slow', bass: 'root', pad: true, amp: 0.95, shade: 0.12 },
+  ],
+
+  chords: [
+    { b: 0,   dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
+    { b: 8,   dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
+    { b: 16,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
+    { b: 24,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
+    { b: 32,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
+    { b: 40,  dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
+    { b: 48,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
+    { b: 56,  dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
+    { b: 64,  dur: 8, name: 'Bm7',   roman: 'vi7',      notes: [42, 47, 50, 54], bass: 35 },
+    { b: 72,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
+    { b: 80,  dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
+    { b: 88,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
+    { b: 96,  dur: 8, name: 'Bm7',   roman: 'vi7',      notes: [42, 47, 50, 54], bass: 35 },
+    { b: 104, dur: 8, name: 'Em7',   roman: 'ii7',      notes: [40, 47, 50, 55], bass: 40 },
+    { b: 112, dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
+    { b: 120, dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
+    { b: 128, dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
+    { b: 136, dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
+    { b: 144, dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
+    { b: 152, dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
+  ],
+
+  // Not a tune. Fifteen notes in two and a half minutes, always a chord tone,
+  // always quiet, landing in the second half of a chord so it reads as an
+  // afterthought rather than an announcement.
+  melody: [
+    { b: 6,   p: 74, d: 2, v: 0.32 }, { b: 14,  p: 72, d: 2, v: 0.30 },
+    { b: 22,  p: 71, d: 2, v: 0.28 }, { b: 30,  p: 69, d: 3, v: 0.30 },
+    { b: 46,  p: 76, d: 2, v: 0.32 }, { b: 54,  p: 78, d: 2, v: 0.30 },
+    { b: 62,  p: 76, d: 2, v: 0.28 }, { b: 70,  p: 74, d: 3, v: 0.32 },
+    { b: 86,  p: 72, d: 2, v: 0.30 }, { b: 94,  p: 69, d: 3, v: 0.28 },
+    { b: 110, p: 71, d: 2, v: 0.30 }, { b: 118, p: 74, d: 2, v: 0.28 },
+    { b: 126, p: 76, d: 2, v: 0.30 }, { b: 142, p: 72, d: 2, v: 0.28 },
+    { b: 150, p: 71, d: 3, v: 0.26 },
+  ],
+  counter: [],
+
+  /* What an enemy walking towards you adds to it.
+
+     Everything here is silent at intensity 0 and the piece above is untouched
+     by it, so a quiet match sounds exactly as it always did. The register is
+     the point: the guitar tops out around MIDI 71 and the piano's occasional
+     note sits at 69-78, so a celeste at 74-83 is above everything the piece
+     otherwise contains and cannot be mistaken for part of it.
+
+     Both figures repeat inside a bar rather than once a chord. From the edge
+     of the ring to being hit is about five seconds of walking, so a cue that
+     came round every seven and a half would be a cue you could miss entirely
+     on the way in. */
+  threat: {
+    // TIER 1, "somebody is close". Three celeste notes a bar, rising, so it
+    // reads as something approaching rather than something departing.
+    warn: { tier: 1, span: 4, steps: [
+      { b: 0,   k: 'c', i: 2, oct: 2, v: 0.34 },
+      { b: 2,   k: 'c', i: 4, oct: 2, v: 0.26 },
+      { b: 3.5, k: 'c', i: 3, oct: 2, v: 0.20 },
+    ] },
+    // TIER 2, "more than one of them, and they are on top of you". Straight
+    // eighths, alternating strong and weak so it is a pulse and not an alarm,
+    // with the piano landing on the bar underneath it for weight.
+    dive: { tier: 2, span: 2, steps: [
+      { b: 0,   k: 'c', i: 6, oct: 1, v: 0.30 },
+      { b: 0.5, k: 'c', i: 5, oct: 1, v: 0.17 },
+      { b: 1,   k: 'c', i: 7, oct: 1, v: 0.26 },
+      { b: 1.5, k: 'c', i: 5, oct: 1, v: 0.17 },
+    ] },
+    stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.28 } ] },
+    // TIER 3 again, and the reason it is written as fills rather than as a
+    // faster line of its own: these land on the sixteenths BETWEEN the eighths
+    // above, so switching this layer on does not add a second voice, it halves
+    // the gap in the one already playing. The celeste goes from two notes a
+    // second to four without anything new appearing, which is what running
+    // feels like and what a second voice would not.
+    race: { tier: 3, span: 2, steps: [
+      { b: 0.25, k: 'c', i: 8, oct: 1, v: 0.16 },
+      { b: 0.75, k: 'c', i: 6, oct: 1, v: 0.13 },
+      { b: 1.25, k: 'c', i: 8, oct: 1, v: 0.15 },
+      { b: 1.75, k: 'c', i: 7, oct: 1, v: 0.13 },
+    ] },
+    // The one place the piece is allowed a groove. Root-only is what keeps the
+    // match theme from ever tapping your foot; the fifth arriving on the third
+    // beat is that decision being revoked, and it is worth more than any
+    // amount of extra volume.
+    drive: { tier: 2, span: 4, steps: [ { b: 2, k: 'b', rel: 7, v: 0.30 } ] },
+
+    // TIER 3, "all three of them". Everything below this line is the piece
+    // going wrong on purpose, and only a whole enemy team can reach it.
+    //
+    // A heartbeat, at the tempo the piece already runs at: the root twice a
+    // bar-beat, the second one a third of a beat behind the first and softer.
+    // Even spacing would be a drum machine; this is a pulse.
+    pound: { tier: 3, span: 1, steps: [
+      { b: 0,    k: 'b', rel: 0, v: 0.26 },
+      { b: 0.35, k: 'b', rel: 0, v: 0.15 },
+    ] },
+    // The wrong note: a minor ninth above the root, three octaves up, once a
+    // bar and quiet. It is the only deliberately sour note in either piece and
+    // it is worth more than another decibel of anything. Measured from the
+    // root rather than the voicing, so it is the same wrong note in every bar.
+    rub: { tier: 3, span: 4, steps: [ { b: 1.5, k: 'c', rel: 49, v: 0.22 } ] },
+    // A held minor ninth over the root, with the fifth under it so it reads as
+    // a chord souring rather than as a mistake. It arrives over nearly a
+    // second and lasts the whole chord: this is the sound of the ground going
+    // out from under the piece.
+    swell: { tier: 3, span: 8, steps: [ { b: 0, k: 'd', rel: [19, 25], v: 1 } ] },
+  },
+
+  mix: {
+    level: 7.1,
+    // The guitar carries it and the piano is a guest.
+    guitar: { g: 0.80, pan: -0.12, send: 0.30, lp: 3400 },
+    piano:  { g: 0.30, pan:  0.08, send: 0.34, lp: 4200 },
+    bass:   { g: 0.58, pan:  0.00, send: 0.10, lp: 1000 },
+    pad:    { g: 0.17, pan:  0.00, send: 0.45, lp: 1600 },
+    // Silent in the piece as written — nothing routes here below tier 1 — so
+    // this is the celeste's level when it does speak, not a level the calm
+    // track ever reaches. Bright and wet: it is meant to arrive from further
+    // away than the guitar, and to be the one thing in the mix with air.
+    bell:   { g: 0.30, pan:  0.28, send: 0.42, lp: 9000 },
+    // A rounder pluck, further from the bridge, ringing longer. `spread` is the
+    // one that matters most: it is how far a hard note opens the string up, and
+    // dropping it from 16 to 5 is what takes the bite out without taking the
+    // level down.
+    string: {
+      gtr:  { bright: 0.34, t60: 3.4, pickPos: 0.22, combDepth: 0.40, fundBoost: 5.5 },
+      bass: { bright: 0.20, t60: 3.2 },
+      spread: 5,
+    },
+    pianoCurve: 1.0,
+    irSeconds: 3.4, irDecay: 2.6,
+    master: 0.82,
+  },
+};
+  /* music:engine end */
+
+  /* --------------------------------------------------- getting it sounding
+     The context, the two tracks, and the first gesture — everything except the
+     choice of which piece plays, which needs a menu to look at and belongs to
+     the game.
+
+     Except that the game is not here yet, and waiting for it is the silence
+     this split exists to remove. So until the game says it has taken over, the
+     answer is the menu theme — which is what a page that has only just opened
+     is showing anyway. */
+  const api = {
+    tracks: {},
+    // Set by the game once its own gesture listeners are up. See the music
+    // section near the bottom of the next script.
+    owned: false,
+    context, track, rng, mtof, clamp,
+  };
+
+  // A phone renders the same piece with fewer partials per piano note. The
+  // writing is identical; it is only the piano that gets thinner, which costs
+  // far less than dropping a voice out of the arrangement would.
+  const lite = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  let ctx = null, dead = false;
+
+  function context(){
+    if(ctx || dead) return ctx;
+    const AC = typeof AudioContext !== 'undefined' ? AudioContext
+             : typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null;
+    if(!AC){ dead = true; return null; }
+    try{ ctx = new AC(); }
+    catch(err){ dead = true; console.error('music unavailable', err); }
+    return ctx;
+  }
+
+  function track(key){
+    if(api.tracks[key]) return api.tracks[key];
+    const c = context();
+    if(!c) return null;
+    try{
+      const song = Object.assign({}, LANE_SONGS[key]);
+      song.events = arrangeLaneSong(song);
+      const m = createLaneMusic(c, song, { lite });
+      m.out.connect(c.destination);
+      api.tracks[key] = m;
+      return m;
+    }catch(err){
+      dead = true;
+      console.error('music unavailable', err);
+      return null;
+    }
+  }
+
+  // The stand-in, and only ever the menu theme. Once the game is awake it does
+  // its own choosing and this stops: past that point a tap is as likely to be
+  // the tap that starts a match, and the menu theme swelling for a moment on
+  // its way out is exactly what the game's own delay is there to avoid.
+  function playMenu(){
+    if(api.owned || document.hidden) return;
+    if(!ctx || ctx.state !== 'running') return;
+    const m = track('menu');
+    if(m && !m.running) m.start(2.4);
+  }
+
+  // Try to simply play, without waiting to be asked. Most browsers refuse until
+  // the page has been clicked or tapped, and that cannot be worked around from
+  // in here — it is the autoplay policy, and it is the whole reason the gesture
+  // listeners below exist. But not every browser refuses: a site the player has
+  // allowed autoplay for, a browser with the policy relaxed, an embed handed the
+  // permission. If the answer is no, nothing happens and the first gesture still
+  // starts it.
+  function autostart(){
+    const c = context();
+    if(!c) return;
+    if(c.state === 'suspended'){
+      const r = c.resume();
+      // A refusal here is the expected case, not an error worth logging.
+      if(r && r.then) r.then(playMenu, ()=>{}); else playMenu();
+    } else playMenu();
+  }
+
+  function unlock(){
+    if(api.owned) return;
+    const c = context();
+    if(!c) return;
+    // Resuming the context is not, on its own, enough on iOS. Output there stays
+    // mute until a node has actually been *started* inside the gesture, so
+    // something silent is played right here, in the handler, purely to open the
+    // tap. It is one sample long and inaudible everywhere else.
+    try{
+      const b = c.createBuffer(1, 1, c.sampleRate);
+      const s = c.createBufferSource();
+      s.buffer = b; s.connect(c.destination); s.start(0);
+    }catch(err){}
+    autostart();
+  }
+
+  // Capture phase, and every gesture a browser might call the first one. This
+  // is the listener that makes the difference: the game binds its own further
+  // down the file, but a tap that lands before the game has parsed used to be
+  // thrown away entirely — the player pressed the disclaimer, nothing happened,
+  // and the music waited for a second press it should never have needed.
+  for(const ev of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown']){
+    window.addEventListener(ev, unlock, true);
+  }
+
+  window.LaneMusic = api;
+  autostart();
+})();
+</script>
+<script>
 (function(){
   const bgCanvas = document.createElement('canvas');
   const bgCtx = bgCanvas.getContext('2d');
@@ -9129,1251 +10450,48 @@ window.addEventListener('DOMContentLoaded', function(){
   startBtn.innerHTML = 'Match &middot; ' + fmtTime(ROUND_TIME);
   timerEl.textContent = fmtTime(ROUND_TIME);
 
-  /* ===== music: two themes, synthesised ===== */
-  /* Lane's music — two piano-and-nylon-guitar loops, synthesised from nothing:
-     one for the menu and one for the match. No sample files, no library, no
-     network, which is the same promise the rest of the game makes and also the
-     only approach that works in all three places this has to run — the published
-     artifact's CSP blocks media from every host, and index.html has to keep
-     working opened straight off disk.
-
-     Two different synthesis strategies, because the two instruments want
-     different things:
-
-     PIANO is a live Web Audio graph — one sine oscillator per partial, each with
-     its own decay. Additive synthesis is a lot of arithmetic, and doing it in JS
-     to fill a buffer froze the main thread for seconds; handing the same job to
-     the browser's own oscillators costs a few dozen node allocations per note and
-     runs on the audio thread instead.
-
-     GUITAR is a pre-rendered buffer — Karplus-Strong, which needs a delay line
-     tuned to a fraction of a sample. A DelayNode fed back on itself can't do
-     that: a cycle in the graph is forced to at least one render quantum of delay
-     (128 samples), which caps the pitch at ~344Hz and our voicings go above it.
-     Written out by hand into a Float32Array it is about five operations per
-     sample and the whole range renders in well under a tenth of a second. */
-
-  /* music:engine begin — tools/music-demo.js lifts everything down to the end
-     marker into a standalone page with an intensity slider on it, so what is
-     auditioned there is exactly what plays here. It depends on nothing else in
-     the game: no camera, no heroes, no DOM. The one thing the game hands it is
-     a number between 0 and 1. */
-
-  // Deterministic noise. Every render — the live game, the sample page, the
-  // offline WAV — must come out identical, so nothing here calls Math.random.
-  function rng(seed){
-    let a = seed >>> 0;
-    return function(){
-      a = a + 0x6D2B79F5 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-
-  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
-  const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
-
-  /* ---------------------------------------------------------------- reverb */
-
-  // A plausible small hall, built as decaying noise. The early reflections are
-  // a handful of discrete taps in the first 80ms — without them the tail reads
-  // as a wash rather than a room. L and R use independent noise so the result
-  // is wide instead of a mono blob sitting between the speakers.
-  function makeIR(ctx, seconds, decay, seed){
-    const sr = ctx.sampleRate;
-    const n = Math.floor(sr * seconds);
-    const buf = ctx.createBuffer(2, n, sr);
-    const preDelay = Math.floor(sr * 0.018);
-    for(let ch = 0; ch < 2; ch++){
-      const d = buf.getChannelData(ch);
-      const rand = rng(seed + ch * 7919);
-      // early reflections
-      const taps = 9;
-      for(let i = 0; i < taps; i++){
-        const at = preDelay + Math.floor(rand() * sr * 0.075);
-        if(at < n) d[at] += (rand() * 2 - 1) * (0.55 - i * 0.05);
-      }
-      // diffuse tail, rolling off as it decays the way real air does
-      let lp = 0;
-      for(let i = preDelay; i < n; i++){
-        const t = (i - preDelay) / sr;
-        const env = Math.pow(1 - (i - preDelay) / (n - preDelay), decay);
-        const white = rand() * 2 - 1;
-        const a = clamp(0.55 - t * 0.13, 0.12, 0.55);
-        lp = lp + a * (white - lp);
-        d[i] += lp * env * 0.42;
-      }
-    }
-    return buf;
-  }
-
-  /* ------------------------------------------------- nylon string (buffer) */
-
-  // Extended Karplus-Strong. The numbers below are what make it read as nylon
-  // rather than steel: a darker excitation burst, a lower loop-filter cutoff
-  // and a shorter decay than a steel string would have.
-  function renderString(sr, midi, opts){
-    const f0 = mtof(midi);
-    const bright = opts.bright == null ? 0.5 : opts.bright;
-    const t60 = opts.t60 == null ? 2.6 : opts.t60;
-    const pickPos = opts.pickPos == null ? 0.13 : opts.pickPos;
-
-    // Loop gain from the decay we asked for: after f0*t60 trips round the loop
-    // the signal should be down 60dB.
-    const rho = Math.pow(0.001, 1 / (f0 * t60));
-    const S = clamp(0.5 - bright * 0.22, 0.16, 0.5);   // loop filter stretch
-
-    // The loop filter is part of the delay, so the delay line has to be short
-    // by however much the filter itself holds the signal up. Assuming that is
-    // half a sample — the usual shortcut — is true near DC and wrong further
-    // up: it left the top of the guitar's range measurably flat, which in a
-    // chord is the difference between warm and sour. So take the one-pole's
-    // actual phase delay at this pitch.
-    const w = 2 * Math.PI * f0 / sr;
-    const lpDelay = Math.atan2(S * Math.sin(w), 1 - S * Math.cos(w)) / w;
-
-    const total = sr / f0;
-    const N = Math.floor(total - lpDelay) - 1;
-    if(N < 2) return null;
-    // Whatever fraction of a sample is left over is made up by a one-pole
-    // allpass. Kept inside [0.1, 1.1) because an allpass coefficient near +/-1
-    // rings on its own.
-    const frac = total - lpDelay - N;
-    const apC = (1 - frac) / (1 + frac);
-
-    const dur = Math.min(6, t60 * 0.95) + 0.02;
-    const n = Math.ceil(sr * dur);
-    const out = new Float32Array(n);
-    const rand = rng(opts.seed || 1);
-
-    // Excitation: noise, lowpassed hard (a fingertip on nylon has almost no
-    // top end), then combed by where the string was plucked. The comb is the
-    // difference between a plucked string and a filtered noise burst.
-    const line = new Float32Array(N);
-    const combLen = Math.max(1, Math.round(N * pickPos));
-    const raw = new Float32Array(N);
-    let lp = 0;
-    const exA = clamp(0.16 + bright * 0.34, 0.1, 0.6);
-    for(let i = 0; i < N; i++){
-      lp = lp + exA * ((rand() * 2 - 1) - lp);
-      raw[i] = lp;
-    }
-    // Plucking a string a fraction of the way along cancels the harmonics with
-    // a node at that point — but a full-depth comb also guts the fundamental,
-    // and measured, that is exactly what happened: the first render's guitar
-    // had its second partial 6dB LOUDER than its first, which reads as banjo,
-    // not nylon. A partial comb keeps the character and the body.
-    const combDepth = opts.combDepth == null ? 0.55 : opts.combDepth;
-    for(let i = 0; i < N; i++) line[i] = raw[i] - combDepth * (i >= combLen ? raw[i - combLen] : 0);
-    // taper the burst so it starts from silence instead of a click
-    for(let i = 0; i < N; i++){
-      const w = i < 8 ? i / 8 : 1;
-      line[i] *= w;
-    }
-
-    let idx = 0, lpz = 0, apz = 0, apzOut = 0;
-    for(let i = 0; i < n; i++){
-      const x = line[idx];
-      out[i] = x;
-      // one-pole loop filter: the string loses its top end every round trip
-      lpz = (1 - S) * x + S * lpz;
-      // fractional-delay allpass
-      const ap = apC * lpz + apz - apC * apzOut;
-      apz = lpz; apzOut = ap;
-      line[idx] = ap * rho;
-      idx = idx + 1 === N ? 0 : idx + 1;
-    }
-
-    // Body. A classical guitar has an air resonance near 100Hz and a top-plate
-    // one near 200Hz; without them the string sounds stretched in a vacuum. The
-    // wide peak at the note's own fundamental is not physical modelling, it is
-    // the correction that puts the fundamental back on top where a listener
-    // expects it.
-    if(opts.body !== false){
-      biquadInPlace(out, sr, 'peak', 100, 1.3, 4.5);
-      biquadInPlace(out, sr, 'peak', 205, 2.0, 3.0);
-    }
-    biquadInPlace(out, sr, 'peak', clamp(f0, 60, 700), 0.9, opts.fundBoost == null ? 5.0 : opts.fundBoost);
-    biquadInPlace(out, sr, 'hp', opts.hp == null ? 68 : opts.hp, 0.7, 0);
-    biquadInPlace(out, sr, 'lp', clamp(f0 * 14, 2200, 8000), 0.7, 0);
-
-    // fade the last 30ms so stopping the buffer can never click
-    const fade = Math.min(n, Math.floor(sr * 0.03));
-    for(let i = 0; i < fade; i++) out[n - fade + i] *= 1 - i / fade;
-
-    // normalise to a predictable peak so voice levels are about mixing, not
-    // about whichever pitch happened to resonate
-    let peak = 0;
-    for(let i = 0; i < n; i++){ const a = out[i] < 0 ? -out[i] : out[i]; if(a > peak) peak = a; }
-    if(peak > 0){ const g = 0.85 / peak; for(let i = 0; i < n; i++) out[i] *= g; }
-    return out;
-  }
-
-  // RBJ cookbook biquad, applied in place. Used on the string buffers only —
-  // everything live goes through real BiquadFilterNodes.
-  function biquadInPlace(buf, sr, type, freq, Q, gainDb){
-    const w0 = 2 * Math.PI * freq / sr;
-    const cw = Math.cos(w0), sw = Math.sin(w0);
-    const alpha = sw / (2 * Q);
-    let b0, b1, b2, a0, a1, a2;
-    if(type === 'lp'){
-      b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0;
-      a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
-    } else if(type === 'hp'){
-      b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0;
-      a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
-    } else {
-      const A = Math.pow(10, gainDb / 40);
-      b0 = 1 + alpha * A; b1 = -2 * cw; b2 = 1 - alpha * A;
-      a0 = 1 + alpha / A; a1 = -2 * cw; a2 = 1 - alpha / A;
-    }
-    b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
-    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-    for(let i = 0; i < buf.length; i++){
-      const x = buf[i];
-      const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      x2 = x1; x1 = x; y2 = y1; y1 = y;
-      buf[i] = y;
-    }
-  }
-
-  /* The instruments and the scheduler. Depends on LaneMusicDSP. */
-
-  function createLaneMusic(ctx, song, opts){
-    opts = opts || {};
-    const lite = !!opts.lite;                 // phones get a thinner voice
-    const sr = ctx.sampleRate;
-    const nyq = sr / 2;
-    const spb = 60 / song.bpm;                // seconds per beat
-    const loopSeconds = song.loopBeats * spb;
-
-    // Each piece brings its own balance. The menu theme wants to be noticed;
-    // the one that plays under a match wants the opposite — same loudness, but
-    // darker, flatter and with the attack taken off it, so it sits under the
-    // game instead of competing with it. Levels are calibrated against an
-    // offline render: peak near -2dBFS, average around -23.
-    const M = song.mix || {};
-    const LVL = M.level == null ? 4.8 : M.level;
-
-    /* ------------------------------------------------------------- mixing */
-
-    // Everything lands on `out`; the caller decides where that goes so the
-    // same graph can drive speakers or an offline render.
-    const out = ctx.createGain();
-    out.gain.value = 1;
-
-    const master = ctx.createGain();
-    const MASTER = M.master == null ? 0.82 : M.master;
-    master.gain.value = MASTER;
-
-    if(opts.raw){
-      master.connect(out);                     // measurement path
-    } else {
-      const comp = ctx.createDynamicsCompressor();
-      // Not for loudness — a backstop for the few beats where a piano chord, a
-      // guitar roll and a ringing tail all land together. Measured with a
-      // faster attack it swelled every piano onset: the note's peak arrived
-      // 155ms late and struck notes came out sounding blown. Set so it only
-      // reaches the true peaks and lets go slowly.
-      comp.threshold.value = -6; comp.knee.value = 14;
-      comp.ratio.value = 2.2; comp.attack.value = 0.08; comp.release.value = 0.5;
-      master.connect(comp); comp.connect(out);
-    }
-
-    const conv = ctx.createConvolver();
-    conv.buffer = makeIR(ctx, M.irSeconds || 2.9, M.irDecay || 2.1, 20240);
-    const wet = ctx.createGain(); wet.gain.value = 0.9;
-    conv.connect(wet); wet.connect(master);
-
-    // One bus per instrument: its own tone shaping, its own place in the
-    // stereo field, its own amount of room. Instruments stacked in the same
-    // register with the same reverb turn into porridge.
-    // A bus hands back its nodes as well as its input, and remembers the level
-    // and cutoff the mix asked for. The intensity control below moves some of
-    // them, and it has to move them relative to what the piece was written
-    // with rather than to an absolute — otherwise every mix change silently
-    // retunes the drama.
-    const buses = {};
-    function bus(gain, pan, sendAmt, lpFreq){
-      const g = ctx.createGain(); g.gain.value = gain;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-      lp.frequency.value = lpFreq; lp.Q.value = 0.6;
-      const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      g.connect(lp);
-      const tail = p ? (lp.connect(p), p) : lp;
-      if(p) p.pan.value = pan;
-      tail.connect(master);
-      const send = ctx.createGain(); send.gain.value = opts.dry ? 0 : sendAmt;
-      tail.connect(send); send.connect(conv);
-      return { g, lp, send, gBase: gain, lpBase: lpFreq };
-    }
-
-    function chan(key, g, pan, send, lp){
-      const o = M[key] || {};
-      const rec = bus((o.g == null ? g : o.g) * LVL,
-                      o.pan  == null ? pan  : o.pan,
-                      o.send == null ? send : o.send,
-                      o.lp   == null ? lp   : o.lp);
-      buses[key] = rec;
-      return rec.g;
-    }
-    const busPiano  = chan('piano',  0.50,  0.10, 0.30, 7200);
-    const busGuitar = chan('guitar', 0.60, -0.20, 0.26, 6200);
-    const busBass   = chan('bass',   0.48,  0.00, 0.08, 1400);
-    const busBell   = chan('bell',   0.26,  0.30, 0.46, 9000);
-    const busPad    = chan('pad',    0.11,  0.00, 0.40, 2200);
-
-    /* -------------------------------------------------- one-shot noise buf */
-
-    // The hammer thock. One buffer, reused, re-pitched per note by the
-    // bandpass it plays through.
-    const hammerBuf = (function(){
-      const n = Math.floor(sr * 0.03);
-      const b = ctx.createBuffer(1, n, sr);
-      const d = b.getChannelData(0);
-      const rand = rng(4242);
-      for(let i = 0; i < n; i++){
-        const env = Math.pow(1 - i / n, 3.5);
-        d[i] = (rand() * 2 - 1) * env;
-      }
-      return b;
-    })();
-
-    /* -------------------------------------------------------------- piano */
-
-    // Real strings are stiff, so their partials sit progressively sharp of the
-    // harmonic series: f_n = n*f0*sqrt(1 + B*n^2). Without this a piano note is
-    // an organ note. B rises steeply towards the treble, where the strings are
-    // short and thick relative to their length.
-    function inharmonicity(f0){
-      return clamp(0.00007 * Math.pow(f0 / 261.6, 1.45) + 0.00004, 0.00004, 0.007);
-    }
-    // A real grand with the pedal down rings for ten seconds or more at middle
-    // C. Measured, that was the single worst thing about the first render: by
-    // the third bar every note ever played was still sounding and the piece was
-    // a chord soup. Half a dozen seconds of tail is all a menu bed can carry.
-    function pianoT60(f0){
-      return clamp(4.2 * Math.pow(261.6 / f0, 0.62), 0.8, 6.5);
-    }
-
-    const PIANO_PARTIALS = lite ? 7 : 13;
-    const PIANO_UNISON   = lite ? 0 : 4;
-
-    function piano(t, midi, vel, ampScale){
-      const f0 = mtof(midi);
-      const B = inharmonicity(f0);
-      const t60 = pianoT60(f0) * (0.82 + 0.34 * vel);
-      const peak = 0.34 * ampScale * Math.pow(vel, M.pianoCurve == null ? 1.25 : M.pianoCurve);
-      // Struck about an eighth of the way along, which is what silences every
-      // eighth partial and gives a piano its particular hollowness.
-      const strike = 0.125;
-      const stop = t + Math.min(t60 * 0.95, 6.5) + 0.1;
-
-      for(let k = 1; k <= PIANO_PARTIALS; k++){
-        const fk = k * f0 * Math.sqrt(1 + B * k * k);
-        if(fk > nyq * 0.92) break;
-        let amp = Math.pow(k, -1.18) * Math.abs(Math.sin(Math.PI * k * strike));
-        if(amp < 0.0015) continue;
-        // Play softly and the top of the spectrum goes first. Velocity has to
-        // change the colour, not just the volume, or quiet notes are simply
-        // the same note further away.
-        amp *= Math.pow(vel, 0.18 + 0.13 * (k - 1));
-        const dk = t60 / (1 + 0.66 * Math.pow(k - 1, 0.82));
-
-        const voices = k <= PIANO_UNISON ? 2 : 1;
-        for(let u = 0; u < voices; u++){
-          const osc = ctx.createOscillator();
-          osc.type = 'sine';
-          // Two or three strings per note, never quite in tune with each
-          // other. The slow beating that produces is most of what separates a
-          // piano from a sine bank.
-          osc.frequency.value = fk * (u ? 1 + 0.00035 * k : 1);
-          const g = ctx.createGain();
-          const a = amp * peak * (u ? 0.5 : 1);
-          const atk = 0.004 + 0.004 / k;
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(a, t + atk);
-          // Double decay: strings lose energy fast while both polarisations
-          // ring, then far more slowly once only one is left.
-          g.gain.setTargetAtTime(a * 0.32, t + atk, dk * 0.10);
-          g.gain.setTargetAtTime(0, t + atk + dk * 0.14, dk * 0.17);
-          osc.connect(g); g.connect(busPiano);
-          osc.start(t); osc.stop(stop);
-        }
-      }
-
-      const hs = ctx.createBufferSource();
-      hs.buffer = hammerBuf;
-      const hb = ctx.createBiquadFilter();
-      hb.type = 'bandpass'; hb.frequency.value = clamp(f0 * 3.4, 200, 5200); hb.Q.value = 0.9;
-      const hg = ctx.createGain();
-      hg.gain.value = 0.10 * ampScale * Math.pow(vel, 2.1);
-      hs.connect(hb); hb.connect(hg); hg.connect(busPiano);
-      hs.start(t);
-    }
-
-    /* ------------------------------------------------------ bell / celeste */
-
-    function bell(t, midi, vel, ampScale){
-      const f0 = mtof(midi);
-      const parts = [[1, 1, 1.6], [2, 0.40, 1.0], [3, 0.14, 0.62], [4.16, 0.08, 0.42]];
-      const peak = 0.20 * ampScale * Math.pow(vel, 1.2);
-      for(const [r, a, dscale] of parts){
-        const f = f0 * r;
-        if(f > nyq * 0.9) continue;
-        const osc = ctx.createOscillator();
-        osc.type = 'sine'; osc.frequency.value = f;
-        const g = ctx.createGain();
-        const dur = 1.5 * dscale;
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(a * peak, t + 0.005);
-        g.gain.setTargetAtTime(0, t + 0.005, dur * 0.28);
-        osc.connect(g); g.connect(busBell);
-        osc.start(t); osc.stop(t + dur + 0.2);
-      }
-    }
-
-    /* ----------------------------------------------------------- strings */
-
-    // Karplus-Strong buffers, rendered on demand and kept. Only the pitches the
-    // piece actually uses ever get built, so this is a few dozen short renders
-    // rather than a full instrument range.
-    const stringCache = new Map();
-    function stringBuf(midi, kind){
-      const key = kind + ':' + midi;
-      let b = stringCache.get(key);
-      if(b) return b;
-      // The bass is the same string model with the comb almost off and the
-      // fundamental pushed hard: down there the note IS the fundamental, and
-      // anything that thins it just makes the piece feel like it has no floor.
-      const base = kind === 'bass'
-        ? { bright: 0.26, t60: 2.8, pickPos: 0.11, combDepth: 0.22, fundBoost: 8.0, hp: 42, body: false, seed: 1000 + midi }
-        : { bright: 0.52, t60: 2.5, pickPos: 0.16, combDepth: 0.55, fundBoost: 5.0, seed: 2000 + midi };
-      const cfg = Object.assign(base, (M.string && M.string[kind]) || {});
-      cfg.seed = base.seed;
-      const data = renderString(sr, midi, cfg);
-      if(!data) return null;
-      b = ctx.createBuffer(1, data.length, sr);
-      b.copyToChannel(data, 0);
-      stringCache.set(key, b);
-      return b;
-    }
-
-    function pluck(t, midi, vel, kind, ampScale){
-      const b = stringBuf(midi, kind);
-      if(!b) return;
-      const s = ctx.createBufferSource();
-      s.buffer = b;
-      // A fraction of a semitone, different per note, so repeated notes are
-      // not bit-identical copies of each other.
-      s.playbackRate.value = 1;
-      const g = ctx.createGain();
-      g.gain.value = (kind === 'bass' ? 0.42 : 0.30) * ampScale * Math.pow(vel, 1.2);
-      // Pluck harder and you get more than volume: a brighter string.
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      const bs = (M.string && M.string.spread == null) ? 16 : (M.string ? M.string.spread : 16);
-      // And a player under pressure digs in. This is the one continuous cue
-      // that is a change of TONE rather than of level, which is why it is the
-      // only thing that carries the bottom of the intensity range on its own:
-      // the guitar is the voice that never stops, so opening it up is heard
-      // immediately and everywhere, without a note being added.
-      lp.frequency.value = clamp(mtof(midi) * (5 + bs * sh.spread * vel), 700, 9000);
-      lp.Q.value = 0.5;
-      s.connect(lp); lp.connect(g);
-      g.connect(kind === 'bass' ? busBass : busGuitar);
-      s.start(t);
-    }
-
-    /* --------------------------------------------------------------- pad */
-
-    function pad(t, notes, durSec, ampScale){
-      const stop = t + durSec + 1.4;
-      for(const midi of notes){
-        for(let u = 0; u < 2; u++){
-          const osc = ctx.createOscillator();
-          osc.type = 'triangle';
-          osc.frequency.value = mtof(midi);
-          osc.detune.value = u ? 7 : -7;
-          const g = ctx.createGain();
-          const a = 0.06 * ampScale / notes.length;
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(a, t + 0.9);
-          g.gain.setValueAtTime(a, t + durSec * 0.7);
-          g.gain.linearRampToValueAtTime(0, stop);
-          osc.connect(g); g.connect(busPad);
-          osc.start(t); osc.stop(stop + 0.05);
-        }
-      }
-    }
-
-    /* ---------------------------------------------------------- intensity */
-
-    /* One number, 0 to 1, for how much trouble is nearby. The game works it
-       out from where the enemy heroes are; this decides what that sounds like.
-
-       Two mechanisms, because "it is getting worse" and "something just
-       arrived" are different jobs and want different machinery:
-
-        - SHADING is continuous and always on. The pad comes up and opens, the
-          guitar's lowpass lifts a little, both of them give up a fraction of a
-          decibel, and the room shrinks. No new note plays: the same piece gets
-          tenser. This is what makes the middle of the range readable instead
-          of a flat wait between two switches.
-        - LAYERS are notes the piece already contains and does not play. Each
-          carries the tier it belongs to — 1 is the celeste warning, 2 the dive
-          pulse, 3 the dread — and is skipped entirely while the intensity is
-          below where that tier enters. Over the 0.18 above its threshold it
-          fades up from nothing, so a layer arriving is a player walking into
-          the room rather than a channel being unmuted.
-
-       The three thresholds are placed against what the game can actually
-       produce, so the ladder counts heads. The game's plan is to add up a
-       share per enemy hero, 1 at point blank falling to 0 at the edge of the
-       ring, and divide by 2.5 — so a whole team on top of you is 1, two is
-       0.80 and one is 0.40. Solve the thresholds against those three numbers
-       and each layer means exactly one more enemy: one gets the celeste and
-       cannot reach the pulse, two get the pulse and cannot reach the dread,
-       and only three get all of it. That is the whole mechanic — the layer
-       you can hear is a head count — so the numbers below are not free.
-
-       Tempo is deliberately not one of them. loopStart and position() are both
-       measured in a fixed seconds-per-beat, so moving the tempo would move the
-       loop clock under the scheduler. Urgency comes from register, density and
-       brightness instead — which is the better answer anyway: a piece that
-       speeds up tells you something is happening, and a piece that grows a
-       voice above everything else tells you what. */
-    const TIER_IN = [0, 0.24, 0.55, 0.86];  // indexed by tier: 0 is everything else
-    const TIER_FADE = 0.14;                 // and how far above that it is fully in
-    let intensity = 0;
-
-    function layerGain(tier){
-      if(!tier) return 1;
-      const lo = TIER_IN[tier];
-      if(lo == null) return 0;
-      return clamp((intensity - lo) / TIER_FADE, 0, 1);
-    }
-
-    // Every continuous move in one place, as numbers rather than as
-    // side-effects, because the audition page shows them and a panel that
-    // describes the mix instead of reading it is a panel that goes stale.
-    //
-    // The curve on the early ones is the point of the exponent. Linear, the
-    // bottom of the range is the part that does least, and the bottom of the
-    // range is exactly where the information is worth most: it is the only
-    // warning you get before you can see anybody. At 0.7 a fifth of the way in
-    // is already a third of the effect.
-    function shadeValues(u){
-      const e = Math.pow(u, 0.7);
-      return {
-        u,
-        padMul:  1 + 1.9 * e,
-        padLp:   (buses.pad ? buses.pad.lpBase : 0) * (1 + 1.1 * e),
-        // Down as the layers arrive, so the top of the range is a change of
-        // colour and not only of level. Squared, so it is the top that pays:
-        // linear here made the bottom of the range measurably DARKER than
-        // silence — the duck and the shorter tail together outran everything
-        // that was supposed to be opening up, and "they are getting closer"
-        // came out as the music quietly dimming.
-        gtrMul:  1 - 0.26 * u * u,
-        gtrLp:   (buses.guitar ? buses.guitar.lpBase : 0) * (1 + 0.55 * e),
-        pnoMul:  1 - 0.16 * u * u,
-        // The celeste is the voice carrying the warning, so it grows after it
-        // has arrived as well as while it is arriving.
-        bellMul: 1 + 0.8 * u,
-        // How much harder the guitar is picked. 5 to 18 across the range, which
-        // takes it past the menu theme's 16: at the top this is not the same
-        // instrument played louder, it is somebody digging in.
-        spread:  1 + 2.6 * e,
-        // A shorter tail reads as a smaller room, and a smaller room reads as
-        // close. Most of what makes the match theme sound like it is happening
-        // somewhere else is this one number.
-        wet:     0.9 - 0.38 * e,
-      };
-    }
-    let sh = shadeValues(0);
-
-    // Targets, never jumps. A fifth of a second is short enough that walking
-    // into range is felt as it happens and long enough that a hero weaving in
-    // and out of the ring cannot make the mix flutter.
-    function shade(){
-      const now = ctx.currentTime, T = 0.22;
-      const set = (prm, v) => prm.setTargetAtTime(v, now, T);
-      const pad = buses.pad, gtr = buses.guitar, pno = buses.piano, bel = buses.bell;
-      if(pad){ set(pad.g.gain, pad.gBase * sh.padMul); set(pad.lp.frequency, sh.padLp); }
-      if(gtr){ set(gtr.g.gain, gtr.gBase * sh.gtrMul); set(gtr.lp.frequency, sh.gtrLp); }
-      if(pno) set(pno.g.gain, pno.gBase * sh.pnoMul);
-      if(bel) set(bel.g.gain, bel.gBase * sh.bellMul);
-      set(wet.gain, sh.wet);
-    }
-
-    /* --------------------------------------------------------- scheduling */
-
-    const events = song.events;
-    function fire(ev, t){
-      let a = ev.a == null ? 1 : ev.a;
-      // A layer note below its tier does not exist: not scheduled, not faded,
-      // no node built for it.
-      if(ev.tier){
-        const lg = layerGain(ev.tier);
-        if(lg < 0.04) return;
-        a *= lg;
-      }
-      if(ev.k === 'p') piano(t, ev.p, ev.v, a);
-      else if(ev.k === 'g') pluck(t, ev.p, ev.v, 'gtr', a);
-      else if(ev.k === 'b') pluck(t, ev.p, ev.v, 'bass', a);
-      else if(ev.k === 'c') bell(t, ev.p, ev.v, a);
-      else if(ev.k === 'd') pad(t, ev.n, ev.d * spb, a);
-    }
-
-    // Warm the string cache for the pitches the piece uses, so the first pass
-    // through the loop does not stutter while it renders a delay line.
-    function prewarm(){
-      const seen = new Set();
-      for(const ev of events){
-        if(ev.k !== 'g' && ev.k !== 'b') continue;
-        const key = (ev.k === 'b' ? 'bass' : 'gtr') + ':' + ev.p;
-        if(seen.has(key)) continue;
-        seen.add(key);
-        stringBuf(ev.p, ev.k === 'b' ? 'bass' : 'gtr');
-      }
-      return seen.size;
-    }
-
-    let timer = null, loopStart = 0, cursor = 0, running = false;
-    const LOOKAHEAD = 0.25, TICK = 45;
-
-    function tick(){
-      const now = ctx.currentTime;
-      let guard = 0;
-      while(guard++ < 400){
-        const ev = events[cursor];
-        const t = loopStart + ev.t * spb;
-        if(t > now + LOOKAHEAD) break;
-        if(t > now - 0.05) fire(ev, Math.max(t, now + 0.005));
-        cursor++;
-        if(cursor >= events.length){ cursor = 0; loopStart += loopSeconds; }
-      }
-    }
-
-    // The listener's own volume, kept apart from the fade envelope on `out` so
-    // a fade in progress cannot stamp on it or be stamped on.
-    let level = 1;
-    function setLevel(v){
-      level = clamp(v, 0, 1);
-      master.gain.setTargetAtTime(MASTER * level, ctx.currentTime, 0.03);
-    }
-
-    return {
-      out,
-      loopSeconds,
-      prewarm,
-      setLevel,
-      setIntensity(v){
-        const n = clamp(v == null ? 0 : v, 0, 1);
-        if(n === intensity) return;
-        intensity = n;
-        sh = shadeValues(n);
-        shade();
-      },
-      // The demo page draws its meters and its mix panel off these, so the
-      // picture on it and the sound out of it can never disagree about where a
-      // layer comes in or what the mix is doing when it does.
-      layerGain,
-      shading(){ return sh; },
-      tiers: TIER_IN.slice(),
-      tierFade: TIER_FADE,
-      get intensity(){ return intensity; },
-      get level(){ return level; },
-      get running(){ return running; },
-      start(fadeSec){
-        if(running) return;
-        running = true;
-        prewarm();
-        loopStart = ctx.currentTime + 0.14;
-        cursor = 0;
-        const f = fadeSec == null ? 1.6 : fadeSec;
-        out.gain.cancelScheduledValues(ctx.currentTime);
-        out.gain.setValueAtTime(0.0001, ctx.currentTime);
-        out.gain.exponentialRampToValueAtTime(1, ctx.currentTime + f);
-        tick();
-        timer = setInterval(tick, TICK);
-      },
-      stop(fadeSec){
-        if(!running) return;
-        running = false;
-        const f = fadeSec == null ? 1.2 : fadeSec;
-        const now = ctx.currentTime;
-        out.gain.cancelScheduledValues(now);
-        out.gain.setValueAtTime(Math.max(out.gain.value, 0.0001), now);
-        out.gain.exponentialRampToValueAtTime(0.0001, now + f);
-        if(timer){ clearInterval(timer); timer = null; }
-      },
-      // Where the playhead is, in beats. The scheduler runs ahead of the sound
-      // by up to a lookahead window, so just after a wrap this can go briefly
-      // negative — the modulo folds it back rather than flashing to the end.
-      position(){
-        if(!running) return 0;
-        const el = ctx.currentTime - loopStart;
-        return ((el % loopSeconds) + loopSeconds) % loopSeconds / spb;
-      },
-      // Offline path: no wall clock, so every event in the window is queued up
-      // front against a fixed origin.
-      renderAll(baseTime, seconds){
-        prewarm();
-        let n = 0, c = 0, base = baseTime;
-        for(let pass = 0; pass < 200; pass++){
-          for(c = 0; c < events.length; c++){
-            const t = base + events[c].t * spb;
-            if(t >= baseTime + seconds) return n;
-            fire(events[c], t);
-            n++;
-          }
-          base += loopSeconds;
-        }
-        return n;
-      }
-    };
-  }
-
-  /* Turns the written piece — chords, melody, a picking figure — into the flat,
-     time-ordered event list the scheduler walks. Depends on LaneMusicDSP. */
-
-  function arrangeLaneSong(song){
-    const ev = [];
-    const rand = rng(song.seed || 7);
-    // Baked in once rather than rolled per loop: a groove that changes every
-    // time round is not a groove, and an offline render has to come out
-    // identical to what the game plays.
-    const jitter = amt => (rand() * 2 - 1) * amt;
-
-    const sectionAt = b => {
-      const s = song.sections.find(s => b >= s.from && b < s.to);
-      return s || song.sections[song.sections.length - 1];
-    };
-
-    // A voicing index past the top of the chord keeps climbing in octaves
-    // instead of dropping back to the bottom, so a picking figure written over
-    // four notes still works over a three-note chord.
-    function pickFrom(voicing, i){
-      const n = voicing.length;
-      const oct = Math.floor(i / n);
-      return voicing[((i % n) + n) % n] + 12 * oct;
-    }
-
-    function push(k, t, p, v, extra){
-      const e = { k, t, p, v: Math.max(0.04, Math.min(1, v)) };
-      if(extra) Object.assign(e, extra);
-      ev.push(e);
-    }
-
-    // --- lead line -------------------------------------------------------
-    for(const m of song.melody){
-      const sec = sectionAt(m.b);
-      if(sec.melody === false) continue;
-      push('p', m.b + jitter(0.012), m.p, m.v * (sec.melodyAmp == null ? 1 : sec.melodyAmp) + jitter(0.03),
-           { a: sec.amp == null ? 1 : sec.amp });
-    }
-
-    // --- bells / second voice --------------------------------------------
-    for(const c of song.counter || []){
-      const sec = sectionAt(c.b);
-      if(sec.counter === false) continue;
-      push('c', c.b + jitter(0.014), c.p, c.v + jitter(0.03), { a: sec.amp == null ? 1 : sec.amp });
-    }
-
-    // --- accompaniment ----------------------------------------------------
-    for(const ch of song.chords){
-      const sec = sectionAt(ch.b);
-      const amp = sec.amp == null ? 1 : sec.amp;
-      const voicing = ch.notes;
-
-      const pick = i => pickFrom(voicing, i);
-
-      const pat = song.patterns[sec.guitar];
-      if(pat){
-        for(let cell = 0; cell < ch.dur; cell += pat.span){
-          for(const step of pat.steps){
-            const t = ch.b + cell + step.b;
-            if(t >= ch.b + ch.dur - 0.001) continue;
-            if(t >= song.loopBeats) continue;
-            // A hand does not land on six strings at once; the spread is what
-            // makes it a chord rather than a stab.
-            const spread = (step.roll || 0) * 0.018 / (60 / song.bpm);
-            push('g', t + spread + jitter(0.009), pick(step.i),
-                 step.v * (sec.guitarAmp == null ? 1 : sec.guitarAmp) + jitter(0.035), { a: amp });
-          }
-        }
-      }
-
-      const bp = song.bassPatterns[sec.bass];
-      if(bp){
-        for(let cell = 0; cell < ch.dur; cell += bp.span){
-          for(const step of bp.steps){
-            const t = ch.b + cell + step.b;
-            if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
-            push('b', t + jitter(0.010), ch.bass + (step.o || 0), step.v + jitter(0.03), { a: amp });
-          }
-        }
-      }
-
-      if(sec.pad) push('d', ch.b, 0, 1, { n: voicing.slice(0, 3), d: ch.dur, a: amp });
-    }
-
-    // --- the threat layers ------------------------------------------------
-    // Notes that only play when the game says something is close. They are
-    // written against the same chord grid as everything else, so whatever
-    // walks in is in the key and on the harmony no matter where in the loop it
-    // happens — which it has to be, because the trigger is a hero's position
-    // and not a bar number.
-    //
-    // Emitted last, after every other voice, on purpose: the jitter comes off
-    // one deterministic stream, and generating these earlier would shift the
-    // micro-timing of every note that was already there. At intensity 0 the
-    // piece has to be the same piece, down to the sample.
-    for(const name in song.threat || {}){
-      const pat = song.threat[name];
-      for(const ch of song.chords){
-        const sec = sectionAt(ch.b);
-        const amp = sec.amp == null ? 1 : sec.amp;
-        for(let cell = 0; cell < ch.dur; cell += pat.span){
-          for(const step of pat.steps){
-            const t = ch.b + cell + step.b;
-            if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
-            // A held cluster, written against the root rather than the voicing
-            // because the whole point of it is the note the chord does NOT
-            // contain. Its length is the pattern's, so a swell written over a
-            // chord lasts exactly as long as the chord does.
-            if(step.k === 'd'){
-              push('d', t, 0, 1, { a: amp, tier: pat.tier,
-                                   n: step.rel.map(r => ch.bass + r),
-                                   d: Math.min(pat.span, ch.b + ch.dur - t) });
-              continue;
-            }
-            // A step written as `rel` is an interval off the chord's root, the
-            // way the bass patterns are written, and a step written as `i`
-            // climbs the voicing the way the guitar figure does. Which one a
-            // layer wants is not about its instrument: a note that is meant to
-            // be IN the chord has to be picked out of the voicing, and a note
-            // that is meant to clash with it has to be measured from the root,
-            // or it lands on a chord tone half the time and the clash is only
-            // there in the bars nobody planned it for.
-            const p = step.rel != null ? ch.bass + step.rel
-                                       : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
-            push(step.k || 'c', t + jitter(0.008), p, step.v, { a: amp, tier: pat.tier });
-          }
-        }
-      }
-    }
-
-    ev.sort((a, b) => a.t - b.t);
-    // Nothing may sit at a negative beat: jitter on the very first event would
-    // otherwise schedule it before the loop starts and it would be dropped.
-    for(const e of ev) if(e.t < 0) e.t = 0;
-    return ev;
-  }
-
-/* "Before the Lanes" — the menu theme.
-
-   D major, 84bpm, 36 bars, one minute forty-three. Written to the shape the
-   idiom actually uses rather than to "slow equals calm": the guitar runs
-   straight eighths the whole way through while the melody moves at half that
-   speed, so the piece reads as unhurried and alive at the same time.
-
-   The loop is built not to announce itself. It ends on V7sus4 with the bass on
-   the fifth — unresolved, so the ear is pulled across the seam — and the two
-   bars either side of the join carry the same guitar figure at the same
-   density, which is what stops a loop sounding like a restart. */
-  const LANE_SONGS = {};
-  LANE_SONGS.menu = {
-  title: 'Before the Lanes',
-  pitch: 'D major',
-  bpm: 84, meter: '4/4', loopBeats: 144, seed: 24,
-  form: 'Intro 2 bars · A 8 · A′ 8 (pad and celeste enter) · B 8 (the minor turn and the borrowed iv) · A″ 8 · turnaround 2, unresolved.',
-  standfirst: 'A minute and forty-three of nylon guitar, piano and a little celeste, for the screen you read before a match. It is not a recording &mdash; press play and your browser builds it, note by note, from nothing.',
-  footer: 'Written in D major at 84 beats a minute. The guitar figure never stops, including across the loop, which is the trick that makes the join hard to hear.',
-
-  patterns: {
-    // p-i-m-a, straight eighths. The one element that plays identically in
-    // every bar of the piece — including the two either side of the loop — so
-    // the ear has a thread to follow across the join.
-    pick: { span: 4, steps: [
-      { b: 0,   i: 0, v: 0.56, roll: 0 }, { b: 0.5, i: 2, v: 0.36 },
-      { b: 1,   i: 3, v: 0.43 }, { b: 1.5, i: 1, v: 0.34 },
-      { b: 2,   i: 2, v: 0.47 }, { b: 2.5, i: 3, v: 0.35 },
-      { b: 3,   i: 1, v: 0.41 }, { b: 3.5, i: 2, v: 0.33 },
-    ] },
-  },
-  // Two-feel with the fifth anticipated: root on the downbeat, fifth on the
-  // "and" of three. No fills — down there, fills are just mud.
-  bassPatterns: { two: { span: 4, steps: [ { b: 0, o: 0, v: 0.62 }, { b: 2.5, o: 7, v: 0.33 } ] } },
-
-  // The pad is absent from bar one on purpose: it enters at A' and withdraws
-  // for the return, so its arrival means something on every pass.
-  sections: [
-    { from: 0,   to: 8,   name: 'Intro',  guitar: 'pick', bass: 'two', pad: false, amp: 1.02, shade: 0.30 },
-    { from: 8,   to: 40,  name: 'A',      guitar: 'pick', bass: 'two', pad: false, amp: 0.96, shade: 0.10 },
-    { from: 40,  to: 72,  name: 'A′', guitar: 'pick', bass: 'two', pad: true,  amp: 1.00, shade: 0.18 },
-    { from: 72,  to: 104, name: 'B',      guitar: 'pick', bass: 'two', pad: true,  amp: 1.05, shade: 0.26 },
-    { from: 104, to: 136, name: 'A″', guitar: 'pick', bass: 'two', pad: false, amp: 0.93, shade: 0.10 },
-    { from: 136, to: 144, name: 'Turn',   guitar: 'pick', bass: 'two', pad: false, amp: 1.02, shade: 0.30 },
-  ],
-
-  chords: [
-    { b: 0,   dur: 4, name: 'D6/9',   roman: 'I6/9',   notes: [50, 54, 59, 64], bass: 38 },
-    { b: 4,   dur: 4, name: 'D6/9',   roman: 'I6/9',   notes: [50, 54, 59, 64], bass: 38 },
-    { b: 8,   dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
-    { b: 12,  dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
-    { b: 16,  dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
-    { b: 20,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 24,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
-    { b: 28,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
-    { b: 32,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
-    { b: 36,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
-    { b: 40,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
-    { b: 44,  dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
-    { b: 48,  dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
-    { b: 52,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 56,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
-    { b: 60,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
-    { b: 64,  dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
-    { b: 68,  dur: 4, name: 'F#7',    roman: 'V7/vi',  notes: [52, 54, 58, 61], bass: 42 },
-    { b: 72,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 76,  dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
-    { b: 80,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
-    { b: 84,  dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
-    { b: 88,  dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 92,  dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
-    { b: 96,  dur: 4, name: 'Gm6',    roman: 'iv6',    notes: [50, 55, 58, 62], bass: 43 },
-    { b: 100, dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
-    { b: 104, dur: 4, name: 'Gmaj7',  roman: 'IVmaj7', notes: [50, 55, 59, 66], bass: 43 },
-    { b: 108, dur: 4, name: 'A7',     roman: 'V7',     notes: [52, 55, 57, 61], bass: 45 },
-    { b: 112, dur: 4, name: 'F#m7',   roman: 'iii7',   notes: [52, 54, 57, 61], bass: 42 },
-    { b: 116, dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 120, dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
-    { b: 124, dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
-    { b: 128, dur: 4, name: 'Dmaj7',  roman: 'Imaj7',  notes: [50, 54, 57, 61], bass: 38 },
-    { b: 132, dur: 4, name: 'Bm7',    roman: 'vi7',    notes: [50, 54, 57, 59], bass: 47 },
-    { b: 136, dur: 4, name: 'Em7',    roman: 'ii7',    notes: [50, 55, 59, 62], bass: 40 },
-    { b: 140, dur: 4, name: 'A7sus4', roman: 'V7sus4', notes: [50, 55, 57, 62], bass: 45 },
-  ],
-
-  // The tune. It opens on a rising major sixth — the one leap in the piece —
-  // and everything after it is stepwise, which is what makes the opening
-  // stick without the rest of it demanding attention.
-  melody: [
-    { b: 7.5, p: 74, d: 0.5, v: 0.42 },
-    { b: 8,    p: 83, d: 1.5, v: 0.66 }, { b: 9.5,  p: 81, d: 0.5, v: 0.50 },
-    { b: 10,   p: 79, d: 2.0, v: 0.58 },
-    { b: 12,   p: 81, d: 1.5, v: 0.62 }, { b: 13.5, p: 83, d: 0.5, v: 0.48 },
-    { b: 14,   p: 85, d: 1.5, v: 0.60 }, { b: 15.5, p: 83, d: 0.5, v: 0.46 },
-    { b: 16,   p: 81, d: 2.5, v: 0.60 }, { b: 19.5, p: 78, d: 0.5, v: 0.44 },
-    { b: 20,   p: 78, d: 1.5, v: 0.58 }, { b: 21.5, p: 76, d: 0.5, v: 0.46 },
-    { b: 22,   p: 74, d: 2.0, v: 0.55 },
-    { b: 24,   p: 76, d: 1.5, v: 0.58 }, { b: 25.5, p: 78, d: 0.5, v: 0.46 },
-    { b: 26,   p: 79, d: 2.0, v: 0.60 },
-    { b: 28,   p: 81, d: 1.5, v: 0.64 }, { b: 29.5, p: 79, d: 0.5, v: 0.48 },
-    { b: 30,   p: 78, d: 1.0, v: 0.56 }, { b: 31,   p: 76, d: 1.0, v: 0.52 },
-    { b: 32,   p: 78, d: 2.0, v: 0.62 }, { b: 34,   p: 76, d: 1.0, v: 0.50 },
-    { b: 35,   p: 74, d: 3.0, v: 0.58 },
-
-    { b: 39.5, p: 74, d: 0.5, v: 0.44 },
-    { b: 40,   p: 83, d: 1.5, v: 0.66 }, { b: 41.5, p: 81, d: 0.5, v: 0.50 },
-    { b: 42,   p: 79, d: 2.0, v: 0.58 },
-    { b: 44,   p: 81, d: 1.5, v: 0.62 }, { b: 45.5, p: 83, d: 0.5, v: 0.48 },
-    { b: 46,   p: 85, d: 1.5, v: 0.60 }, { b: 47.5, p: 83, d: 0.5, v: 0.46 },
-    { b: 48,   p: 81, d: 2.5, v: 0.60 }, { b: 51.5, p: 78, d: 0.5, v: 0.44 },
-    { b: 52,   p: 78, d: 1.5, v: 0.58 }, { b: 53.5, p: 76, d: 0.5, v: 0.46 },
-    { b: 54,   p: 74, d: 2.0, v: 0.55 },
-    { b: 56,   p: 76, d: 1.5, v: 0.58 }, { b: 57.5, p: 78, d: 0.5, v: 0.46 },
-    { b: 58,   p: 79, d: 2.0, v: 0.60 },
-    { b: 60,   p: 81, d: 1.5, v: 0.64 }, { b: 61.5, p: 79, d: 0.5, v: 0.48 },
-    { b: 62,   p: 78, d: 1.0, v: 0.56 }, { b: 63,   p: 76, d: 1.0, v: 0.52 },
-    { b: 64,   p: 78, d: 2.0, v: 0.62 }, { b: 66,   p: 76, d: 1.0, v: 0.50 },
-    { b: 67,   p: 74, d: 1.0, v: 0.54 },
-    // the secondary dominant: A# is the only note outside the key, and it
-    // leans up a semitone into the B section's home note
-    { b: 68,   p: 76, d: 1.5, v: 0.56 }, { b: 69.5, p: 78, d: 0.5, v: 0.46 },
-    { b: 70,   p: 82, d: 1.5, v: 0.62 }, { b: 71.5, p: 83, d: 0.5, v: 0.48 },
-
-    { b: 72,   p: 83, d: 2.0, v: 0.64 },
-    { b: 74,   p: 86, d: 1.5, v: 0.62 }, { b: 75.5, p: 85, d: 0.5, v: 0.48 },
-    { b: 76,   p: 83, d: 2.0, v: 0.60 }, { b: 78,   p: 81, d: 1.0, v: 0.54 },
-    { b: 79,   p: 79, d: 1.0, v: 0.52 },
-    { b: 80,   p: 78, d: 2.0, v: 0.58 }, { b: 82,   p: 79, d: 1.0, v: 0.52 },
-    { b: 83,   p: 81, d: 1.0, v: 0.54 },
-    { b: 84,   p: 83, d: 3.0, v: 0.62 }, { b: 87.5, p: 86, d: 0.5, v: 0.50 },
-    { b: 88,   p: 85, d: 1.5, v: 0.66 }, { b: 89.5, p: 83, d: 0.5, v: 0.50 },
-    { b: 90,   p: 81, d: 2.0, v: 0.58 },
-    { b: 92,   p: 83, d: 1.5, v: 0.60 }, { b: 93.5, p: 81, d: 0.5, v: 0.46 },
-    { b: 94,   p: 79, d: 2.0, v: 0.56 },
-    // the borrowed minor fourth. One flat note, once a loop, and it is the
-    // whole reason the piece reads as nostalgic rather than merely pleasant.
-    { b: 96,   p: 82, d: 2.0, v: 0.60 }, { b: 98,   p: 81, d: 2.0, v: 0.54 },
-    { b: 100,  p: 78, d: 2.0, v: 0.58 }, { b: 102,  p: 76, d: 1.5, v: 0.48 },
-    { b: 103.5, p: 74, d: 0.5, v: 0.44 },
-
-    { b: 104,  p: 83, d: 1.5, v: 0.60 }, { b: 105.5, p: 81, d: 0.5, v: 0.46 },
-    { b: 106,  p: 79, d: 2.0, v: 0.54 },
-    { b: 108,  p: 81, d: 1.5, v: 0.58 }, { b: 109.5, p: 83, d: 0.5, v: 0.44 },
-    { b: 110,  p: 85, d: 1.5, v: 0.56 }, { b: 111.5, p: 83, d: 0.5, v: 0.42 },
-    { b: 112,  p: 81, d: 2.5, v: 0.56 }, { b: 115.5, p: 78, d: 0.5, v: 0.40 },
-    { b: 116,  p: 78, d: 1.5, v: 0.54 }, { b: 117.5, p: 76, d: 0.5, v: 0.42 },
-    { b: 118,  p: 74, d: 2.0, v: 0.51 },
-    { b: 120,  p: 76, d: 1.5, v: 0.54 }, { b: 121.5, p: 78, d: 0.5, v: 0.42 },
-    { b: 122,  p: 79, d: 2.0, v: 0.56 },
-    { b: 124,  p: 81, d: 1.5, v: 0.58 }, { b: 125.5, p: 79, d: 0.5, v: 0.44 },
-    { b: 126,  p: 78, d: 1.0, v: 0.50 }, { b: 127,  p: 76, d: 1.0, v: 0.48 },
-    { b: 128,  p: 78, d: 2.0, v: 0.56 }, { b: 130,  p: 76, d: 1.0, v: 0.46 },
-    { b: 131,  p: 74, d: 1.0, v: 0.48 },
-    // lands on the sixth instead of home, and then gets out of the way: the
-    // last two bars are guitar and bass alone, exactly like the first two.
-    { b: 132,  p: 78, d: 3.0, v: 0.50 },
-  ],
-
-  // Celeste. Held back until the thirteenth bar so that its first note is an
-  // event, then used only in the gaps the tune leaves. The last one, alone
-  // over the turnaround, is the loop's signature.
-  counter: [
-    { b: 55,   p: 86, d: 0.5, v: 0.34 },
-    { b: 62.5, p: 83, d: 0.5, v: 0.30 },
-    { b: 71.5, p: 90, d: 0.5, v: 0.32 },
-    { b: 86.5, p: 86, d: 0.5, v: 0.34 },
-    { b: 95,   p: 86, d: 0.5, v: 0.30 },
-    { b: 99,   p: 79, d: 0.5, v: 0.28 },
-    { b: 118.5, p: 83, d: 0.5, v: 0.26 },
-    { b: 142,  p: 86, d: 0.5, v: 0.30 },
-  ],
-};
-
-/* "The Long Push" — what plays under a match.
-
-   The menu theme's job is to be liked. This one's job is to be forgotten, and
-   those are different pieces of writing, not the same piece turned down.
-
-   So: the same key family as the menu, so the switch is not a key change; the
-   guitar moved down about a fifth into the register where it has body rather
-   than definition; chords held eight beats instead of four, so nothing asks to
-   be followed; no celeste at all, because a bell is an event; and no tune —
-   the piano gets about one note every ten seconds, which is punctuation, not
-   melody. It is mixed to the same loudness as the menu theme and nowhere near
-   the same intensity: darker filters, a rounder pluck, and the velocity range
-   that normally opens a string up narrowed almost flat, so nothing in it ever
-   catches the ear on a transient while you are trying to last-hit a creep. */
-  LANE_SONGS.play = {
-  title: 'The Long Push',
-  pitch: 'D mixolydian',
-  bpm: 63, meter: '4/4', loopBeats: 160, seed: 41,
-  form: 'One texture, three passes. Chords change every two bars and the piano speaks about once every ten seconds. Ends unresolved on Asus4.',
-  standfirst: 'Two and a half minutes of low nylon guitar for the match itself &mdash; deeper, slower, and written to be under you rather than in front of you.',
-  footer: 'D mixolydian at 63 beats a minute. The flattened seventh is what keeps it from ever sounding like it wants to resolve and go home.',
-
-  // Five notes where the menu theme has eight, and no note on the fourth beat,
-  // so the bar has somewhere to breathe.
-  patterns: {
-    slow: { span: 4, steps: [
-      { b: 0,   i: 0, v: 0.50, roll: 0 }, { b: 1,   i: 2, v: 0.34 },
-      { b: 2,   i: 1, v: 0.40 }, { b: 2.5, i: 3, v: 0.30 },
-      { b: 3.5, i: 2, v: 0.28 },
-    ] },
-  },
-  // Root only. The menu theme's anticipated fifth is a groove, and a groove is
-  // the thing a player's foot starts tapping to.
-  bassPatterns: { root: { span: 4, steps: [ { b: 0, o: 0, v: 0.50 } ] } },
-
-  sections: [
-    { from: 0,   to: 64,  name: 'A',  guitar: 'slow', bass: 'root', pad: true, amp: 0.95, shade: 0.12 },
-    { from: 64,  to: 128, name: 'B',  guitar: 'slow', bass: 'root', pad: true, amp: 1.00, shade: 0.20 },
-    { from: 128, to: 160, name: 'A′', guitar: 'slow', bass: 'root', pad: true, amp: 0.95, shade: 0.12 },
-  ],
-
-  chords: [
-    { b: 0,   dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
-    { b: 8,   dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
-    { b: 16,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
-    { b: 24,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
-    { b: 32,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
-    { b: 40,  dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
-    { b: 48,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
-    { b: 56,  dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
-    { b: 64,  dur: 8, name: 'Bm7',   roman: 'vi7',      notes: [42, 47, 50, 54], bass: 35 },
-    { b: 72,  dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
-    { b: 80,  dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
-    { b: 88,  dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
-    { b: 96,  dur: 8, name: 'Bm7',   roman: 'vi7',      notes: [42, 47, 50, 54], bass: 35 },
-    { b: 104, dur: 8, name: 'Em7',   roman: 'ii7',      notes: [40, 47, 50, 55], bass: 40 },
-    { b: 112, dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
-    { b: 120, dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
-    { b: 128, dur: 8, name: 'D6/9',  roman: 'I6/9',     notes: [45, 50, 54, 59], bass: 38 },
-    { b: 136, dur: 8, name: 'Cmaj7', roman: 'bVIImaj7', notes: [43, 48, 52, 59], bass: 36 },
-    { b: 144, dur: 8, name: 'Gmaj7', roman: 'IVmaj7',   notes: [43, 47, 50, 54], bass: 31 },
-    { b: 152, dur: 8, name: 'Asus4', roman: 'Vsus4',    notes: [45, 50, 52, 57], bass: 33 },
-  ],
-
-  // Not a tune. Fifteen notes in two and a half minutes, always a chord tone,
-  // always quiet, landing in the second half of a chord so it reads as an
-  // afterthought rather than an announcement.
-  melody: [
-    { b: 6,   p: 74, d: 2, v: 0.32 }, { b: 14,  p: 72, d: 2, v: 0.30 },
-    { b: 22,  p: 71, d: 2, v: 0.28 }, { b: 30,  p: 69, d: 3, v: 0.30 },
-    { b: 46,  p: 76, d: 2, v: 0.32 }, { b: 54,  p: 78, d: 2, v: 0.30 },
-    { b: 62,  p: 76, d: 2, v: 0.28 }, { b: 70,  p: 74, d: 3, v: 0.32 },
-    { b: 86,  p: 72, d: 2, v: 0.30 }, { b: 94,  p: 69, d: 3, v: 0.28 },
-    { b: 110, p: 71, d: 2, v: 0.30 }, { b: 118, p: 74, d: 2, v: 0.28 },
-    { b: 126, p: 76, d: 2, v: 0.30 }, { b: 142, p: 72, d: 2, v: 0.28 },
-    { b: 150, p: 71, d: 3, v: 0.26 },
-  ],
-  counter: [],
-
-  /* What an enemy walking towards you adds to it.
-
-     Everything here is silent at intensity 0 and the piece above is untouched
-     by it, so a quiet match sounds exactly as it always did. The register is
-     the point: the guitar tops out around MIDI 71 and the piano's occasional
-     note sits at 69-78, so a celeste at 74-83 is above everything the piece
-     otherwise contains and cannot be mistaken for part of it.
-
-     Both figures repeat inside a bar rather than once a chord. From the edge
-     of the ring to being hit is about five seconds of walking, so a cue that
-     came round every seven and a half would be a cue you could miss entirely
-     on the way in. */
-  threat: {
-    // TIER 1, "somebody is close". Three celeste notes a bar, rising, so it
-    // reads as something approaching rather than something departing.
-    warn: { tier: 1, span: 4, steps: [
-      { b: 0,   k: 'c', i: 2, oct: 2, v: 0.34 },
-      { b: 2,   k: 'c', i: 4, oct: 2, v: 0.26 },
-      { b: 3.5, k: 'c', i: 3, oct: 2, v: 0.20 },
-    ] },
-    // TIER 2, "more than one of them, and they are on top of you". Straight
-    // eighths, alternating strong and weak so it is a pulse and not an alarm,
-    // with the piano landing on the bar underneath it for weight.
-    dive: { tier: 2, span: 2, steps: [
-      { b: 0,   k: 'c', i: 6, oct: 1, v: 0.30 },
-      { b: 0.5, k: 'c', i: 5, oct: 1, v: 0.17 },
-      { b: 1,   k: 'c', i: 7, oct: 1, v: 0.26 },
-      { b: 1.5, k: 'c', i: 5, oct: 1, v: 0.17 },
-    ] },
-    stab: { tier: 2, span: 4, steps: [ { b: 0, k: 'p', i: 4, oct: 1, v: 0.28 } ] },
-    // TIER 3 again, and the reason it is written as fills rather than as a
-    // faster line of its own: these land on the sixteenths BETWEEN the eighths
-    // above, so switching this layer on does not add a second voice, it halves
-    // the gap in the one already playing. The celeste goes from two notes a
-    // second to four without anything new appearing, which is what running
-    // feels like and what a second voice would not.
-    race: { tier: 3, span: 2, steps: [
-      { b: 0.25, k: 'c', i: 8, oct: 1, v: 0.16 },
-      { b: 0.75, k: 'c', i: 6, oct: 1, v: 0.13 },
-      { b: 1.25, k: 'c', i: 8, oct: 1, v: 0.15 },
-      { b: 1.75, k: 'c', i: 7, oct: 1, v: 0.13 },
-    ] },
-    // The one place the piece is allowed a groove. Root-only is what keeps the
-    // match theme from ever tapping your foot; the fifth arriving on the third
-    // beat is that decision being revoked, and it is worth more than any
-    // amount of extra volume.
-    drive: { tier: 2, span: 4, steps: [ { b: 2, k: 'b', rel: 7, v: 0.30 } ] },
-
-    // TIER 3, "all three of them". Everything below this line is the piece
-    // going wrong on purpose, and only a whole enemy team can reach it.
-    //
-    // A heartbeat, at the tempo the piece already runs at: the root twice a
-    // bar-beat, the second one a third of a beat behind the first and softer.
-    // Even spacing would be a drum machine; this is a pulse.
-    pound: { tier: 3, span: 1, steps: [
-      { b: 0,    k: 'b', rel: 0, v: 0.26 },
-      { b: 0.35, k: 'b', rel: 0, v: 0.15 },
-    ] },
-    // The wrong note: a minor ninth above the root, three octaves up, once a
-    // bar and quiet. It is the only deliberately sour note in either piece and
-    // it is worth more than another decibel of anything. Measured from the
-    // root rather than the voicing, so it is the same wrong note in every bar.
-    rub: { tier: 3, span: 4, steps: [ { b: 1.5, k: 'c', rel: 49, v: 0.22 } ] },
-    // A held minor ninth over the root, with the fifth under it so it reads as
-    // a chord souring rather than as a mistake. It arrives over nearly a
-    // second and lasts the whole chord: this is the sound of the ground going
-    // out from under the piece.
-    swell: { tier: 3, span: 8, steps: [ { b: 0, k: 'd', rel: [19, 25], v: 1 } ] },
-  },
-
-  mix: {
-    level: 7.1,
-    // The guitar carries it and the piano is a guest.
-    guitar: { g: 0.80, pan: -0.12, send: 0.30, lp: 3400 },
-    piano:  { g: 0.30, pan:  0.08, send: 0.34, lp: 4200 },
-    bass:   { g: 0.58, pan:  0.00, send: 0.10, lp: 1000 },
-    pad:    { g: 0.17, pan:  0.00, send: 0.45, lp: 1600 },
-    // Silent in the piece as written — nothing routes here below tier 1 — so
-    // this is the celeste's level when it does speak, not a level the calm
-    // track ever reaches. Bright and wet: it is meant to arrive from further
-    // away than the guitar, and to be the one thing in the mix with air.
-    bell:   { g: 0.30, pan:  0.28, send: 0.42, lp: 9000 },
-    // A rounder pluck, further from the bridge, ringing longer. `spread` is the
-    // one that matters most: it is how far a hard note opens the string up, and
-    // dropping it from 16 to 5 is what takes the bite out without taking the
-    // level down.
-    string: {
-      gtr:  { bright: 0.34, t60: 3.4, pickPos: 0.22, combDepth: 0.40, fundBoost: 5.5 },
-      bass: { bright: 0.20, t60: 3.2 },
-      spread: 5,
-    },
-    pianoCurve: 1.0,
-    irSeconds: 3.4, irDecay: 2.6,
-    master: 0.82,
-  },
-};
-  /* music:engine end */
-
   /* ------------------------------------------------------------------ music
      Two pieces. "Before the Lanes" plays over the menu and the end screen;
-     "The Long Push" plays under a match. Everything above this point
-     synthesises them; this part decides which one, if either, is allowed to be
-     heard.
+     "The Long Push" plays under a match. The script above this one synthesises
+     them and gets them sounding as early as it can — before this file has
+     finished arriving, which is the whole reason it is a separate script. This
+     part decides which one, if either, is allowed to be heard.
 
      Three rules the browser and the harness between them impose:
       - No sound before the player has touched the page. Every browser refuses
-        to start an AudioContext otherwise, so the context is built on the first
-        gesture and not at load.
+        to start an AudioContext otherwise, so the first gesture is what opens
+        it. The listener that catches that gesture lives up in the early script
+        as well as here, because a tap made while this megabyte was still
+        arriving used to be thrown away and cost the player a second one.
       - Nothing may exist at load that Node cannot run. AudioContext is not
-        merely absent under sim/stub.js, it is a ReferenceError, so it is only
-        ever reached through a typeof guard and only ever from a gesture the
-        headless harness never makes.
+        merely absent under sim/stub.js, it is a ReferenceError — and the early
+        script does not run there at all, because harness.js lifts the LAST
+        <script> in the file, which is this one. So everything below reaches the
+        synth through window.LaneMusic and copes with it not being there.
       - One switch, in one place. startRound and endRound are the only doors
         between menu and match, so the swap hangs off those and nothing has to
         be checked per frame. */
-  let musicCtx = null, musicDead = false;
-  const musicTracks = {};
-
+  const LaneMusic = (typeof window !== 'undefined' && window.LaneMusic) || null;
+  const musicTracks = LaneMusic ? LaneMusic.tracks : {};
+  // The one context, made up there and borrowed down here. Held in a variable
+  // as well because sfxReady and the gates below test it every time they make a
+  // sound; musicContext is what keeps the two in step, and everything that
+  // starts anything calls it first.
+  let musicCtx = null;
   function musicContext(){
-    if(musicCtx || musicDead) return musicCtx;
-    const AC = typeof AudioContext !== 'undefined' ? AudioContext
-             : typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null;
-    if(!AC){ musicDead = true; return null; }
-    try{ musicCtx = new AC(); }
-    catch(err){ musicDead = true; console.error('music unavailable', err); }
-    return musicCtx;
+    return (musicCtx = LaneMusic ? LaneMusic.context() : null);
   }
+  musicContext();
+  function musicTrack(key){ return LaneMusic ? LaneMusic.track(key) : null; }
 
-  function musicTrack(key){
-    if(musicTracks[key]) return musicTracks[key];
-    const ctx = musicContext();
-    if(!ctx) return null;
-    try{
-      const song = Object.assign({}, LANE_SONGS[key]);
-      song.events = arrangeLaneSong(song);
-      // A phone renders the same piece with fewer partials per piano note. The
-      // writing is identical; it is only the piano that gets thinner, which
-      // costs far less than dropping a voice out of the arrangement would.
-      const m = createLaneMusic(ctx, song, { lite: isTouchDevice });
-      m.out.connect(ctx.destination);
-      musicTracks[key] = m;
-      return m;
-    }catch(err){
-      musicDead = true;
-      console.error('music unavailable', err);
-      return null;
-    }
-  }
+  // rng, mtof and clamp come back down from the engine rather than being typed
+  // out again: the sound effects below are built out of the same three helpers
+  // the music is, and a second copy of a helper is a second thing to drift.
+  // Null under Node, where nothing that uses them is reachable — every one of
+  // them sits behind a context that sim/stub.js can never produce.
+  const rng   = LaneMusic ? LaneMusic.rng   : null;
+  const mtof  = LaneMusic ? LaneMusic.mtof  : null;
+  const clamp = LaneMusic ? LaneMusic.clamp : null;
 
 
   /* -------------------------------------------------------------------- sfx
@@ -10744,7 +10862,11 @@ window.addEventListener('DOMContentLoaded', function(){
   const THREAT_EDGE = THREAT_NEAR / THREAT_FAR;
   // One over the distance, normalised so the ends are exactly 1 and exactly 0.
   function threatShare(d){
-    return clamp((THREAT_NEAR / Math.max(d, 1) - THREAT_EDGE) / (1 - THREAT_EDGE), 0, 1);
+    // Spelled out rather than reaching for clamp: this is the one line of the
+    // music that the headless sim runs, and up there clamp is a name the sim
+    // does not have.
+    const v = (THREAT_NEAR / Math.max(d, 1) - THREAT_EDGE) / (1 - THREAT_EDGE);
+    return v < 0 ? 0 : v > 1 ? 1 : v;
   }
   // Fast up and slow down, deliberately unequal. A hero stepping into the ring
   // is news and should arrive; a hero stepping out of it might be about to step
@@ -10871,14 +10993,23 @@ window.addEventListener('DOMContentLoaded', function(){
       musicPending = true;
       setTimeout(()=>{ musicPending = false; musicSync(2.4); }, 200);
     }
-    // Build the match track's strings while the player is still reading the
-    // menu. Karplus-Strong is cheap but not free, and paying for it at the
-    // whistle would cost a frame at the one moment nobody is looking away.
-    if(!musicWarmed){
-      musicWarmed = true;
-      setTimeout(()=>{ const m = musicTrack('play'); if(m) m.prewarm(); }, 1400);
-    }
+    musicWarm();
   }
+  // Build the match track's strings while the player is still reading the menu.
+  // Karplus-Strong is cheap but not free, and paying for it at the whistle would
+  // cost a frame at the one moment nobody is looking away. Reachable from the
+  // handover below as well as from a gesture, because the gesture that opened
+  // the audio may have been spent on the loading page and never seen here.
+  function musicWarm(){
+    if(musicWarmed) return;
+    musicWarmed = true;
+    setTimeout(()=>{ const m = musicTrack('play'); if(m) m.prewarm(); }, 1400);
+  }
+  // From here the game is the one that decides which piece plays, so the early
+  // script's stand-in stands down: past this line a tap is as likely to be the
+  // tap that starts a match, and the menu theme swelling for a fifth of a second
+  // on its way out is exactly what the delay above exists to avoid.
+  if(LaneMusic) LaneMusic.owned = true;
   // Capture phase, and every gesture a browser might call the first one. The
   // game stops touchstart from bubbling on several of its own controls, and a
   // listener that only sees what reaches window is a listener that can be
@@ -10890,22 +11021,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // that genuinely annoys people from a background tab, so it does.
   document.addEventListener('visibilitychange', ()=>musicSync(1.2));
 
-  // Try to simply play, without waiting to be asked.
+  // Take over whatever the early script managed on its own.
   //
-  // Most browsers refuse until the page has been clicked or tapped, and that
-  // cannot be worked around from in here — it is the autoplay policy, and it is
-  // the whole reason the gesture listeners above exist. But not every browser
-  // refuses: a site the player has allowed autoplay for, a browser with the
-  // policy relaxed, an embed handed the permission. Measured, the old code
-  // never played in any of those either, because it only ever built the context
-  // inside a gesture handler and so never once asked. Where playing is allowed,
-  // waiting for a click nobody needs to make is its own bug.
-  //
-  // If the answer is no, nothing happens and the first gesture still starts it.
+  // By the time this runs the page may already be playing: a tap that landed
+  // during the load, or a browser that allows autoplay outright. Either way the
+  // menu theme is running on the same context and in the same track cache, so
+  // musicSync finds it and leaves it alone — this is a handover, not a second
+  // start. And where nothing got out, this is one more ask: a context that came
+  // up suspended is retried here and again on every gesture, rather than the
+  // page staying silent for good because of one refusal.
   function musicAutostart(){
     const ctx = musicContext();
     if(!ctx) return;
-    const go = ()=>{ if(ctx.state === 'running') musicSync(2.4); };
+    const go = ()=>{ if(ctx.state === 'running'){ musicSync(2.4); musicWarm(); } };
     if(ctx.state === 'suspended'){
       const r = ctx.resume();
       // A refusal here is the expected case, not an error worth logging.
