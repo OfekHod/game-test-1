@@ -4740,6 +4740,9 @@ window.addEventListener('DOMContentLoaded', function(){
     h.dashing=true; h.dashElapsed=0; h.dashFrom={x:h.x,y:h.y}; h.dashTo={x:tx,y:ty};
     h.skillCd=s.skillCd; h.mana-=s.skillManaCost; h.invuln=DASH_IFRAME;
     addBurst(h.x,h.y,'#5AC8E8',10);
+    // Scheduled with the animation's own length, so the landing sounds when the
+    // hero is drawn arriving rather than a frame either side of it.
+    sfxTeleport(fromX, fromY, tx, ty, DASH_DURATION);
     // Cooldown is set above, so a kill during the sweep simply clears it. Mana is
     // not refunded, so a chain is limited by the bar rather than being free.
     tut.dashWindow = true;                       // so a kill in this sweep is known to be the blink's
@@ -9658,14 +9661,17 @@ window.addEventListener('DOMContentLoaded', function(){
     // The crack of contact: noise, shaped by a filter and gone in under a
     // tenth of a second. Where the filter sits is what makes it wood, cloth or
     // stone; the buffer underneath is the same every time.
-    function burst(dest, t, amp, freq, q, dur, type){
+    function burst(dest, t, amp, freq, q, dur, type, freq2){
       const s = ctx.createBufferSource();
       s.buffer = noiseBuf;
       s.loop = true;
       s.playbackRate.value = 0.75 + Math.random() * 0.5;
       const f = ctx.createBiquadFilter();
       f.type = type || 'bandpass';
-      f.frequency.value = clamp(freq, 40, sr * 0.45);
+      f.frequency.setValueAtTime(clamp(freq, 40, sr * 0.45), t);
+      // A band walked up or down the spectrum is a swish; a band held still is
+      // a thump. It is the same noise underneath either way.
+      if(freq2) f.frequency.exponentialRampToValueAtTime(clamp(freq2, 40, sr * 0.45), t + dur);
       f.Q.value = q;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
@@ -9768,7 +9774,44 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
-    return { impact, pickup, master, kinds: Object.keys(IMPACT) };
+    /* ----------------------------------------------------------- teleport */
+
+    // The blink is the only thing in the game that happens in two places at
+    // once, so it is the only sound that does: air closing over where the hero
+    // was, and a landing where he now is, separated by exactly the length of
+    // the animation between them. Both are scheduled here off the audio clock
+    // rather than by a timer in the frame loop — 120ms is short enough that a
+    // dropped frame would smear the two halves into one noise.
+    //
+    // The gesture is a mirror. Leaving sweeps up and thins to nothing; arriving
+    // sweeps down and lands on a body. Anyone who has heard the first knows
+    // what the second is going to be, which is what makes a pair of sounds read
+    // as one event rather than two.
+    function teleport(from, to, gap){
+      const t = ctx.currentTime + 0.002;
+      const j = 0.95 + Math.random() * 0.10;
+      if(from){
+        const d = place(from);
+        tone(d, t, 'triangle', 250 * j, 1180 * j, 0.26, 0.13, 0.016);
+        tone(d, t, 'sine', 500 * j, 2360 * j, 0.09, 0.11, 0.020);
+        burst(d, t, 0.20, 900, 1.2, 0.12, 'bandpass', 5200);
+      }
+      if(to){
+        const d = place(to);
+        const a = t + (gap == null ? 0.12 : gap);
+        tone(d, a, 'triangle', 1500 * j, 330 * j, 0.24, 0.12, 0.004);
+        // The body under the landing. Without it the hero arrives as a whistle
+        // and weighs nothing.
+        tone(d, a + 0.02, 'triangle', 230 * j, 72 * j, 0.36, 0.17);
+        burst(d, a + 0.02, 0.18, 3200, 1.0, 0.05);
+        // Two partials of ice on top, because the blink is drawn in cyan and a
+        // warm arrival sounded like it belonged to a different ability.
+        tone(d, a + 0.03, 'sine', 1880 * j, 1880 * j, 0.12, 0.34, 0.004);
+        tone(d, a + 0.03, 'sine', 2810 * j, 2810 * j, 0.07, 0.24, 0.004);
+      }
+    }
+
+    return { impact, pickup, teleport, master, kinds: Object.keys(IMPACT) };
   }
   /* sfx:engine end */
 
@@ -9809,6 +9852,17 @@ window.addEventListener('DOMContentLoaded', function(){
     if(++sfxWinN > 8) return false;
     sfxLast[kind] = now;
     return true;
+  }
+
+  // Either end may be off the edge of the view on its own — blinking out of
+  // sight is most of the point of blinking — so the two halves are placed
+  // independently and either can be dropped while the other plays.
+  function sfxTeleport(fromX, fromY, toX, toY, gap){
+    if(!sfxReady()) return;
+    const a = sfxPlace(fromX, fromY), b = sfxPlace(toX, toY);
+    if(!a && !b) return;
+    if(!sfxGate('blink', 0.06)) return;
+    sfxRig.teleport(a, b, gap);
   }
 
   function sfxImpact(kind, wx, wy){

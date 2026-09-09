@@ -44,7 +44,7 @@ const page = `<title>Lane Soundboard</title>
   :root{
     --bark:#16140F; --stage:#201C15; --line:#372F22;
     --ink:#F2E8D4; --dim:#9E9179;
-    --gold:#D9A029; --mana:#7FB8F2; --hurt:#FF7A6B; --bone:#D8CBB0;
+    --gold:#D9A029; --mana:#7FB8F2; --hurt:#FF7A6B; --bone:#D8CBB0; --blink:#8FE3FF;
     --display:'Baloo 2',ui-rounded,system-ui,sans-serif;
     --body:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,sans-serif;
     --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -103,7 +103,7 @@ const page = `<title>Lane Soundboard</title>
 <div class="wrap">
   <header>
     <h1>Lane — <em>sound effects</em></h1>
-    <p class="lede">Five one-shots, synthesised on the spot from a handful of oscillators and one shared
+    <p class="lede">Six one-shots, synthesised on the spot from a handful of oscillators and one shared
       noise buffer: no samples, no files, a few hundred bytes in all. This page runs the same code the
       game does. The traces are each sound's real envelope, rendered offline.</p>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Click anything to start audio</span></div>
@@ -123,12 +123,18 @@ const page = `<title>Lane Soundboard</title>
     <div class="row" style="--rail:var(--mana)"><span class="key">6</span><span class="t"><b>Mana</b><span>A fifth lower and gliding up rather than clinking, with a breath of high noise over it.</span></span><canvas data-wave="mana"></canvas><button data-p="mana">Play</button></div>
   </div>
 
+  <h2>Ability</h2>
+  <div class="rows">
+    <div class="row" style="--rail:var(--blink)"><span class="key">7</span><span class="t"><b>Blink</b><span>Two sounds, 120 ms apart: air closing over where you were, then a landing where you are.</span></span><canvas data-wave="blink"></canvas><button data-t="1">Play</button></div>
+  </div>
+
   <h2>How they land in a match</h2>
   <div class="rows">
     <div class="row seq" style="--rail:var(--gold)"><span class="key">Q</span><span class="t"><b>Eight gold in a row</b><span>What clearing a wave's drops sounds like. The ladder is most of why it feels like anything.</span></span><button data-d="goldrun">Play</button></div>
     <div class="row seq" style="--rail:var(--mana)"><span class="key">W</span><span class="t"><b>Six mana in a row</b><span>The same climb, lower and rounder.</span></span><button data-d="manarun">Play</button></div>
     <div class="row seq" style="--rail:var(--bone)"><span class="key">E</span><span class="t"><b>A wave dies</b><span>Five creeps with a crit among them, then the drops. The busiest second the game has.</span></span><button data-d="wave">Play</button></div>
     <div class="row seq" style="--rail:var(--hurt)"><span class="key">R</span><span class="t"><b>A trade</b><span>You hitting a hero, them hitting you, interleaved. This is the pair that has to be told apart.</span></span><button data-d="trade">Play</button></div>
+    <div class="row seq" style="--rail:var(--blink)"><span class="key">Y</span><span class="t"><b>Blink across the lane</b><span>Leaving on the left, arriving on the right. In a match the two ends really are that far apart.</span></span><button data-d="blinkfar">Play</button></div>
     <div class="row seq" style="--rail:var(--bone)"><span class="key">T</span><span class="t"><b>Across the screen</b><span>One hit walked left to right. In the game the pan and the level are where it happened.</span></span><button data-d="pan">Play</button></div>
   </div>
 
@@ -162,13 +168,14 @@ ${engine}
     if(!live){
       live = true;
       document.getElementById('status').classList.add('live');
-      document.getElementById('statusText').textContent = 'Audio running — keys 1-6, Q W E R T';
+      document.getElementById('statusText').textContent = 'Audio running — keys 1-7, Q W E R T Y';
     }
     return rig;
   }
   const mid = { pan: 0, gain: 1 };
   const hit = (k, p) => ready().impact(k, p || mid);
   const pick = (k, n, p) => ready().pickup(k, n || 0, p || mid);
+  const blink = (a, b) => ready().teleport(a || mid, b || mid, 0.12);
   const later = (ms, fn) => setTimeout(fn, ms);
 
   const DEMOS = {
@@ -185,6 +192,7 @@ ${engine}
       [190, 560].forEach(ms => later(ms, () => hit('hurt', { pan: -0.2, gain: 1 })));
     },
     pan(){ for(let i = 0; i < 9; i++) later(i * 130, () => hit('hero', { pan: -0.8 + i * 0.2, gain: 1 })); },
+    blinkfar(){ blink({ pan: -0.7, gain: 0.85 }, { pan: 0.6, gain: 1 }); },
   };
 
   /* -------------------------------------------------------------- traces
@@ -192,7 +200,7 @@ ${engine}
      and reduced to peaks — the real envelope, not a drawing of one. It needs
      no gesture, so the page has its waveforms before anything is clicked. */
 
-  const COLOR = { creep:'--bone', crit:'--gold', hero:'--bone', hurt:'--hurt', gold:'--gold', mana:'--mana' };
+  const COLOR = { creep:'--bone', crit:'--gold', hero:'--bone', hurt:'--hurt', gold:'--gold', mana:'--mana', blink:'--blink' };
   function trace(cv, kind){
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if(!OAC) return;
@@ -200,7 +208,9 @@ ${engine}
     const oc = new OAC(1, Math.floor(sr * sec), sr);
     const r = createLaneSfx(oc);
     const p = { pan: 0, gain: 1 };
-    if(kind === 'gold' || kind === 'mana') r.pickup(kind, 0, p); else r.impact(kind, p);
+    if(kind === 'blink') r.teleport(p, p, 0.12);
+    else if(kind === 'gold' || kind === 'mana') r.pickup(kind, 0, p);
+    else r.impact(kind, p);
     oc.startRendering().then(buf => {
       const d = buf.getChannelData(0);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -231,11 +241,13 @@ ${engine}
     if(!b){ ready(); return; }
     if(b.dataset.i) hit(b.dataset.i);
     else if(b.dataset.p) pick(b.dataset.p, 0);
+    else if(b.dataset.t) blink();
     else if(b.dataset.d) DEMOS[b.dataset.d]();
   });
   const KEYS = { '1':()=>hit('creep'), '2':()=>hit('crit'), '3':()=>hit('hero'), '4':()=>hit('hurt'),
-                 '5':()=>pick('gold',0), '6':()=>pick('mana',0),
-                 q:DEMOS.goldrun, w:DEMOS.manarun, e:DEMOS.wave, r:DEMOS.trade, t:DEMOS.pan };
+                 '5':()=>pick('gold',0), '6':()=>pick('mana',0), '7':()=>blink(),
+                 q:DEMOS.goldrun, w:DEMOS.manarun, e:DEMOS.wave, r:DEMOS.trade, t:DEMOS.pan,
+                 y:DEMOS.blinkfar };
   document.addEventListener('keydown', e => {
     if(e.metaKey || e.ctrlKey || e.altKey) return;
     const f = KEYS[e.key.toLowerCase()];
