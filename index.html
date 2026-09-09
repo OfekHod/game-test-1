@@ -9139,7 +9139,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(m && !m.running){
       if(musicCtx.state === 'suspended') musicCtx.resume();
       m.start(fadeIn == null ? 2.4 : fadeIn);
-      musicPlayed = true;
+      if(!musicPlayed){ musicPlayed = true; musicPaint(); }
     }
   }
 
@@ -9158,6 +9158,16 @@ window.addEventListener('DOMContentLoaded', function(){
     const ctx = musicContext();
     if(!ctx) return;
     if(ctx.state === 'suspended') ctx.resume();
+    // Resuming the context is not, on its own, enough on iOS. Output there stays
+    // mute until a node has actually been *started* inside the gesture, and the
+    // real music starts a fifth of a second later in a timer — too late to
+    // count. So something silent is played right here, in the handler, purely to
+    // open the tap. It is one sample long and inaudible everywhere else.
+    try{
+      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const s = ctx.createBufferSource();
+      s.buffer = b; s.connect(ctx.destination); s.start(0);
+    }catch(err){}
     // Not latched after one try. If the first gesture fails to get sound out —
     // a resume the browser quietly refused, a context that came up suspended —
     // every later gesture gets another go, instead of the page staying silent
@@ -9174,15 +9184,23 @@ window.addEventListener('DOMContentLoaded', function(){
       setTimeout(()=>{ const m = musicTrack('play'); if(m) m.prewarm(); }, 1400);
     }
   }
-  window.addEventListener('pointerdown', musicUnlock);
-  window.addEventListener('touchend', musicUnlock);
-  window.addEventListener('keydown', musicUnlock);
+  // Capture phase, and every gesture a browser might call the first one. The
+  // game stops touchstart from bubbling on several of its own controls, and a
+  // listener that only sees what reaches window is a listener that can be
+  // starved by whichever thing the player happens to touch first.
+  for(const ev of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown']){
+    window.addEventListener(ev, musicUnlock, true);
+  }
   // Nothing else in this game pauses for a hidden tab. Music is the one thing
   // that genuinely annoys people from a background tab, so it does.
   document.addEventListener('visibilitychange', ()=>musicSync(1.2));
 
   function musicPaint(){
-    musicBtn.textContent = musicOn ? '♪ Music' : '♪ Muted';
+    // Three states, not two. No browser will make a sound until the page has
+    // been clicked or tapped, and a button that says "Music" while the room is
+    // silent reads as broken. Until something has actually played it asks to be
+    // pressed instead of claiming to be on.
+    musicBtn.textContent = !musicOn ? '♪ Muted' : musicPlayed ? '♪ Music' : '♪ Play music';
     musicBtn.classList.toggle('off', !musicOn);
     musicBtn.setAttribute('aria-pressed', musicOn ? 'true' : 'false');
   }
