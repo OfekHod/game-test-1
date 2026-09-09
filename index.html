@@ -132,6 +132,13 @@
   .bars-mini .hp .fill{background:#E8453C;}
   .bars-mini .mp .fill{background:#4c8fe2;}
   .bars-mini .xp .fill{background:#FFD54F;}
+  /* An empty mana bar is a 0%-wide fill, so a flash on the fill is a flash on
+     nothing. The socket lights up instead, once per refused shot. */
+  .bars-mini .mp.dry{animation:manaDry .5s ease-out;}
+  @keyframes manaDry{
+    0%  {background:rgba(90,200,232,.5); box-shadow:inset 0 0 0 2px #9FE3FF;}
+    100%{background:rgba(0,0,0,.28);     box-shadow:inset 0 0 0 2px rgba(159,227,255,0);}
+  }
   .barText{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.65),0 0 3px rgba(0,0,0,.4);pointer-events:none;}
 
@@ -2779,9 +2786,23 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   // ---------- tooltips ----------
+  // A mouse closes a tip by leaving. A finger cannot, so a tip a touch opened
+  // carries its own deadline AND a tap anywhere else takes it down. Both, not
+  // either: a tap that nothing calls preventDefault on also produces the
+  // compatibility mouse events afterwards, so mouseenter arrives on a phone
+  // with no mouseleave ever to follow it. That is how the tutorial's stat
+  // description used to stick — spend the third point and .noPoints puts the +
+  // button at pointer-events:none, so the next tap lands on the cell instead of
+  // the button, misses bindTap's preventDefault, and the synthetic mouseenter
+  // re-opened the tip with no deadline on it.
   const tipEl = document.getElementById('tooltip');
-  let tipTimer = 0;
-  function hideTip(){ tipEl.classList.remove('show'); }
+  const TIP_TOUCH_MS = 4000;      // long enough to read a stat line on a phone
+  const TIP_TOUCH_ECHO_MS = 1200; // a mouse event this soon after a tap is that tap's echo
+  let tipTimer = 0, tipAnchor = null, tipTouchAt = 0;
+  function hideTip(){
+    clearTimeout(tipTimer); tipTimer = 0; tipAnchor = null;
+    tipEl.classList.remove('show');
+  }
   function showTip(anchor, html, autoHideMs){
     tipEl.innerHTML = html;
     tipEl.classList.add('show');
@@ -2792,13 +2813,36 @@ window.addEventListener('DOMContentLoaded', function(){
     let top = (er.top-sr.top) - th - 10;
     if(top < 6) top = (er.bottom-sr.top) + 10;
     tipEl.style.left = left+'px'; tipEl.style.top = top+'px';
+    tipAnchor = anchor;
     clearTimeout(tipTimer);
-    if(autoHideMs) tipTimer = setTimeout(hideTip, autoHideMs);
+    tipTimer = autoHideMs ? setTimeout(hideTip, autoHideMs) : 0;
   }
   function bindTip(el, getHtml){
-    el.addEventListener('mouseenter', ()=>showTip(el, getHtml()));
-    el.addEventListener('mouseleave', hideTip);
-    el.addEventListener('touchstart', ()=>showTip(el, getHtml(), 3000), {passive:true});
+    el.addEventListener('mouseenter', ()=>{
+      // The echo of a tap. The touch tip is already up with a deadline; do not
+      // replace it with a hover tip that nothing on a phone will ever close.
+      if(Date.now() - tipTouchAt < TIP_TOUCH_ECHO_MS) return;
+      showTip(el, getHtml());
+    });
+    el.addEventListener('mouseleave', ()=>{
+      // Only the tip we are actually showing. A tap moves the phantom pointer
+      // off whatever it was last over, and that mouseleave arrives after the new
+      // tip has already opened — it must not close somebody else's tip.
+      if(tipAnchor === el) hideTip();
+    });
+    el.addEventListener('touchstart', ()=>{
+      tipTouchAt = Date.now();
+      showTip(el, getHtml(), TIP_TOUCH_MS);
+    }, {passive:true});
+  }
+  // Anything that is not the thing the tip is about dismisses it — the map, the
+  // HUD, the card, and the tip itself, which is pointer-events:none so a tap on
+  // it lands on whatever is behind. Capture, because the canvas stops the
+  // touches it steers with before they reach anyone else.
+  for(const type of ['touchstart','mousedown']){
+    window.addEventListener(type, e=>{
+      if(tipAnchor && !tipAnchor.contains(e.target)) hideTip();
+    }, {capture:true, passive:true});
   }
   const STAT_TIPS = {
     agi:      { name:'Agility',     unit:'move speed', text:'Raises how fast you move. Nothing else scales off it.' },
@@ -4662,6 +4706,19 @@ window.addEventListener('DOMContentLoaded', function(){
     if(isHero) addFloater(victim.x, heroAnchorY(victim), String(dmg), color, crit, false, crit, victim);
     else addFloater(victim.x, victim.y-victim.r-8, String(dmg), color, crit, false, crit);
   }
+  // A shot mana refused is the one refusal with nothing to see: no bullet, no
+  // sound, and on touch the aim ping still lands where you pointed, so the tap
+  // plainly registered and the gun plainly did not. Held down or tapped flat
+  // out, it reads as a gun that has gone slow rather than a bar that is empty.
+  // One shout per gap, so holding the trigger does not stack a column of them.
+  const NO_MANA_GAP = 1.1;
+  let noManaT = 0, manaDryT = 0;
+  function noteNoMana(h){
+    if(noManaT > 0) return;
+    noManaT = NO_MANA_GAP;
+    manaDryT = 0.5;                     // the bar flashes too, so you know which one
+    addFloater(h.x, heroAnchorY(h), 'NO MANA', '#9FE3FF', false, false, false, h);
+  }
   function addFloater(x,y,text,color,big,isXp,crit,owner){
     const STACK_RADIUS = 40, STACK_WINDOW = 0.45;
     let stackIndex = 0;
@@ -5115,6 +5172,8 @@ window.addEventListener('DOMContentLoaded', function(){
     updateBirds(dt);
     updateHudSparks(dt);
     if(hurtFlash>0) hurtFlash = Math.max(0, hurtFlash - dt*2.4);
+    if(noManaT>0) noManaT = Math.max(0, noManaT - dt);
+    if(manaDryT>0) manaDryT = Math.max(0, manaDryT - dt);
     updateSparkles(dt);
 
     for(let i=floaters.length-1;i>=0;i--){
@@ -5225,6 +5284,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // Mouse holds to fire. Touch fires once, when the aim finger comes up.
     const wantsFire = isMouseDown || !!touchShotAt;
     if(wantsFire) h.manualT = MANUAL_HOLD;      // keeps auto off your mana
+    // Off cooldown and asking to fire, so the only thing in the way is the bar.
+    if(wantsFire && h.basicCd<=0 && h.mana < s.basicManaCost) noteNoMana(h);
     if(isMouseDown && h.basicCd<=0 && h.mana>=s.basicManaCost) heroAttack(h, wmx, wmy, 1);
     if(touchShotAt){
       if(h.basicCd<=0 && h.mana>=s.basicManaCost){
@@ -7039,6 +7100,7 @@ window.addEventListener('DOMContentLoaded', function(){
       hpFillEl.style.width = (activeH.hp/activeH.maxHp*100)+'%';
       hpTextEl.textContent = Math.round(activeH.hp)+'/'+Math.round(activeH.maxHp);
       mpFillEl.style.width = (activeH.mana/activeH.maxMana*100)+'%';
+      mpFillEl.parentNode.classList.toggle('dry', manaDryT > 0);
       mpTextEl.textContent = Math.round(activeH.mana)+'/'+Math.round(activeH.maxMana);
       xpFillEl.style.width = (activeH.xp/activeH.xpToNext*100)+'%';
       xpTextEl.textContent = Math.round(activeH.xp)+'/'+Math.round(activeH.xpToNext);
@@ -7092,7 +7154,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // above is a single guarded line and the headless sim never enters any of it.
   const tut = {
     on:false, i:-1, t:0, p:null, ready:0, ack:false,
-    holdWaves:true, noAuto:false, spar:false, sparCd:0,
+    holdWaves:true, noAuto:false, spar:false, sparCd:0, sparFlee:false,
     // The jungle stays empty until the step that sends you into it, and every
     // early step keeps west of it. Walking into a camp you were never told
     // about is the one surprise the opening cannot afford.
@@ -7121,8 +7183,26 @@ window.addEventListener('DOMContentLoaded', function(){
   // real AI: close to arm's length, hold there, and fire on a slow count.
   function tutSparAI(dt){
     const e = enemyTeam[0], h = tutHero();
-    if(!e || !e.alive) return;
+    // However he left the fight — you shot him, or he walked off — he stays
+    // gone. Without pinning the respawn he strolls back in two steps later on
+    // his real AI, which is the same hero hunting you that the flee is for.
+    if(!e || !e.alive){ if(e) e.respawnTimer = Infinity; tut.spar = tut.sparFlee = false; return; }
     if(!h || !h.alive) return;
+    // The step wanted one hit and it has it, so he is done: he turns and runs
+    // for his own side without firing on the way. Standing there trading after
+    // the goal is met teaches nothing, and he used to keep at it through the
+    // two steps that follow — the first of which walks you to his outpost.
+    if(tut.sparFlee){
+      moveHeroToward(e, e.homeX, e.homeY, heroSpeed(e)*1.2, dt);
+      e.facing = Math.atan2(e.homeY-e.y, e.homeX-e.x);
+      if(dist(e.x, e.y, h.x, h.y) > TUT_SPAR_CLEAR){
+        // Clear of you and off the screen. He leaves the field the way the rest
+        // of his team did at the start, rather than jittering at the far edge.
+        e.alive = false; e.hp = 0; e.respawnTimer = Infinity;
+        tut.spar = tut.sparFlee = false;
+      }
+      return;
+    }
     const d = dist(e.x, e.y, h.x, h.y);
     if(d > TUT_SPAR_HOLD) moveHeroToward(e, h.x, h.y, heroSpeed(e)*0.7, dt);
     else if(d < TUT_SPAR_HOLD*0.65) moveHeroToward(e, e.x*2-h.x, e.y*2-h.y, heroSpeed(e)*0.5, dt);
@@ -7217,6 +7297,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // step is for meeting an enemy hero, not for losing to one. Their outposts
   // are the far side of the map and a real carry fights from under them.
   const TUT_SPAR_HOLD = 330;
+  const TUT_SPAR_CLEAR = 1000;   // beaten off: further than a screen, so he leaves out of sight
   const TUT_SPAR_RATE = 2.0;
   const TUT_SPAR_HP = 900;
   // The walk is authored on the tutorial's own map, so the rings are places
@@ -7386,7 +7467,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Levels and stats',
-    text:()=>'That is what the orbs were for. Every level gives you <b>three points</b>. Spend them in the strip above the health bar: <b>AGI</b> for speed and fire rate, <b>HP</b> and <b>MP</b> for the bars, <b>HPR</b> and <b>MPR</b> for how fast they refill, <b>RNG</b> for reach. '
+    text:()=>'That is what the orbs were for. Every level gives you <b>three points</b>. Spend them in the strip above the health bar: <b>AGI</b> for move speed, <b>HP</b> and <b>MP</b> for the bars, <b>HPR</b> and <b>MPR</b> for how fast they refill, <b>RNG</b> for reach. Every shot costs mana, so <b>MPR</b> is the one that decides how long you can keep firing. '
       + tutPick('Hover a stat to see exactly what it buys.', 'Tap a stat to see exactly what it buys.'),
     goal:()=>'Spend a point with a + button',
     hl:()=>statStripEl,
@@ -7606,9 +7687,22 @@ window.addEventListener('DOMContentLoaded', function(){
       // worth nothing if he is a corpse before you have looked at him.
       e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
       tut.spar = true; tut.sparCd = 1.5;
+      tut.sparFlee = false;
       tut.mark = { unit:e, r:48, col:'#FF9A8B', label:'ENEMY CARRY', mini:true };
       addPing(e.x, e.y, '#FF6B6B', 14, 90, 0.7);
     },
+    tick(){
+      if(tut.p.heroHit && !tut.sparFlee){
+        tut.sparFlee = true;
+        tut.mark = null;                 // stop sending you after him
+        tut.nudge = 'Landed. That is all this step wanted &mdash; he has broken off and is running for his own side.';
+        tut.nudgeT = 4;
+        tutPaint();
+      }
+    },
+    // A longer beat than the usual one, so you watch him turn and go rather
+    // than reading about it on the next card.
+    hold:2.4,
     done:()=>!!tut.p.heroHit || !enemyTeam[0].alive
   },
   {
@@ -7689,7 +7783,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function tutStart(){
     tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false; tut.hl = null;
-    tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false;
+    tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false; tut.sparFlee = false;
     // startRound has just stocked every camp. Empty them again: nothing lives in
     // the jungle until step 11 sends you there.
     neutralCreeps.length = 0;
@@ -7728,7 +7822,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function tutStop(){
     tut.on = false; tut.holdWaves = false; tut.holdCamps = false;
-    tut.arena = false; tut.noAuto = false; tut.holdDrops = false; tut.spar = false;
+    tut.arena = false; tut.noAuto = false; tut.holdDrops = false; tut.spar = false; tut.sparFlee = false;
     tut.rings = []; tut.mark = null; tut.watch = []; tut.p = null;
     tutHighlight(null);
     tutHide();
@@ -7907,7 +8001,7 @@ window.addEventListener('DOMContentLoaded', function(){
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
-    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[];
+    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
     // "just been wiped", and started a 15s respawn. The forest was empty for
