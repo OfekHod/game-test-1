@@ -44,21 +44,33 @@ Values as shipped, with the evidence.
 
 ## Scenery
 
-Trees, bushes and rocks are drawn from three sprite atlases. Everything here is
-world-shape rather than numbers on a hero, but it is all solid, so it is all
-tuning.
+Trees, bushes and rocks are drawn from three sprite atlases. Every one of them
+is solid, so all of it is tuning.
 
 | constant | value | note |
 |---|---|---|
 | `DECOR_SCALE` | 2.5 | on top of each sprite's own size; below this a tree was a shrub you could see over |
 | `TREE_COUNT` | 32 | loose trees, on top of the camp rings and the corridor clumps |
 | `BUSH_COUNT` / `ROCK_COUNT` | 118 / 62 | objects, not patches — a patch is 1–5 of them |
-| `PROP_TALL` | 95 | a bush drawn this tall stands up: solid, and it hides you. Every rock does |
 | `PROP_BAR_HALF` / `PROP_BAR_T` | 0.40w / 6 | what a prop blocks: a horizontal bar at the foot of its sprite |
-| `TREE_PATCH_MAX` / `TREE_MIN_GAP` | 3 / 104 | a stand is up to three of ONE silhouette; the gap is still twice a trunk's collide radius |
+| `TREE_PATCH_MIN/MAX` | 2 / 5 | a stand is two to five of ONE silhouette |
+| `TREE_PATCH_SPREAD` / `TREE_MIN_GAP` | 285 / 150 | at 128 and 104 a stand was a pile: the canopies read as one lumpy mass |
+| `FOREST_BUSH_K` | 2.35 | the camp ring is berry bushes sized like trees, not like bushes |
 | `DECOR_ROAD_KEEP` | 130 | beyond the road edge. Solid scenery at the old 40 deflected a retreat into a tower |
-| `DECOR_TOWER_KEEP` | 300 | tower clearings stay clear |
+| **`DECOR_TOWER_KEEP`** | **`TOWER_RANGE` + 120** | see below. This one is not cosmetic |
 | `DECOR_CAMP_KEEP` | 90 | beyond the camp ring, so a clearing you have to walk into stays walkable |
 
-Solid scenery cost nothing measurable: 120 games came out at 112/120 bases
-destroyed against 111/120 for the same build without any of it.
+**Solid scenery must clear a tower's REACH, not its footprint.** This is the
+same trap `scatterClumps` fell into and wrote down, and solid bushes and rocks
+walked straight back into it. A solid thing standing just inside a tower's
+circle deflects a path around it and into the guns. Measured over 120 games
+each:
+
+| | no scenery | props at a 300 keep-out | props at `TOWER_RANGE` + 120 |
+|---|---|---|---|
+| base destroyed | 111/120 | **100/120** | 108/120 |
+| enemy deaths to towers | 0.84 | **1.23** | 0.73 |
+| end levels | 12.4 / 15.2 / 8.6 | 12.0 / 14.6 / 9.1 | 12.6 / 15.1 / 8.5 |
+
+Ten bases in a hundred and twenty, from a keep-out number. Anything solid that
+gets added to the map has to clear that circle.

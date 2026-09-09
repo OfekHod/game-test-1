@@ -2391,11 +2391,9 @@ window.addEventListener('DOMContentLoaded', function(){
   let healWaves = [];
   let sparkles = [];
   let trees = [];
-  // Bushes and rocks, split by whether they stand up off the ground. props are
-  // drawn live and sorted against the units; groundDecor is stamped into the
-  // world canvas once. Both are laid down together, by generateDecor.
+  // Every bush and every rock on the map, laid down by generateDecor. All of
+  // them are solid and all of them are drawn live, sorted against the units.
   let props = [];
-  let groundDecor = [];
   let camps = [];
   let lakes = [];     // solid, organic outline
   let rivers = [];    // shallow: you can ford them, they just slow you
@@ -2469,8 +2467,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // Call again after anything moves a tree's r, or the canopy it draws and the
   // canopy it lights out of the fog stop agreeing with each other.
   function sizeTree(t){
-    const f = TREE_FRAMES[t.v];
-    t.dw = t.r*f[4]*t.sc*DECOR_SCALE;
+    const bush = t.bush !== undefined;
+    const f = bush ? BUSH_FRAMES[t.bush] : TREE_FRAMES[t.v];
+    t.f = f;
+    t.dw = t.r*(bush ? FOREST_BUSH_K : f[4])*t.sc*DECOR_SCALE;
     t.dh = t.dw*(f[3]/f[2]);
   }
   function pointSegDist(px,py,x1,y1,x2,y2){
@@ -2861,21 +2861,22 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       bgCtx.restore();
     }
-    // Six or seven rather than seven to ten: at the old count and the new size
-    // the ring fused into one green mass with no ring left to read. The gaps
-    // between the trunks are unchanged — what a hero can walk through is set by
-    // the collide radius, which never moved — so the camp is as enterable as it
-    // was and looks like a copse again instead of a hedge.
+    // The forest around a camp is a thicket of berry bushes, one kind per camp,
+    // which is what the ring looked like when every tree in the game was drawn
+    // with the berry-bush sprite. Eight or nine of them rather than the six or
+    // seven a ring of trees needed: a bush is smaller, and the ring only works
+    // if it closes. What a hero can walk through is set by the collide radius,
+    // which never moved, so the camp is as enterable as it always was.
     for(const c of camps){
-      const n = 6 + Math.floor(Math.random()*2);
-      const v = Math.floor(Math.random()*TREE_FRAMES.length);   // one copse, one kind
+      const n = 8 + Math.floor(Math.random()*2);
+      const b = FOREST_BUSH_FRAMES[Math.floor(Math.random()*FOREST_BUSH_FRAMES.length)];
       for(let i=0;i<n;i++){
         const a = i/n*Math.PI*2 + rand(-0.16,0.16);
         const rr = CAMP_RING_R + rand(-22,30);
         const tx = c.x + Math.cos(a)*rr, ty = c.y + Math.sin(a)*rr*0.88;
         if(onRoadway(tx, ty, 34)) continue;
         const t = makeTree(tx, ty);
-        t.v = v; sizeTree(t);
+        t.bush = b; sizeTree(t);
         trees.push(t);
       }
     }
@@ -2894,12 +2895,14 @@ window.addEventListener('DOMContentLoaded', function(){
            Math.abs(y - BASE_Y) > TUT_ARENA_Y + TUT_ARENA_PAD;
   }
   // Trees come in stands, not one at a time: a patch picks one silhouette and
-  // puts two or three of it together, so the jungle reads as clumps of one kind
-  // of tree with open ground between them rather than as an even sprinkle. The
-  // minimum gap came down with it — at 150 no two trees could ever look
-  // related — but it is still well clear of twice a trunk's collide radius, so
-  // nothing in a stand overlaps anything you bump into.
-  const TREE_PATCH_MAX = 3, TREE_PATCH_SPREAD = 128, TREE_MIN_GAP = 104;
+  // puts two to five of it together, so the jungle reads as clumps of one kind
+  // of tree with open ground between them rather than as an even sprinkle.
+  // The spread is over twice what it first was and the minimum gap is back up
+  // to 150. At 128 and 104 a stand was a pile — the canopies sat on top of each
+  // other and read as one lumpy mass instead of as several trees standing near
+  // one another, which is the thing being drawn.
+  const TREE_PATCH_MIN = 2, TREE_PATCH_MAX = 5;
+  const TREE_PATCH_SPREAD = 285, TREE_MIN_GAP = 150;
   // roadPad and extra are the tutorial's; Match and Survival call this bare.
   function scatterTrees(roadPad, extra){
     const pad = roadPad || 70;
@@ -2908,7 +2911,7 @@ window.addEventListener('DOMContentLoaded', function(){
       attempts++;
       const cx = rand(220, WORLD_W-220), cy = rand(220, WORLD_H-220);
       const v = Math.floor(Math.random()*TREE_FRAMES.length);
-      const n = 1 + Math.floor(Math.random()*Math.random()*TREE_PATCH_MAX);
+      const n = TREE_PATCH_MIN + Math.floor(Math.random()*(TREE_PATCH_MAX-TREE_PATCH_MIN+1));
       for(let i=0; i<n && loose<TREE_COUNT; i++){
         const x = cx + rand(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD);
         const y = cy + rand(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD)*0.75;
@@ -3776,12 +3779,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // drew it with — and a tree is big enough that standing behind one hides you,
   // which is only worth doing when the tree is taller than the hero.
   const DECOR_SCALE = 2.5;
-  // Anything drawn at least this tall stands up off the ground: it goes into
-  // the y-sorted pass with the units, so it can be in front of you rather than
-  // only ever under you. Everything shorter is ground cover — you walk over
-  // grass, pebbles and a knee-high bush, you do not walk behind them — and it
-  // stays stamped into the world canvas, where it costs nothing per frame.
-  const PROP_TALL = 95;
+  // The camp ring is berry bushes rather than trees, which is what it looked
+  // like before the trees became trees — the old build drew every tree with one
+  // berry-bush sprite, so the ring around a camp read as a thicket. It is
+  // tree-CLASS all the same: solid, and it blocks line of sight, which is the
+  // whole point of a ring. A camp you can see into from outside the jungle is a
+  // camp you never have to walk to. k is fixed here rather than taken off the
+  // sheet: these are standing in for trees, so they are sized like trees.
+  const FOREST_BUSH_FRAMES = [18, 19, 20];   // berry S, M, L
+  const FOREST_BUSH_K = 2.35;                // drawn width, in units of r
   const treeImg = new Image(), bushImg = new Image(), rockImg = new Image();
   let treeImgReady = false, bushImgReady = false, rockImgReady = false;
   // The whole world canvas is baked once, so a decoded atlas means re-baking
@@ -3892,16 +3898,14 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       placed++;
     }
-    // Shadows first, all of them, so nothing standing on the ground is ever
-    // drawn over its neighbour's shadow — including the trees and tall props
-    // that are no longer baked at all.
-    for(const d of groundDecor) bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
-    for(const d of props)       bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
+    // Shadows are all that is left to bake: nothing that stands up is drawn
+    // into the ground any more, but its shadow still belongs there. Doing them
+    // in one pass first also means nothing is ever drawn over its neighbour's.
+    for(const d of props) bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
     // A trunk's shadow, not a canopy's: it pools at the foot of the tree,
     // roughly as wide as the trunk is. A disc the width of the canopy belongs
     // to a sprite that sits on the ground; these stand on it.
-    for(const t of trees)       bakeShadow(t.x, t.y + t.r*0.20, t.dw*0.21, t.dw*0.072);
-    for(const d of groundDecor) drawDecor(bgCtx, d);
+    for(const t of trees) bakeShadow(t.x, t.y + t.r*0.20, t.dw*0.21, t.dw*0.072);
   }
   // Bushes and rocks are stamped out of the same atlases the trees come from, so
   // the clutter on the ground is the same art as the canopy over it.
@@ -3913,24 +3917,25 @@ window.addEventListener('DOMContentLoaded', function(){
   // number of objects reads as far fewer THINGS once they are grouped.
   //
   // Placing is done ONCE, when the map is built, and is separate from drawing.
-  // Everything that stands up off the ground has to exist as an object before
-  // the first frame — it is drawn live, sorted against the units, and it is
-  // solid — and the flat rest is stamped into the world canvas from the same
-  // list, so the two can never disagree about where anything is. It also means
-  // the bake can be repeated when an atlas lands without re-dealing the map.
-  const PATCH_SPREAD = 1.15;   // patch radius, in units of the sprite's own width
+  // Every one of them has to exist as an object before the first frame: they
+  // are drawn live, sorted against the units, and every one of them is solid.
+  // There is no baked half any more — a bush stops you now, so there is no such
+  // thing as a bush that is only a picture of one.
+  const PATCH_SPREAD = 1.35;   // patch radius, in units of the sprite's own width
   function generateDecor(){
-    props = []; groundDecor = [];
+    props = [];
     const RR = mulberry(0x9E3D1);
     placeDecor(RR, 'bush', BUSH_FRAMES, BUSH_COUNT, 5, 0.80, 1.28);
     placeDecor(RR, 'rock', ROCK_FRAMES, ROCK_COUNT, 3, 0.78, 1.24);
   }
-  // Solid scenery keeps a wide berth from the roads and the tower clearings.
-  // At the old pads a bush was decoration a stray step brushed past; a bush you
-  // cannot walk through at 40 off the lane is a bush that deflects a retreat
-  // into a tower, and a patch of them is a wall across the jungle route beside
-  // it. These are the distances beyond each thing's own edge.
-  const DECOR_ROAD_KEEP = 130, DECOR_TOWER_KEEP = 300, DECOR_WATER_KEEP = 24;
+  // Solid scenery keeps a wide berth from the roads and from every tower's
+  // REACH — not from the building, from the circle it shoots into. This is the
+  // same lesson scatterClumps learned and wrote down: a solid thing standing
+  // just inside that circle deflects a path around it and straight into the
+  // guns. Measured, with the props at a 300 keep-out: the enemy team died to
+  // towers 1.23 times a game against 0.84 without any scenery at all, and took
+  // ten fewer bases in a hundred and twenty. At TOWER_RANGE + 120 it goes away.
+  const DECOR_ROAD_KEEP = 130, DECOR_TOWER_KEEP = TOWER_RANGE + 120, DECOR_WATER_KEEP = 24;
   const DECOR_CAMP_KEEP = 90;      // beyond the camp ring, so a clearing stays clear
   function decorSpotClear(x, y){
     if(x < 200 || y < 200 || x > WORLD_W-200 || y > WORLD_H-200) return false;
@@ -3948,7 +3953,6 @@ window.addEventListener('DOMContentLoaded', function(){
     return true;
   }
   function placeDecor(RR, kind, frames, count, patchMax, jitLo, jitHi){
-    const rock = kind === 'rock';
     let placed=0, guard=0;
     while(placed<count && guard++ < count*12){
       const f = frames[(RR()*frames.length)|0];
@@ -3962,12 +3966,7 @@ window.addEventListener('DOMContentLoaded', function(){
         const jit = jitLo+RR()*(jitHi-jitLo), flip = RR()<0.5;
         if(!decorSpotClear(x, y)) continue;
         const w = f[4]*jit*DECOR_SCALE, h = w*(f[3]/f[2]);
-        // Every rock stands up — they are all the big versions now, and a
-        // boulder you walk through is a boulder that is lying to you. A bush
-        // has to earn it by being taller than PROP_TALL; below that it is
-        // ground cover, and you cannot lose a hero behind something you can
-        // see over the top of.
-        (rock || h >= PROP_TALL ? props : groundDecor).push({ x, y, kind, f, w, h, flip });
+        props.push({ x, y, kind, f, w, h, flip });
         placed++;
       }
     }
@@ -4021,12 +4020,14 @@ window.addEventListener('DOMContentLoaded', function(){
     bgCtx.beginPath(); bgCtx.ellipse(x, y, rx, ry, 0, 0, 7); bgCtx.fill();
   }
   function drawTree(gctx, t){
+    const bush = t.bush !== undefined;
+    const img = bush ? bushImg : treeImg, ready = bush ? bushImgReady : treeImgReady;
     gctx.save(); gctx.translate(t.x,t.y);
-    if(treeImgReady){
-      const f = TREE_FRAMES[t.v];
+    if(ready){
+      const f = t.f;
       gctx.rotate(t.rot||0);
       gctx.scale(t.flip||1, 1);
-      gctx.drawImage(treeImg, f[0], f[1], f[2], f[3],
+      gctx.drawImage(img, f[0], f[1], f[2], f[3],
                      -t.dw/2, t.r*TREE_SINK - t.dh, t.dw, t.dh);
     } else {
       gctx.beginPath(); gctx.ellipse(0, t.r*0.55, t.r*1.05, t.r*0.3, 0,0,7);
