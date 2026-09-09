@@ -1,6 +1,6 @@
 # Lane — notes for Claude
 
-A browser MOBA prototype that ships as one file, `lane.html`, plus a
+A browser MOBA prototype that ships as one file, `index.html`, plus a
 dependency-free Node simulation harness in `sim/`. Read `README.md` first;
 `docs/SIM.md` explains how to run experiments and what the numbers should
 look like.
@@ -10,13 +10,13 @@ look like.
 The owner tests every change by hand before approving it. Do this without
 being asked, every time:
 
-1. **Whenever `lane.html` changes** — a local edit you want tried out, a
+1. **Whenever `index.html` changes** — a local edit you want tried out, a
    commit, or a pull request — publish the resulting file as a Claude
    Artifact and hand over the link.
 2. **Build the copy with the helper, never by hand:**
    `node tools/artifact-html.js <out.html>`. It strips only the document
    skeleton that the artifact host supplies itself and leaves everything else
-   byte for byte identical. If it refuses to run, fix `lane.html`'s shape or
+   byte for byte identical. If it refuses to run, fix `index.html`'s shape or
    the helper; do not publish an edited copy.
 3. **One artifact per pull request.** Name the file `lane-pr<N>.html` and
    republish that same path on every push, so the link in the PR keeps
@@ -26,9 +26,9 @@ being asked, every time:
    the commit the build came from; keep the game's own `<title>`.
 5. **The PR description opens with a "Test build" section:** the artifact
    link, the commit it was built from, and — when the PR does not touch
-   `lane.html` — one line saying the build is identical to `main`. Refresh
+   `index.html` — one line saying the build is identical to `main`. Refresh
    that section on every push.
-6. **Also attach the raw `lane.html` in chat** so it can be opened straight
+6. **Also attach the raw `index.html` in chat** so it can be opened straight
    from disk.
 
 ## Screenshots: show the change working
@@ -69,7 +69,7 @@ ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome     # pass this as executa
 so read the path off the filesystem rather than asking the library for it.
 
 ```js
-await page.goto('file:///…/lane.html');
+await page.goto('file:///…/index.html');
 await page.waitForFunction(() => window.__laneLoaded === true);
 ```
 

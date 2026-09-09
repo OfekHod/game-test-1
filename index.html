@@ -25,12 +25,14 @@
   #game{cursor:none;outline:none;touch-action:none;}
 
   .party{position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:6;}
+  .party.hidden{display:none;}
   /* Drawn as DOM, not on the canvas. The chips are DOM and sit ABOVE the canvas,
      so a canvas-drawn scoreboard is hidden behind them no matter where it is
      placed — which is exactly what kept happening. In the same layer the browser
      guarantees stacking, and it is pinned top-right, opposite the chips. */
   .scoreHud{position:absolute;top:16px;right:16px;display:flex;gap:8px;z-index:7;
     pointer-events:none;font-family:'Baloo 2',sans-serif;}
+  .scoreHud.hidden{display:none;}
   .scoreBox{min-width:84px;padding:6px 12px 5px;border-radius:11px;text-align:center;overflow:hidden;
     background:rgba(24,26,32,.80);border:2px solid transparent;}
   .scoreBox b{display:block;text-align:center;font-size:27px;font-weight:800;
@@ -185,9 +187,41 @@
   .skillBtn .cdRing{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(60,40,10,.6) calc(var(--cd,0)*360deg), transparent 0);}
   .mobileHint{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
+  /* Tutorial card. It sits above the dock rather than over it — the dock's
+     height is measured in JS, because the HUD is a percentage of a stage whose
+     height nothing here knows. Transparent to input except its own buttons, so
+     a tap that lands on it still shoots. */
+  .tutCard{position:absolute;left:50%;bottom:14px;z-index:6;width:min(560px,88%);
+    background:rgba(74,52,22,.95);border:3px solid var(--panel-border);border-radius:14px;
+    padding:9px 14px 7px;color:#FFF3D6;font-size:13.5px;line-height:1.45;
+    box-shadow:0 10px 26px rgba(0,0,0,.35);pointer-events:none;
+    opacity:0;transform:translate(-50%,10px);transition:opacity .22s ease,transform .22s ease;}
+  .tutCard.show{opacity:1;transform:translate(-50%,0);}
+  .tutCard.hidden{display:none;}
+  .tutCard.touchPad{padding-right:98px;}
+  .tutStep{font:800 10px/1 monospace;letter-spacing:.7px;color:#D9A85C;}
+  .tutTitle{display:block;color:#FFD54F;font-size:16px;font-weight:800;margin:3px 0 2px;}
+  .tutBody b{color:#FFD54F;}
+  .tutBody k{font-style:normal;font-weight:800;color:#9FE3FF;background:rgba(0,0,0,.3);border-radius:5px;padding:0 5px;}
+  .tutGoal{display:block;margin-top:5px;font-size:12px;font-weight:700;color:#9FE3FF;}
+  .tutGoal.hit{color:#8CE39B;}
+  .tutRow{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;pointer-events:auto;}
+  .tutRow button{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:12.5px;cursor:pointer;
+    border:none;border-radius:9px;padding:6px 13px;background:rgba(255,243,214,.16);color:#FFF3D6;}
+  .tutRow button.go{background:#5AC8E8;color:#0a3a4a;}
+  .tutRow button.hidden{display:none;}
+  .tutRow button:active{transform:translateY(2px);}
+  @keyframes tutPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,213,79,0);}50%{box-shadow:0 0 0 5px rgba(255,213,79,.5);}}
+  .tutPulse{animation:tutPulse 1.15s ease-in-out infinite;border-radius:10px;}
+
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
   @media (max-width: 700px), (max-height: 560px){
+    .tutCard{font-size:11.5px;padding:6px 10px 5px;width:min(520px,94%);}
+    .tutCard.touchPad{padding-right:80px;}
+    .tutTitle{font-size:13.5px;}
+    .tutGoal{font-size:10.5px;}
+    .tutRow button{font-size:11px;padding:5px 10px;}
     .skillBtn{width:64px;height:64px;bottom:24%;right:4%;}
     .skillBtn .skillIcon{width:28px;height:28px;}
 
@@ -281,6 +315,17 @@ window.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="skillBtn" id="skillBtn"><div class="cdRing" id="skillBtnCd"></div><div class="skillIcon skill-dash" id="skillBtnIcon"></div></div>
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · circle: skill</div>
+    <div class="tutCard hidden" id="tutCard">
+      <span class="tutStep" id="tutStep"></span>
+      <b class="tutTitle" id="tutTitle"></b>
+      <span class="tutBody" id="tutBody"></span>
+      <span class="tutGoal" id="tutGoal"></span>
+      <div class="tutRow">
+        <button id="tutSkipBtn">Skip step</button>
+        <button id="tutQuitBtn">Exit</button>
+        <button class="go hidden" id="tutGoBtn">Got it</button>
+      </div>
+    </div>
     <div class="tip" id="tooltip"></div>
 
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -337,6 +382,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <h1>Lane — POC v3</h1>
         <div id="buildTag" style="font:700 13px monospace;color:#7a6a4a;margin:-6px 0 8px">build v154</div>
         <p>3 heroes per side. Hero level and every stat run 1–26. Kills scatter XP orbs on the ground — nobody is handed experience, you have to go and pick it up, and the first hero to reach an orb keeps it. Spend the points in the strip above the HUD — hover or tap a stat or ability to see what it does. Your tank pushes the top lane and your support the bottom one on their own, advancing with their wave rather than ahead of it; drag a hero to a spot to detach him and post him there, and hit Assemble (or 0) to pull the squad back onto the hero you are controlling. Trees block movement and line of sight; your heroes, creeps and tower share one pool of vision. <b>Match:</b> two lanes fan out of one base per side and converge on the enemy base, with an outpost tower guarding each lane. Every 20 seconds each lane sends a wave — one big creep leading three smaller ones. Creeps chase whatever enemy comes close, so you can pull a wave off its lane — but only so far before it turns back. Three neutral camps sit in the woods between the lanes, soft and respawning 5 seconds after you clear them; the ground past the lanes is loose cover only. Neutral camps hide in the tree rings between the lanes and respawn, so they are worth circling back to. Your heroes auto-attack the nearest enemy on their own, holding back enough mana for a skill — aim and fire yourself for more. Destroy the enemy base to win.</p>
+        <p><b>Tutorial:</b> its own map &mdash; the same shape as a Match but bare: one river to wade, one treeline to walk around, one camp, and nothing else in the way. Eighteen steps, one thing each: walking, shooting, the blink, a fight for the orbs it drops, levels, your squad and the combination that needs two of them, then orders, the forest, the lanes and the towers. It ends by putting you straight into a real Match.</p>
         <p><b>Survival:</b> no enemy base and no enemy heroes — just your tower alone in the arena, with mobs closing in from every side in growing numbers. Your squad sticks together by default. Score is how long you last.</p>
         <p><b>Desktop:</b> 1/2/3 or Tab to switch hero, WASD move, mouse to aim, click to fire, space for skill.<br><b>Phone:</b> drag anywhere to move, tap where you want to shoot, tap the circle for your skill.</p>
         <p style="font-size:.92em;line-height:1.45"><b>Points decide it if no base falls.</b>
@@ -345,6 +391,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <div class="modeRow">
           <button id="startBtn">Match &middot; 5:00</button>
           <button id="startSurvBtn">Survival</button>
+          <button id="startTutBtn">Tutorial</button>
         </div>
       </div>
     </div>
@@ -438,6 +485,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const endScreen = document.getElementById('endScreen');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
+  const startTutBtn = document.getElementById('startTutBtn');
   const restartBtn = document.getElementById('restartBtn');
   const xpCountEl = document.getElementById('xpCount');
   const timerEl = document.getElementById('timer');
@@ -913,8 +961,29 @@ window.addEventListener('DOMContentLoaded', function(){
   const SURV_BASE_COUNT = 3;
   const SURV_CAMPS = 4;
   const SURV_OUTPOST = 470;       // how far the two side towers sit from the main
+  // ---------- the tutorial's own map ----------
+  // Purpose-built and deliberately bare: the lane skeleton a Match has, one
+  // river to wade, one wall of trees to walk around, one camp, and nothing
+  // else. Everything the early steps use sits in the middle corridor, out of
+  // reach of every tower — a practice creep sniped by your own base teaches the
+  // wrong lesson, and the shared map put one within reach.
+  let tutMap = false;
+  const TUT_START   = { x: 900, y: BASE_Y+50 };
+  // A route, not three scattered points: a plain walk, then the river, then the
+  // hedge. Roughly 2200 units all told, and each obstacle sits in the middle of
+  // its leg rather than at the end of it — crossing the water with the ring
+  // already under your feet teaches nothing about the water.
+  const TUT_ROUTE   = [ { x:1250, y:1700 }, { x:2200, y:2250 }, { x:2150, y:1600 } ];
+  const TUT_RIVER_X = 1520;                        // 680 of the second leg lies past it
+  const TUT_WALL    = { x: 2200, y: 1950 };        // lies across the third leg, 350 short of its ring
+  const TUT_CAMP    = { x: 2100, y: BASE_Y+520 };
+
   let assembleCd = 0;
   let assembleNag = 0;
+  // True while the squad is travelling as one. Assemble sets it; any individual
+  // order breaks it. It is what lets a switch of hero take the formation with
+  // it instead of leaving it behind.
+  let squadTogether = false;
 
   const playerTowerX = 90, enemyTowerX = WORLD_W-90;
   function makeTower(x,y,side,main){
@@ -937,6 +1006,16 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const [dx,dy] of SURV_DIRS)
         playerTowers.push(makeTower(cx+dx*SURV_OUTPOST, cy+dy*SURV_OUTPOST, 'player'));
       enemyTowers = [];
+    } else if(tutMap){
+      // The same shape as a Match — a base each side, outposts guarding each
+      // lane — with one outpost a lane instead of two. Eight buildings on the
+      // minimap is a wall; four is a map you can read while learning to read it.
+      playerTowers = [ makeTower(playerTowerX, BASE_Y, 'player', true) ];
+      enemyTowers  = [ makeTower(enemyTowerX,  BASE_Y, 'enemy',  true) ];
+      for(const ly of LANE_YS){
+        playerTowers.push(makeTower(WORLD_W*LANE_TOWER_T1, ly, 'player'));
+        enemyTowers.push( makeTower(WORLD_W*(1-LANE_TOWER_T1), ly, 'enemy'));
+      }
     } else {
       // Outposts sit a third of the way down each lane, so the two sides' ranges
       // never meet — there is a clear neutral stretch in the middle for waves to
@@ -1057,7 +1136,9 @@ window.addEventListener('DOMContentLoaded', function(){
       if(h===anchor){ h.mode='idle'; h.followTarget=null; }
       else { h.mode='follow'; h.followTarget=anchor; }
     }
+    squadTogether = true;
     addFloater(anchor.x, anchor.y-anchor.r-52, 'ASSEMBLE', '#5AC8E8', true);
+    if(tut.on) tutNote('assemble');
   }
   function setLanePath(h){
     h.lpath = lanePath(h.laneIdx % LANE_YS.length, h.side);
@@ -1406,7 +1487,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // camps and loose orbs use a much deeper line; only advancing on you doesn't.
   const EARLY_FARM_X = 1150;
   function inEarlyPeace(){
-    return gameMode !== 'survival' && (ROUND_TIME - timeLeft) < EARLY_PEACE;
+    return gameMode !== 'survival' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_PEACE;
   }
   function leashBlocked(h, x){
     return h.side === 'enemy' && inEarlyPeace() && x < EARLY_LEASH_X;
@@ -1430,7 +1511,7 @@ window.addEventListener('DOMContentLoaded', function(){
     return !!(c && c.level >= ENDGAME_LEVEL);
   }
   function isEarlyGame(){
-    return gameMode !== 'survival' && (ROUND_TIME - timeLeft) < EARLY_GAME;
+    return gameMode !== 'survival' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_GAME;
   }
 
   // ---- collapse on fights ----
@@ -1949,6 +2030,14 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function generateWater(){
     lakes = []; rivers = [];
+    if(tutMap){
+      // One river, straight across the practice ground, stopping well short of
+      // both lanes so no wave ever has to ford it. Step one walks you through
+      // it on purpose: shallow water is a thing you should meet while nothing
+      // is chasing you.
+      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 12, 55);
+      return;
+    }
     if(gameMode==='survival'){
       // Lakes only, one per diagonal wedge. Four roads have to stay symmetric —
       // a river would ford one of them and slow that lane alone.
@@ -1986,6 +2075,18 @@ window.addEventListener('DOMContentLoaded', function(){
   function generateForest(){
     trees = []; camps = [];
     generateWater();
+    if(tutMap){
+      // A hedge you have to walk around rather than through: the gaps between
+      // these are narrower than a hero, which is the whole lesson.
+      for(let i=0;i<9;i++){
+        const t = makeTree(TUT_WALL.x - 176 + i*44, TUT_WALL.y + rand(-16,16));
+        t.r = TREE_MAX_R;
+        trees.push(t);
+      }
+      camps.push({ x:TUT_CAMP.x, y:TUT_CAMP.y, alive:0, timer:0 });
+      buildCampRings();     // its ring of trees, and nothing else on the map
+      return;
+    }
     if(gameMode==='survival'){
       // A ring of camps around the arena, so every direction has something worth
       // farming between waves and the tower clearing stays open.
@@ -2034,7 +2135,41 @@ window.addEventListener('DOMContentLoaded', function(){
       if(placed) camps.push(placed);
     }
     buildCampRings();
+    scatterClumps();
     scatterTrees();
+  }
+  // A few short lines of trees out in the corridor. Not the tutorial's hedge —
+  // three or four trunks with gaps narrower than a hero, so a chase or a retreat
+  // through the middle becomes a choice of side rather than a straight line.
+  // They stay well off the lanes: in Match mode creeps do not collide with
+  // anything, so a clump near a road is a clump creeps walk through.
+  const CLUMP_COUNT = 6, CLUMP_MIN = 3, CLUMP_MAX = 4, CLUMP_GAP = 46;
+  function scatterClumps(){
+    for(let i=0;i<CLUMP_COUNT;i++){
+      const n = CLUMP_MIN + Math.floor(Math.random()*(CLUMP_MAX-CLUMP_MIN+1));
+      const half = (n-1)/2;
+      for(let att=0; att<140; att++){
+        const cx = rand(WORLD_W*0.30, WORLD_W*0.70);
+        const cy = rand(BASE_Y-CAMP_BAND, BASE_Y+CAMP_BAND);
+        const a = rand(0, Math.PI);
+        const ux = Math.cos(a), uy = Math.sin(a);
+        let ok = true;
+        for(let k=0;k<n && ok;k++){
+          const x = cx + ux*(k-half)*CLUMP_GAP, y = cy + uy*(k-half)*CLUMP_GAP;
+          // Clear of every tower's reach, not merely clear of the building. A
+          // clump just inside the circle deflects a hero's path around it and
+          // straight into the guns: with a 300 keep-out the enemy team started
+          // dying to towers half again as often as before.
+          if(onRoadway(x, y, 120) || nearWater(x, y, 40) || nearAnyTower(x, y, TOWER_RANGE+120)){ ok = false; break; }
+          for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R+110){ ok = false; break; } }
+          if(ok) for(const t of trees){ if(dist(x,y,t.x,t.y) < 120){ ok = false; break; } }
+        }
+        if(!ok) continue;
+        for(let k=0;k<n;k++)
+          trees.push(makeTree(cx + ux*(k-half)*CLUMP_GAP, cy + uy*(k-half)*CLUMP_GAP));
+        break;
+      }
+    }
   }
   function buildCampRings(){
     // Paint the ground inside a camp a road-like brown first, so the jungle
@@ -2640,6 +2775,7 @@ window.addEventListener('DOMContentLoaded', function(){
     recomputeStats(h);
     if(key==='maxHp') h.hp = Math.min(h.maxHp, h.hp + (h.stats.maxHp-beforeHp));
     else if(key==='maxMana') h.mana = Math.min(h.maxMana, h.mana + (h.stats.maxMana-beforeMp));
+    if(tut.on && h.side==='player') tutNote('stat');
   }
 
   // ---------- tooltips ----------
@@ -3667,6 +3803,7 @@ window.addEventListener('DOMContentLoaded', function(){
   window.addEventListener('keydown', e=>{
     keys[e.key.toLowerCase()]=true;
     if(e.key===' ') e.preventDefault();
+    if(e.key.startsWith('Arrow')) e.preventDefault();   // they steer the hero; they must not scroll the page
     if(e.key==='Tab'){
       e.preventDefault();
       if(state==='playing') cyclePlayer(e.shiftKey ? -1 : 1);
@@ -3763,6 +3900,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!h || !h.alive) return;
     h.mode = 'lane'; h.laneIdx = laneIdx % LANE_YS.length; setLanePath(h);
     h.moveTarget = null; h.followTarget = null; h.standX = null; h.standY = null;
+    squadTogether = false;
+    if(tut.on) tutNote('lane');
     addFloater(h.x, h.y - h.r - 46, laneIdx===0 ? 'TOP LANE' : 'BOTTOM LANE', '#8FD6FF', true);
     if(h === playerTeam[activePlayerIdx]){
       for(let step=1; step<playerTeam.length; step++){
@@ -3771,6 +3910,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function soloOrder(h, wx, wy){
+    if(tut.on) tutNote('solo', wx, wy);
+    squadTogether = false;
     h.mode='moveto'; h.moveTarget={x:wx,y:wy}; h.followTarget=null;
     h.standX=null; h.standY=null;
     addFloater(wx, wy-10, 'MOVE', '#E8A44A', false);
@@ -3785,6 +3926,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function groupOrder(wx, wy){
+    squadTogether = false;      // you have just posted the formation yourself
     let clicked=null, bd=Infinity;
     for(const h of playerTeam.concat(enemyTeam)){
       if(!h.alive) continue;
@@ -3815,6 +3957,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
   const JOY_MAX_RADIUS = 55;
   let moveTouch = null; // {id, baseX, baseY, dx, dy}
+  let scoutTouch = null;    // the finger holding the minimap, if any
   let touchMoveVec = { x:0, y:0 };
   let touchShotAt = null;   // world point queued by a tap
   let pendingTouch = {};    // presses not yet resolved into a drag or a tap
@@ -3848,6 +3991,18 @@ window.addEventListener('DOMContentLoaded', function(){
         touchSkillTap = true;
         continue;
       }
+      // Holding the minimap looks somewhere else, exactly as it does under a
+      // mouse. There was no touch path for it at all: the press fell through to
+      // the undecided bucket below and turned into the movement joystick the
+      // moment the finger travelled, so on a phone the minimap could only be
+      // walked at. It is drawn over everything, so it is tested first.
+      const ctm = toCanvasCoords(t.clientX, t.clientY);
+      if(scoutTouch === null && overMinimap(ctm.x, ctm.y)){
+        scoutTouch = t.identifier;
+        scout = minimapToWorld(ctm.x, ctm.y);
+        camSnap = 0.35;
+        continue;
+      }
       const wpt = toWorld(t.clientX, t.clientY);
       // Skip the hero you are driving: your heroes travel as a group and sit
       // mid-screen, so grabbing him here stole the movement joystick and then
@@ -3874,6 +4029,12 @@ window.addEventListener('DOMContentLoaded', function(){
     const r = stageEl.getBoundingClientRect();
     let handled = false;
     for(const t of e.changedTouches){
+      if(scoutTouch === t.identifier){
+        const ct = toCanvasCoords(t.clientX, t.clientY);
+        scout = minimapToWorld(ct.x, ct.y);      // keep panning while it is held
+        handled = true;
+        continue;
+      }
       if(orderDrag && orderDrag.id===t.identifier){
         const w = toWorld(t.clientX, t.clientY);
         const ct = toCanvasCoords(t.clientX, t.clientY);
@@ -3908,6 +4069,11 @@ window.addEventListener('DOMContentLoaded', function(){
   function onTouchEnd(e){
     let handled = false;
     for(const t of e.changedTouches){
+      if(scoutTouch === t.identifier){
+        scoutTouch = null; scout = null; camSnap = 0.45;   // let go: snap back to your hero
+        handled = true;
+        continue;
+      }
       if(orderDrag && orderDrag.id===t.identifier){
         const lane = minimapLane(orderDrag.sx, orderDrag.sy);
         if(lane !== null) laneOrder(orderDrag.hero, lane);
@@ -4186,7 +4352,10 @@ window.addEventListener('DOMContentLoaded', function(){
     addBurst(h.x,h.y,'#5AC8E8',10);
     // Cooldown is set above, so a kill during the sweep simply clears it. Mana is
     // not refunded, so a chain is limited by the bar rather than being free.
-    if(applyDashDamage(h, fromX, fromY, tx, ty)){
+    tut.dashWindow = true;                       // so a kill in this sweep is known to be the blink's
+    const dashKilled = applyDashDamage(h, fromX, fromY, tx, ty);
+    tut.dashWindow = false;
+    if(dashKilled){
       h.skillCd = 0;   // still resets; the ping and sparkles say so without a caption
       addPing(h.x, h.y, '#8FE3FF', 12, 44, 0.35);
       spawnSparkles(h.x, h.y, 14, '#CFF3FF', 0.7);
@@ -4368,6 +4537,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // Neutrals hold their clearing. They aggro anyone of either team who walks
   // in, chase only as far as the leash, then walk home and heal up.
   function updateNeutrals(dt){
+    if(tut.on && tut.holdCamps) return;      // the jungle is empty until step 11 stocks it
     // Recount from the live list every frame rather than trusting a tally that
     // has to be decremented from every death path — a camp that lost count
     // could never respawn again.
@@ -4385,6 +4555,10 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const h of enemyTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
       const homeD = dist(n.x,n.y,n.camp.x,n.camp.y);
       if(n.atkCd>0) n.atkCd -= dt;
+      // A stunned mob is frozen: it does not chase, it does not swing, and it
+      // does not wander home either. This check was missing entirely, so the
+      // rocket's stun mark appeared over forest mobs that carried on as normal.
+      if(isStunned(n)){ resolveSolidCollision(n); continue; }
       if(target && homeD < NEUTRAL_LEASH){
         const d = dist(n.x,n.y,target.x,target.y);
         if(d > n.r+target.r+4){
@@ -4657,6 +4831,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // A kill's XP is no longer handed out — it is scattered on the ground as orbs
   // split from the kill's total, and whoever reaches them banks it.
   function spawnKillDrops(x,y,mult,isCrit,xpTotal){
+    // Nothing a kill was carrying falls out until the step that explains it.
+    // The first two kills would otherwise litter the ground with orbs the
+    // player has been told nothing about, and half of them would be gone by
+    // the time anything mentions them.
+    if(tut.on && tut.holdDrops) return;
     // Orb count follows the kill's value instead of a random 1-3 per drop, so a
     // small creep leaves a single orb and only real kills litter the ground.
     const total = Math.max(1, Math.round(xpTotal * (isCrit ? XP_CRIT_BONUS : 1)));
@@ -4697,6 +4876,7 @@ window.addEventListener('DOMContentLoaded', function(){
     return dd < PICKUP_COLLECT_RADIUS ? h : null;
   }
   function collectXpOrb(o, h){
+    if(tut.on && h.side==='player') tutNote('orb');
     addTally(h, 'xp', o.value, ' XP', '#FFD54F', 0);
     addBurst(o.x,o.y,'#FFD54F',12);
     addPing(h.x, h.y-h.r*0.35, '#FFE28A', 5, 30, 0.28);
@@ -4715,7 +4895,9 @@ window.addEventListener('DOMContentLoaded', function(){
   function updateXpOrbs(dt){
     for(let i=xpOrbs.length-1;i>=0;i--){
       const o = xpOrbs[i];
-      if(o.ttl !== undefined){
+      // Nothing rots while you are being taught. A step that asks you to pick
+      // orbs up should not fail because you read the card twice.
+      if(o.ttl !== undefined && !tut.on){
         o.ttl -= dt;
         if(o.ttl <= 0){ xpOrbs.splice(i,1); continue; }
       }
@@ -4724,6 +4906,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function collectMana(m, h){
+    if(tut.on && h.side==='player') tutNote('mana');
     addTally(h, 'mp', m.value, ' MP', '#7FB8F2', 54);
     addBurst(m.x,m.y,'#8fc4f2',12);
     addPing(h.x, h.y-h.r*0.35, '#9FD4FF', 5, 30, 0.28);
@@ -4739,7 +4922,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function updateManaOrbs(dt){
     for(let i=manaOrbs.length-1;i>=0;i--){
       const m = manaOrbs[i];
-      if(m.ttl !== undefined){
+      if(m.ttl !== undefined && !tut.on){
         m.ttl -= dt;
         if(m.ttl <= 0){ manaOrbs.splice(i,1); continue; }
       }
@@ -4827,6 +5010,19 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     activePlayerIdx = i;
+    // An assembled squad stays with whoever you are driving. It used to keep
+    // following the hero you just left — who is now standing still under AI
+    // control — so switching heroes quietly stranded the other two behind you.
+    if(squadTogether){
+      const anchor = playerTeam[i];
+      for(const o of playerTeam){
+        if(!o.alive) continue;
+        o.moveTarget = null; o.standX = null; o.standY = null;
+        if(o === anchor){ o.mode = 'idle'; o.followTarget = null; }
+        else { o.mode = 'follow'; o.followTarget = anchor; }
+      }
+    }
+    if(tut.on) tutNote('switch', playerTeam[i].type);
     if(typeof updatePartyUI === 'function' && state === 'playing') updatePartyUI();
     return true;
   }
@@ -4852,6 +5048,14 @@ window.addEventListener('DOMContentLoaded', function(){
       timerEl.textContent = fmtTime(timeLeft);
       spawnTimer -= dt;
       if(spawnTimer<=0){ survivalWave(); spawnTimer = survGap(); }
+    } else if(tut.on){
+      // The tutorial is a Match with the clock and the waves held back. The
+      // phase that teaches waves releases them; the handover releases the rest.
+      timerEl.textContent = fmtTime(timeLeft);
+      if(!tut.holdWaves){
+        spawnTimer -= dt;
+        if(spawnTimer<=0){ spawnWave(); spawnTimer=WAVE_INTERVAL; }
+      }
     } else {
       timeLeft -= dt;
       if(timeLeft<=0){ timeLeft=0; endRound('timeout'); return; }
@@ -4868,7 +5072,8 @@ window.addEventListener('DOMContentLoaded', function(){
     updateAssist();
     updateEnemyMacro(dt);
     applyEnemyMacro();
-    if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
+    if(tut.on && tut.spar) tutSparAI(dt);
+    else if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
     else { aiTrySkill(enemyTeam[0], dt); lanePush(enemyTeam[0], dt); tryAutoAttack(enemyTeam[0]); }
     updateIdleAI(playerTeam, activePlayerIdx, enemyTeam, enemyCreeps, dt, true);
     updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
@@ -4935,6 +5140,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateClouds(dt);
     if(shake>0) shake=Math.max(0,shake-dt*4);
     if(assembleCd>0) assembleCd=Math.max(0,assembleCd-dt);
+    tutUpdate(dt);
 
     checkRoundEnd();
   }
@@ -5000,8 +5206,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if(moveTouch || touchMoveVec.x || touchMoveVec.y){
       dx = touchMoveVec.x; dy = touchMoveVec.y;
     } else {
-      if(keys['w']) dy-=1; if(keys['s']) dy+=1;
-      if(keys['a']) dx-=1; if(keys['d']) dx+=1;
+      if(keys['w'] || keys['arrowup']) dy-=1; if(keys['s'] || keys['arrowdown']) dy+=1;
+      if(keys['a'] || keys['arrowleft']) dx-=1; if(keys['d'] || keys['arrowright']) dx+=1;
     }
 
     // Aim point. On touch the stick only aims while it is held down; with no
@@ -5029,14 +5235,19 @@ window.addEventListener('DOMContentLoaded', function(){
         if(touchShotAt.age > TAP_BUFFER) touchShotAt = null;   // give up eventually
       }
     }
-    tryAutoAttack(h);   // only fills gaps when you are not shooting yourself
+    // The two shooting steps switch this off: their whole point is that the
+    // shot is yours.
+    if(!(tut.on && tut.noAuto)) tryAutoAttack(h);   // only fills gaps when you are not shooting yourself
 
     const skillRequested = keys[' '] || touchSkillTap;
     touchSkillTap = false;
 
     if(h.dashing) return;
 
-    if(skillRequested && h.skillCd<=0 && h.mana>=s.skillManaCost) useSkill(h,dx,dy,wmx,wmy);
+    if(skillRequested && h.skillCd<=0 && h.mana>=s.skillManaCost){
+      useSkill(h,dx,dy,wmx,wmy);
+      if(tut.on) tutNote('skill', h.type);
+    }
     const len=Math.sqrt(dx*dx+dy*dy)||1;
     const spd = heroSpeed(h);
     const tvx=(dx/len)*spd, tvy=(dy/len)*spd;
@@ -5765,9 +5976,9 @@ window.addEventListener('DOMContentLoaded', function(){
       const tgt = strayed ? null : creepTarget(c, side);
       if(tgt){
         const td = dist(c.x,c.y,tgt.x,tgt.y);
-        if(td > c.r + tgt.r + 4){
+        if(td > c.r + tgt.r + 4 && !isStunned(c)){
           const cs = CREEP_SPEED*(inRiver(c.x,c.y)?WATER_SLOW:1)*dt;
-          if(!isStunned(c)) c.x += (tgt.x-c.x)/td*cs;
+          c.x += (tgt.x-c.x)/td*cs;
           c.y += (tgt.y-c.y)/td*cs;
         }
         continue;
@@ -5799,6 +6010,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     for(const a of allyCreeps){
       if(!a.engaged){ a._t=0; continue; }
+      if(isStunned(a)) continue;
       a._t = (a._t||0) - dt;
       if(a._t<=0){
         a._t=0.7;
@@ -5839,6 +6051,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       if(!target) continue;
       c.engaged = true;
+      if(isStunned(c)) continue;
       c._ht = (c._ht||0) - dt;
       if(c._ht<=0){ c._ht = CREEP_ATTACK_INTERVAL; creepHitHero(c, target); }
     }
@@ -5854,6 +6067,7 @@ window.addEventListener('DOMContentLoaded', function(){
         if(t.hp<=0) continue;
         if(dist(c.x,c.y,t.x,t.y) < c.r+t.r+6){
           c.engaged=true;
+          if(isStunned(c)) break;
           c._tt=(c._tt||0)-dt;
           if(c._tt<=0){
             c._tt=0.7;
@@ -6060,6 +6274,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Only a hero's rocket stuns; a tower shell does not, or a lane would be
     // unplayable. Everything caught in the blast is frozen for STUN_TIME.
     if(attackerHero){
+      if(tut.on) tutNote('blast', { x, y, r:R, by:attackerHero });
       for(const list of [oppCreeps, neutralCreeps])
         for(const c of list) if(c.hp>0 && dist(x,y,c.x,c.y)<=R) applyStun(c, STUN_TIME);
       for(const oh of oppTeam)
@@ -6095,6 +6310,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // last-hit counter and the screen shake still care that it was your hero.
   function killCreep(creep, list, idx, side, isCrit, attackerHero){
     if(side==='player' && attackerHero) lastHits+=1;
+    if(tut.on) tutNote('kill', attackerHero, tut.dashWindow);
     // `side` is the killer's side. Forest mobs pay either team; lane creeps pay
     // whoever killed them, and a big one is worth more.
     addScore(side, creep.neutral ? PTS.forest : (creep.big ? PTS.bigCreep : PTS.creep), creep.x, creep.y);
@@ -6106,6 +6322,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function applyHeroHit(target, side, dirX, dirY, dmgBase, attackerHero){
+    if(tut.on) tutNote('heroHit', target, attackerHero);
     target.combatT = 0;
     if(attackerHero) attackerHero.combatT = 0;
     let dmg=dmgBase*rand(1-DMG_VARIANCE,1+DMG_VARIANCE);
@@ -6141,6 +6358,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const wasUp = tower.hp > 0;
     tower.hp=Math.max(0,tower.hp-dmg);
     if(wasUp && tower.hp<=0) addScore(tower.side==='player' ? 'enemy' : 'player', PTS.tower, tower.x, tower.y);
+    if(tut.on) tutNote('towerHit', tower);
     tower.noHitT = 0;
     tower.flash=0.18;
     addFloater(tower.x, tower.y-tower.r-10, String(dmg), dmgColor(tower.side==='player', isCrit), isCrit, false, isCrit);
@@ -6804,10 +7022,14 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
     drawBirds();          // sky layer: over the fog, not subject to vision
     drawClouds();         // higher still: passes over heroes, towers, everything
+    // Above the fog on purpose: a tutorial mark is what you are being sent to
+    // find, so it must not be hidden by the fact that you have not found it.
+    drawTutorialMarks();
     ctx.restore();
     drawVignetteOverlay();
     drawHurtOverlay();
     drawMinimap();
+    drawTutorialMini();
     drawHudSparks();
     drawReticle();
 
@@ -6859,14 +7081,823 @@ window.addEventListener('DOMContentLoaded', function(){
     h.lpath=null; h.lwp=1;
   }
 
+
+  // ---------- tutorial ----------
+  // The tutorial is a Match with three things switched off — wave spawning, the
+  // enemy team and the clock — and each phase turns one more piece of the game
+  // back on. The last phase switches the tutorial itself off, so the round you
+  // are standing in becomes a real match: one map, no reload, no handover screen.
+  //
+  // Nothing in here runs unless tut.on, which is why every hook in the game code
+  // above is a single guarded line and the headless sim never enters any of it.
+  const tut = {
+    on:false, i:-1, t:0, p:null, ready:0, ack:false,
+    holdWaves:true, noAuto:false, spar:false, sparCd:0,
+    // The jungle stays empty until the step that sends you into it, and every
+    // early step keeps west of it. Walking into a camp you were never told
+    // about is the one surprise the opening cannot afford.
+    holdCamps:true, arena:true, holdDrops:true,
+    dashWindow:false,          // true only while a blink's damage sweep resolves
+    rings:[], mark:null, watch:[], nudge:'', nudgeT:0, hl:null, _goal:null, _hit:null
+  };
+
+  const tutCardEl  = document.getElementById('tutCard');
+  const tutStepEl  = document.getElementById('tutStep');
+  const tutTitleEl = document.getElementById('tutTitle');
+  const tutBodyEl  = document.getElementById('tutBody');
+  const tutGoalEl  = document.getElementById('tutGoal');
+  const tutGoBtn   = document.getElementById('tutGoBtn');
+  const tutSkipBtn = document.getElementById('tutSkipBtn');
+  const tutQuitBtn = document.getElementById('tutQuitBtn');
+
+  // Which half of the copy to show. isTouchDevice is the guess made at load;
+  // usedTouch is the fact, set the first time a finger lands. A phone that was
+  // not detected as one therefore corrects itself on the player's first touch.
+  function tutTouch(){ return isTouchDevice || usedTouch; }
+  function tutPick(desk, phone){ return tutTouch() ? phone : desk; }
+  function tutHero(){ return playerTeam[activePlayerIdx]; }
+
+  // Drives the enemy carry for the step that introduces him, in place of his
+  // real AI: close to arm's length, hold there, and fire on a slow count.
+  function tutSparAI(dt){
+    const e = enemyTeam[0], h = tutHero();
+    if(!e || !e.alive) return;
+    if(!h || !h.alive) return;
+    const d = dist(e.x, e.y, h.x, h.y);
+    if(d > TUT_SPAR_HOLD) moveHeroToward(e, h.x, h.y, heroSpeed(e)*0.7, dt);
+    else if(d < TUT_SPAR_HOLD*0.65) moveHeroToward(e, e.x*2-h.x, e.y*2-h.y, heroSpeed(e)*0.5, dt);
+    e.facing = Math.atan2(h.y-e.y, h.x-e.x);
+    tut.sparCd -= dt;
+    if(tut.sparCd <= 0 && d < attackRange(e) && e.mana >= HERO_STATS[e.type].basicManaCost){
+      tut.sparCd = TUT_SPAR_RATE;
+      fireBasic(e, h.x, h.y, false, 1);
+    }
+  }
+
+  // The box the practice ground stays inside. Every step places its target
+  // relative to where you are standing and the show angle points up and to the
+  // right, so without a bound the ground ratchets north-east: x was capped but
+  // y was not, and five steps of -0.41 per radius climbs some 780 units — from
+  // the corridor up to the top lane, where the enemy's outpost is. The band
+  // keeps it in the corridor and off both lane roads.
+  const TUT_ARENA_X = 2400;
+  const TUT_ARENA_Y = 620;          // either side of BASE_Y
+  // And a wide berth from THEIR buildings. Only the enemy's matter: your own
+  // never shoot you, and a tower only ever targets the other side's creeps, so
+  // it ignores a forest mob standing under it. Checking every building instead
+  // fenced the tutorial out of the ground beside its own base for no reason.
+  // The margin is generous because it is protecting the player, who walks to
+  // the target and then mills around it.
+  const TUT_TOWER_KEEP = TOWER_RANGE + 260;
+  function tutNearFoeTower(x, y, pad){
+    for(const t of enemyTowers){ if(t.hp > 0 && dist(x, y, t.x, t.y) < pad) return true; }
+    return false;
+  }
+
+  // Somewhere clear to put a target or a waypoint: inside the world, out of the
+  // water, not inside a tree, and — while tut.arena holds — out of the jungle
+  // and away from every camp. The relaxed spot is kept as a fallback so a
+  // cramped map degrades to "somewhere legal" rather than to nothing.
+  // a0 is a preference, not a starting point for a lap: the search fans out
+  // either side of it, so a blocked heading yields the nearest clear one rather
+  // than something most of the way around the circle. That is what keeps a
+  // target in the direction the step meant to put it.
+  function tutOpenSpot(cx, cy, radius, a0){
+    let relaxed = null;
+    for(let i=0;i<24;i++){
+      const a = (a0||0) + Math.ceil(i/2)*(i%2 ? 1 : -1)*(Math.PI*2/24);
+      const x = Math.min(WORLD_W-140, Math.max(140, cx + Math.cos(a)*radius));
+      const y = Math.min(WORLD_H-140, Math.max(140, cy + Math.sin(a)*radius));
+      if(nearWater(x, y, 60)) continue;
+      let blocked = false;
+      for(const t of trees){ if(dist(x,y,t.x,t.y) < t.r + 44){ blocked = true; break; } }
+      if(blocked) continue;
+      // Never inside a building's reach. A tower kills a practice creep in four
+      // shots, and being shot while learning to walk teaches nothing at all.
+      // This is checked BEFORE the fallback is recorded: the fallback used to be
+      // captured first, so on a cramped search the one rule that must never bend
+      // was the first one to go.
+      if(tutNearFoeTower(x, y, TUT_TOWER_KEEP)) continue;
+      if(!relaxed) relaxed = { x, y };
+      if(tut.arena){
+        if(x > TUT_ARENA_X) continue;
+        if(Math.abs(y - BASE_Y) > TUT_ARENA_Y) continue;
+        let inCamp = false;
+        for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R + 160){ inCamp = true; break; } }
+        if(inCamp) continue;
+      }
+      return { x, y };
+    }
+    if(relaxed) return relaxed;
+    // Nothing legal at this radius. Walk back toward the middle of the corridor
+    // rather than returning a point next to a building.
+    for(const step of [0.7, 0.45, 0.2]){
+      const x = Math.min(WORLD_W-140, Math.max(140, cx + Math.cos(a0||0)*radius*step));
+      const y = Math.min(WORLD_H-140, Math.max(140, cy + Math.sin(a0||0)*radius*step));
+      if(!tutNearFoeTower(x, y, TUT_TOWER_KEEP)) return { x, y };
+    }
+    return { x:cx, y:cy };
+  }
+
+  // Up and to the right. The card occupies the bottom of the screen, so a
+  // target placed below you is the one place it can be on screen and still be
+  // invisible — and the camera clamps at the world's west edge, which puts your
+  // hero left of centre with the room to the east.
+  const TUT_SHOW_ANGLE = -0.42;
+  const TUT_PACK = 5;               // mobs in the pack the drops step asks you to clear
+  const TUT_COMBO_PACK = 4;         // and in the huddle the stun step asks you to catch
+  // Tough enough that the rocket cannot finish them on its own — a stun with
+  // nothing left to kill afterwards teaches half the combination.
+  const TUT_COMBO_HP = 200;
+  // Half the blast radius, so the far side of the huddle is inside a blast
+  // centred on the near side — a rocket that touches one touches all of them.
+  const TUT_COMBO_R = ROCKET_SPLASH_RADIUS * 0.38;
+  // The sparring pass. He walks into view, holds at arm's length and plinks —
+  // one shot every couple of seconds instead of five a second — because the
+  // step is for meeting an enemy hero, not for losing to one. Their outposts
+  // are the far side of the map and a real carry fights from under them.
+  const TUT_SPAR_HOLD = 330;
+  const TUT_SPAR_RATE = 2.0;
+  const TUT_SPAR_HP = 900;
+  // The walk is authored on the tutorial's own map, so the rings are places
+  // rather than offsets: one plain leg, one across the river, one around the
+  // treeline.
+  function tutRouteRing(i){
+    const p = TUT_ROUTE[i];
+    return { x:p.x, y:p.y, r:72, hit:false };
+  }
+
+  // A forest mob, not a lane creep. 70 health against a lane creep's 320, so a
+  // blink — 150 at level one — kills one outright, which is the thing step 3 is
+  // trying to show. Its camp is a detached object that is not in `camps`, so
+  // nothing ever respawns it and no camp count is disturbed.
+  function tutSpawnCreep(x, y, hp){
+    const home = { x, y, alive:0, timer:Infinity, count:0 };
+    const HP = hp || NEUTRAL_HP;
+    const c = { x, y, hp:HP, maxHp:HP, flash:0, engaged:false,
+      r:NEUTRAL_R, dmg:NEUTRAL_DMG, big:false, neutral:true, camp:home, xp:NEUTRAL_XP,
+      atkCd:rand(0,0.5), kx:0, ky:0, kt:0, hitT:0, hpLag:1, levelGlow:0, glowCol:null,
+      animDist:0, apx:x, apy:y, moving:0, face:-1 };
+    neutralCreeps.push(c);
+    addPing(x, y, '#E8595A', 12, 64, 0.55);
+    return c;
+  }
+  function tutAlive(c){ return neutralCreeps.indexOf(c) >= 0; }
+
+  // Every phase reports progress through here rather than reaching into the
+  // game's own state. One switch, one scratch object per phase.
+  function tutNote(kind, a, b){
+    if(!tut.on || !tut.p) return;
+    const p = tut.p;
+    if(kind==='kill'){
+      if(b) p.dashKill = true;
+      if(a && a.side==='player' && a.type==='carry' && a === playerTeam[activePlayerIdx])
+        p.carryKills = (p.carryKills||0) + 1;
+    }
+    else if(kind==='blast'){
+      // How many of the step's pack that rocket actually caught. The best one
+      // counts, so a poor first throw is not held against you.
+      if(!p.pack || !a || !a.by || a.by.type !== 'tank') return;
+      let n = 0;
+      for(const c of p.pack) if(tutAlive(c) && dist(a.x, a.y, c.x, c.y) <= a.r) n++;
+      p.stunned = Math.max(p.stunned || 0, n);
+    }
+    else if(kind==='orb')  p.orbs = (p.orbs||0) + 1;
+    else if(kind==='mana') p.mana = (p.mana||0) + 1;
+    else if(kind==='stat') p.stat = true;
+    else if(kind==='switch'){ (p.seen || (p.seen = {}))[a] = true; }
+    else if(kind==='skill'){ (p.cast || (p.cast = {}))[a] = true; }
+    else if(kind==='solo') p.solo = true;
+    else if(kind==='lane') p.lane = true;
+    else if(kind==='assemble') p.assemble = true;
+    else if(kind==='towerHit'){ if(a && a.side==='enemy') p.towerHit = true; }
+    else if(kind==='heroHit'){
+      if(a && a.side==='enemy' && b && b === playerTeam[activePlayerIdx]) p.heroHit = true;
+    }
+  }
+
+  const TUT_PHASES = [
+  {
+    title:'Walking',
+    // One ring at a time, and the copy changes with the leg — the ground is
+    // teaching as much as the text is.
+    text(){
+      const i = tut.p.done || 0;
+      if(i === 1) return 'The water is <b>shallow</b>. Wade straight through &mdash; it slows you while you are in it and that is all it does. The next ring is on the far bank.';
+      if(i === 2) return 'Trees are <b>solid</b>. They stop you, they stop your shots, and they block what you can see &mdash; both ways. <b>Go around</b>.';
+      return tutPick(
+        '<k>W A S D</k> or the arrow keys to walk. Your hero always faces the mouse, so you can back away from something and still be aiming at it.',
+        '<k>Drag anywhere</k> on the screen &mdash; a stick appears under your thumb and your hero walks that way.');
+    },
+    goal:()=>'Follow the arrow into the rings — '+(tut.p.done||0)+' / '+TUT_ROUTE.length,
+    enter(){
+      tut.p.done = 0;
+      tut.rings = [ tutRouteRing(0) ];
+    },
+    tick(){
+      const h = tutHero(), r = tut.rings[0];
+      if(r && !r.hit && dist(h.x,h.y,r.x,r.y) < r.r){
+        r.hit = true;
+        addPing(r.x, r.y, '#8CE39B', 20, 84, 0.5);
+        tut.p.done++;
+        tut.rings = tut.p.done < TUT_ROUTE.length ? [ tutRouteRing(tut.p.done) ] : [];
+        tutPaint();                      // the card says something new each leg
+      }
+    },
+    done:()=>(tut.p.done||0) >= TUT_ROUTE.length,
+    hold:0.6
+  },
+  {
+    title:'Shooting',
+    text:()=>tutPick(
+      'A forest mob has wandered out. Aim with the mouse and <k>hold left click</k> to fire. Nothing is shooting it for you here &mdash; a shot goes exactly where you point it, and your range is how far it carries.',
+      'A forest mob has wandered out. <k>Tap</k> where you want to shoot. Nothing is shooting it for you here &mdash; a shot goes exactly where you tap, and your range is how far it carries.'),
+    goal:()=>'Kill the forest mob',
+    enter(){
+      // Out past your own reach, so you have to close on it, and with the
+      // auto-assist off, so the kill is yours. Left to itself the assist kills a
+      // creep in about seven seconds, which is the whole lesson done for you.
+      tut.noAuto = true;
+      const h = tutHero(), s = tutOpenSpot(h.x, h.y, 330, TUT_SHOW_ANGLE);
+      tut.watch = [ tutSpawnCreep(s.x, s.y) ];
+    },
+    done:()=>tut.watch.length>0 && !tutAlive(tut.watch[0])
+  },
+  {
+    title:'The blink',
+    text:()=>tutPick(
+      '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. Anything that dies as you pass refunds the cooldown instantly.',
+      'The <k>circle button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. Anything that dies as you pass refunds the cooldown instantly.'),
+    goal:()=>'Kill this one with the blink alone',
+    enter(){
+      tut.noAuto = true;
+      tut.p.spawn = ()=>{
+        const h = tutHero(), s = tutOpenSpot(h.x, h.y, 470, TUT_SHOW_ANGLE);
+        tut.watch = [ tutSpawnCreep(s.x, s.y) ];
+      };
+      tut.p.spawn();
+    },
+    tick(){
+      const c = tut.watch[0];
+      // Shot it the ordinary way. That is not wrong, it is just not this phase,
+      // so it gets another one and a nudge rather than a refusal.
+      if(c && !tutAlive(c) && !tut.p.dashKill){
+        tut.p.spawn();
+        tut.nudge = 'That works &mdash; but blink <b>through</b> the next one.';
+        tut.nudgeT = 3.5;
+        tutPaint();
+      }
+    },
+    done:()=>!!tut.p.dashKill
+  },
+  {
+    title:'Experience and mana',
+    text:()=>'A kill leaves behind what it was carrying: gold <b>experience orbs</b> and blue <b>mana orbs</b>. Nobody is handed either &mdash; you walk over them, and the first hero to reach one keeps it. Clear these five and collect what they leave.',
+    goal(){
+      const left = tut.p.pack ? tut.p.pack.filter(tutAlive).length : 0;
+      if(left > 0) return 'Clear the mobs — '+(TUT_PACK-left)+' / '+TUT_PACK;
+      return 'Pick up the drops — '+Math.min(5,tut.p.orbs||0)+' / 5 xp, '+Math.min(2,tut.p.mana||0)+' / 2 mana';
+    },
+    enter(){
+      // The two holds this step lifts: kills start leaving their drops, and the
+      // auto-assist comes back for a fight of five.
+      tut.holdDrops = false;
+      tut.noAuto = false;
+      const h = tutHero(), c = tutOpenSpot(h.x, h.y, 430, TUT_SHOW_ANGLE);
+      tut.p.cx = c.x; tut.p.cy = c.y;
+      tut.p.pack = [];
+      for(let i=0;i<TUT_PACK;i++){
+        const s = tutOpenSpot(c.x, c.y, 100, TUT_SHOW_ANGLE + (i-2)*0.85);
+        tut.p.pack.push(tutSpawnCreep(s.x, s.y));
+      }
+      tut.watch = tut.p.pack;
+    },
+    tick(){
+      // Once they are all down the line leads back to what they left rather
+      // than to nothing.
+      if(!tut.mark && tut.p.pack && !tut.p.pack.some(tutAlive)){
+        tut.mark = { x:tut.p.cx, y:tut.p.cy, r:150, col:'#FFD54F', label:'PICK THEM UP' };
+      }
+    },
+    done(){
+      if(!tut.p.pack || tut.p.pack.some(tutAlive)) return false;
+      return (tut.p.orbs||0) >= 5 && (tut.p.mana||0) >= 2;
+    }
+  },
+  {
+    title:'Levels and stats',
+    text:()=>'That is what the orbs were for. Every level gives you <b>three points</b>. Spend them in the strip above the health bar: <b>AGI</b> for speed and fire rate, <b>HP</b> and <b>MP</b> for the bars, <b>HPR</b> and <b>MPR</b> for how fast they refill, <b>RNG</b> for reach. '
+      + tutPick('Hover a stat to see exactly what it buys.', 'Tap a stat to see exactly what it buys.'),
+    goal:()=>'Spend a point with a + button',
+    hl:()=>statStripEl,
+    enter(){
+      const h = tutHero();
+      if(h.points <= 0) grantXP(h, h.xpToNext - h.xp + 1);
+    },
+    done:()=>!!tut.p.stat
+  },
+  {
+    title:'Your squad',
+    text:()=>'Two more heroes are walking out of your base: a <b>tank</b> who takes the hits and a <b>support</b> who heals. You drive one at a time; the other two think for themselves. '
+      + tutPick('<k>1</k> <k>2</k> <k>3</k> or <k>Tab</k> to switch.', '<k>Tap a portrait</k>, top left, to take one over.'),
+    goal:()=>{
+      const s = tut.p.seen || {};
+      return 'Take control of the tank and the support — '+((s.tank?1:0)+(s.support?1:0))+' / 2';
+    },
+    hl:()=>partyEl,
+    enter(){
+      const h = tutHero();
+      partyEl.classList.remove('hidden');
+      for(let i=0;i<playerTeam.length;i++){
+        const a = playerTeam[i];
+        if(a === h || a.alive) continue;
+        a.homeX = 130; a.homeY = BASE_Y + (i===1 ? -70 : 70);
+        respawnHero(a);
+        a.animPrevX = a.x; a.animPrevY = a.y;
+        // They walk to you rather than appearing next to you, so you can see
+        // where your team comes from.
+        a.mode = 'follow'; a.followTarget = h; a.moveTarget = null;
+        squadTogether = true;
+        // And they arrive at your level: switching to a level-1 tank halfway
+        // through a tutorial reads as a punishment for switching.
+        for(let g=0; g<MAX_LEVEL && a.level < h.level; g++) grantXP(a, a.xpToNext - a.xp + 1);
+      }
+    },
+    done:()=>{ const s = tut.p.seen || {}; return !!(s.tank && s.support); }
+  },
+  {
+    title:'Rocket and heal',
+    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands and hits everything in the blast; the support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
+    goal:()=>{
+      const c = tut.p.cast || {};
+      return 'Fire a rocket, then cast a heal — '+((c.tank?1:0)+(c.support?1:0))+' / 2';
+    },
+    enter(){
+      const h = tutHero();
+      const a = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE-0.5), b = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE+0.5);
+      tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
+    },
+    done:()=>{ const c = tut.p.cast || {}; return !!(c.tank && c.support); }
+  },
+  {
+    title:'Stun, then switch',
+    text:()=>'Three heroes, not one hero three times. The tank\u2019s rocket <b>freezes everything in the blast for three seconds</b> &mdash; stunned mobs cannot move, chase or hit back. That is a window, and the carry is what you spend it on. '
+      + tutPick('Rocket this pack with the <b>tank</b>, then <k>switch</k> to the carry and cut them down.',
+                'Rocket this pack with the <b>tank</b>, then <k>tap the carry\u2019s portrait</k> and cut them down.'),
+    goal(){
+      const n = tut.p.stunned || 0;
+      const sw = tutTouch() ? 'tap his portrait' : 'key 2';
+      const sw1 = tutTouch() ? 'tap his portrait' : 'key 1';
+      if(n < 3) return '1 · Take the TANK ('+sw+') and rocket 3 of them at once — best so far '+n+' / 3';
+      return '2 · Now take the CARRY ('+sw1+') and kill 3 yourself — '+Math.min(3, tut.p.carryKills||0)+' / 3';
+    },
+    enter(){
+      // These wake up: a stun is worth nothing against something that was never
+      // going to move. This is also where the neutral AI comes on for good.
+      tut.holdCamps = false;
+      // Clear the practice mobs left over from earlier steps, so the only thing
+      // that wakes is the pack this step is about. A tutorial mob is the one
+      // whose camp is not on the map.
+      for(let i=neutralCreeps.length-1;i>=0;i--){
+        if(camps.indexOf(neutralCreeps[i].camp) < 0) neutralCreeps.splice(i,1);
+      }
+      // Placed from the TANK, not from whoever you are driving. A rocket only
+      // carries 700 and the tank walks behind you, so a pack put 380 in front of
+      // the carry can be 750 from the tank — the rocket stops short of its own
+      // aim point and the blast lands in empty grass.
+      const tank = playerTeam.find(x=>x.type==='tank') || tutHero();
+      const c = tutOpenSpot(tank.x, tank.y, 380, TUT_SHOW_ANGLE);
+      tut.p.pack = [];
+      tut.p.spawn = ()=>{
+        tut.p.pack = [];
+        for(let i=0;i<TUT_COMBO_PACK;i++){
+          const a = i/TUT_COMBO_PACK*Math.PI*2;
+          // A tight huddle: at this radius a blast centred on any one of them
+          // still reaches the far side, so a rocket that connects at all catches
+          // the group rather than a corner of it.
+          tut.p.pack.push(tutSpawnCreep(c.x + Math.cos(a)*TUT_COMBO_R, c.y + Math.sin(a)*TUT_COMBO_R, TUT_COMBO_HP));
+        }
+        tut.watch = tut.p.pack;
+      };
+      tut.p.spawn();
+    },
+    tick(){
+      if(!tut.p.pack.length || tut.p.pack.some(tutAlive)) return;
+      // The pack is gone. If both halves are done the step closes on its own;
+      // otherwise a fresh one, because either half missing means the pair was
+      // never performed. Your allies killing them for you counts for nothing
+      // here — that is the situation this step exists to replace.
+      if((tut.p.stunned||0) >= 3 && (tut.p.carryKills||0) >= 3) return;
+      tut.p.spawn();
+      tut.nudge = (tut.p.stunned||0) < 3
+        ? 'You can grind them down &mdash; but the point is the <b>stun</b>. Rocket the next lot with the tank first.'
+        : 'Good rocket. Now take the <b>carry</b> and make the kills yourself &mdash; that is the half that matters.';
+      tut.nudgeT = 4.5;
+      tutPaint();
+    },
+    done:()=>(tut.p.stunned||0) >= 3 && (tut.p.carryKills||0) >= 3
+  },
+  {
+    title:'Orders',
+    text:()=>tutPick(
+      '<k>Right-click a hero and drag</k> him somewhere to detach him and post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.',
+      '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; somewhere to post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.'),
+    goal:()=>'Post a hero on the marked spot',
+    enter(){
+      const h = tutHero(), s = tutOpenSpot(h.x, h.y, 320, TUT_SHOW_ANGLE-0.6);
+      tut.mark = { x:s.x, y:s.y, r:54, col:'#5AC8E8', label:'POST A HERO HERE' };
+    },
+    done:()=>!!tut.p.solo
+  },
+  {
+    title:'Assemble',
+    text:()=>tutPick(
+      '<k>0</k>, or the <b>ALL</b> button beside the portraits, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
+      'The <b>ALL</b> button beside the portraits drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
+    goal:()=>'Call the squad back to you',
+    hl:()=>assembleBtn,
+    done:()=>!!tut.p.assemble
+  },
+  {
+    title:'The forest',
+    text:()=>'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. Follow the line.',
+    goal:()=>'Clear the marked camp',
+    enter(){
+      // The jungle has been empty until now on purpose. This is the step that
+      // stocks it, so the first forest mob you meet is one you were sent to.
+      tut.holdCamps = false;
+      tut.arena = false;
+      resetCamps();
+      for(const c of camps) c.count = c.alive;
+      const h = tutHero();
+      let best = null, bd = Infinity;
+      for(const c of camps){ const d = dist(h.x,h.y,c.x,c.y); if(c.alive>0 && d<bd){ bd = d; best = c; } }
+      tut.p.camp = best;
+      if(best) tut.mark = { x:best.x, y:best.y, r:110, col:'#8CE39B', label:'CAMP', mini:true };
+    },
+    done(){
+      const c = tut.p.camp;
+      if(!c) return true;
+      if(c.count > 0) tut.p.campSeen = true;      // do not pass on a count that has not been recomputed yet
+      return !!tut.p.campSeen && c.count === 0;
+    }
+  },
+  {
+    title:'Your base',
+    text:()=>'The building you lose the game by losing. A tower outranges every hero by design, so it always gets the first shot &mdash; never walk into one without your own creeps in front of you to hold its attention.',
+    goal:()=>'Stand inside your tower’s range',
+    enter(){
+      const t = mainTower(playerTowers);
+      tut.p.tower = t;
+      if(t) tut.mark = { x:t.x, y:t.y, r:TOWER_RANGE, col:'#FFD54F', label:'YOUR BASE', thin:true, mini:true };
+    },
+    done:()=>{
+      const h = tutHero(), t = tut.p.tower;
+      return !!t && dist(h.x,h.y,t.x,t.y) < TOWER_RANGE;
+    }
+  },
+  {
+    title:'The map',
+    text:()=>'Your base is the left edge of the minimap, theirs the right. Two lanes run between them with two outposts each, and the camps sit in the woods in between. '
+      + tutPick('<k>Hold the left mouse button on the minimap</k> to look somewhere else &mdash; let go and the view snaps back to your hero.',
+                '<k>Hold a finger on the minimap</k> to look somewhere else &mdash; let go and the view snaps back to your hero.'),
+    goal:()=>'Scout with the minimap',
+    done:()=>(tut.p.scout||0) > 0.5
+  },
+  {
+    title:'Pushing a lane',
+    text:()=>'Drag a hero onto the <b>top or bottom half of the minimap</b> and he walks that lane on his own for the rest of the round &mdash; advancing with his wave rather than out in front of it, which is what keeps him alive.',
+    goal:()=>'Send a hero to a lane',
+    done:()=>!!tut.p.lane
+  },
+  {
+    title:'Waves',
+    text:()=>'Both bases now send a wave down each lane every twenty seconds: one big creep leading three small ones, and they fight each other where they meet. It does not matter who lands the killing blow &mdash; anything that dies drops what it carried, and <b>the first hero to reach an orb keeps it</b>. So the wave is not something to farm politely; it is somewhere to be standing.',
+    goal:()=>'Collect 6 orbs from the fighting — '+Math.min(6, tut.p.orbs||0)+' / 6',
+    enter(){
+      tut.holdWaves = false;
+      spawnTimer = 0;                 // do not make them wait out a full interval
+      const h = tutHero();
+      const li = Math.abs(h.y - LANE_YS[0]) <= Math.abs(h.y - LANE_YS[1]) ? 0 : 1;
+      // The waves set off together from opposite ends, so they meet in the
+      // middle of the lane. That is where the orbs will be.
+      tut.mark = { x:WORLD_W/2, y:LANE_YS[li], r:220, col:'#FFD54F', label:'THE WAVES MEET HERE', mini:true };
+    },
+    done:()=>(tut.p.orbs||0) >= 6
+  },
+  {
+    title:'The enemy',
+    text:()=>'Their carry has walked over to meet you. He is holding back for this &mdash; one shot every couple of seconds, where a real one fires five times that from under his own tower. A hero kill is worth <b>30 points</b> and a heap of experience, and puts him out of the round for twelve seconds. That window is what you actually win fights with.',
+    goal:()=>'Land a hit on the enemy carry',
+    enter(){
+      const h = tutHero();
+      const e = enemyTeam[0];
+      e.homeX = WORLD_W-130; e.homeY = BASE_Y;
+      respawnHero(e);
+      // In front of you and in the open, not four screens away under their
+      // outposts. Walking to him used to mean walking into a tower.
+      const s = tutOpenSpot(h.x, h.y, 700, TUT_SHOW_ANGLE);
+      e.x = s.x; e.y = s.y;
+      e.animPrevX = e.x; e.animPrevY = e.y;
+      e.mode = 'idle'; e.moveTarget = null; e.standX = null; e.standY = null;
+      macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
+      // Enough health to spar rather than to be deleted: three heroes shoot
+      // him the moment he is in range, and a step about meeting an enemy is
+      // worth nothing if he is a corpse before you have looked at him.
+      e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
+      tut.spar = true; tut.sparCd = 1.5;
+      tut.mark = { unit:e, r:48, col:'#FF9A8B', label:'ENEMY CARRY', mini:true };
+      addPing(e.x, e.y, '#FF6B6B', 14, 90, 0.7);
+    },
+    done:()=>!!tut.p.heroHit || !enemyTeam[0].alive
+  },
+  {
+    title:'Their towers',
+    text:()=>'Two outposts guard each lane and they stand between you and their base. Arrive <b>behind your own wave</b> and let the creeps hold the tower while you hit it. A tower is worth <b>200 points</b>.',
+    goal:()=>'Put a hit on an enemy tower',
+    enter(){
+      const h = tutHero();
+      let best = null, bd = Infinity;
+      for(const t of enemyTowers){
+        if(t.main || t.hp<=0) continue;
+        const d = dist(h.x,h.y,t.x,t.y);
+        if(d < bd){ bd = d; best = t; }
+      }
+      tut.p.tower = best;
+      if(best) tut.mark = { x:best.x, y:best.y, r:TOWER_RANGE, col:'#FF9A8B', label:'THEIR OUTPOST', thin:true, mini:true };
+    },
+    done:()=>!!tut.p.towerHit
+  },
+  {
+    title:'How a round is won',
+    text:()=>'Destroy the enemy base and you win outright. If the clock runs out with both bases standing, <b>points</b> settle it: forest mob <b>1</b>, creep <b>2</b>, big creep <b>3</b>, hero <b>30</b>, tower <b>200</b>. The scoreboard is top right, and the clock is about to start.',
+    goal:()=>'',
+    button:'Play a Match',
+    act(){ tutLaunchMatch(); },
+    enter(){
+      const shud = document.getElementById('scoreHud');
+      if(shud) shud.classList.remove('hidden');
+    },
+    done:()=>false          // the button ends it, not a condition
+  }
+  ];
+
+  function tutPlaceCard(){
+    const dockH = bottomDock.classList.contains('hidden') ? 0 : bottomDock.offsetHeight;
+    tutCardEl.style.bottom = (dockH + 10) + 'px';
+    tutCardEl.classList.toggle('touchPad', isTouchDevice);
+  }
+  function tutHighlight(el){
+    if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse');
+    tut.hl = el || null;
+    if(tut.hl) tut.hl.classList.add('tutPulse');
+  }
+  function tutPaint(){
+    const ph = TUT_PHASES[tut.i];
+    tutStepEl.textContent = 'STEP ' + (tut.i+1) + ' / ' + TUT_PHASES.length;
+    tutTitleEl.textContent = ph.title;
+    tutBodyEl.innerHTML = (tut.nudgeT > 0 && tut.nudge) ? tut.nudge : ph.text();
+    tut._goal = ph.goal ? ph.goal() : '';
+    tutGoalEl.textContent = tut._goal;
+    tutGoalEl.classList.remove('hit');
+    tut._hit = false;
+    tutGoBtn.textContent = ph.button || 'Got it';
+    tutGoBtn.classList.toggle('hidden', !ph.button);
+    tutSkipBtn.classList.toggle('hidden', !!ph.button);
+    tutShow();
+  }
+  function tutShow(){
+    tutCardEl.classList.remove('hidden');
+    tutPlaceCard();
+    // One frame with the card laid out but not yet .show, so the transition runs.
+    requestAnimationFrame(()=>tutCardEl.classList.add('show'));
+  }
+  function tutHide(){
+    tutCardEl.classList.remove('show');
+    tutCardEl.classList.add('hidden');
+    tutHighlight(null);
+  }
+  function tutAdvance(){
+    tut.i++;
+    tut.ready = 0; tut.ack = false; tut.t = 0; tut.p = {};
+    tut.rings = []; tut.mark = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
+    if(tut.i >= TUT_PHASES.length){ tutFinish(); return; }
+    const ph = TUT_PHASES[tut.i];
+    tutHighlight(ph.hl ? ph.hl() : null);
+    if(ph.enter) ph.enter();
+    tutPaint();
+  }
+  function tutStart(){
+    tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false; tut.hl = null;
+    tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false;
+    // startRound has just stocked every camp. Empty them again: nothing lives in
+    // the jungle until step 11 sends you there.
+    neutralCreeps.length = 0;
+    for(const c of camps){ c.alive = 0; c.count = 0; c.timer = Infinity; }
+    // Everything you have not been taught yet is off. The squad is still in the
+    // base, the enemy team is parked dead the way Survival parks it, the score
+    // is hidden and the clock does not move.
+    const h = playerTeam[0];
+    // The map is authored, so the start is a place, not a search.
+    const sx = TUT_START.x, sy = TUT_START.y;
+    h.x = h.homeX = sx; h.y = h.homeY = sy; h.animPrevX = sx; h.animPrevY = sy;
+    h.mode = 'idle'; h.followTarget = null; h.moveTarget = null; h.standX = h.standY = null;
+    for(let i=1;i<playerTeam.length;i++){
+      const a = playerTeam[i];
+      a.alive = false; a.hp = 0; a.respawnTimer = Infinity;
+    }
+    for(const e of enemyTeam){ e.alive = false; e.hp = 0; e.respawnTimer = Infinity; }
+    macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
+    activePlayerIdx = 0;
+    camera.x = Math.min(WORLD_W-W, Math.max(0, sx - W/2));
+    camera.y = Math.min(WORLD_H-H, Math.max(0, sy - H/2));
+    partyEl.classList.add('hidden');
+    const shud = document.getElementById('scoreHud');
+    if(shud) shud.classList.add('hidden');
+    timeLeft = ROUND_TIME;
+    timerEl.textContent = fmtTime(ROUND_TIME);
+    tutAdvance();
+  }
+  // The tutorial has its own map, so it ends rather than dissolving: the last
+  // card offers a Match and this starts a real one on the real map. Called from
+  // a button handler, never from inside update() — startRound rebuilds the world
+  // and nothing good comes of doing that half way through a frame.
+  function tutLaunchMatch(){
+    tutStop();
+    guardedStart('regular');
+  }
+  function tutStop(){
+    tut.on = false; tut.holdWaves = false; tut.holdCamps = false;
+    tut.arena = false; tut.noAuto = false; tut.holdDrops = false; tut.spar = false;
+    tut.rings = []; tut.mark = null; tut.watch = []; tut.p = null;
+    tutHighlight(null);
+    tutHide();
+  }
+  function tutFinish(){ tutLaunchMatch(); }
+  function tutQuit(){
+    tutStop();
+    state = 'idle';
+    bottomDock.classList.add('hidden');
+    partyEl.classList.add('hidden');
+    skillBtnEl.style.display = 'none';
+    hideJoystick(moveJoyEl);
+    endScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  }
+  function tutUpdate(dt){
+    if(!tut.on) return;
+    const ph = TUT_PHASES[tut.i];
+    if(!ph) return;
+    tut.t += dt;
+    if(scout) tut.p.scout = (tut.p.scout || 0) + dt;     // the minimap phase watches for this
+    if(tut.nudgeT > 0){
+      tut.nudgeT -= dt;
+      if(tut.nudgeT <= 0) tutPaint();
+    }
+    if(ph.tick) ph.tick(dt);
+
+    const g = ph.goal ? ph.goal() : '';
+    if(g !== tut._goal){ tut._goal = g; tutGoalEl.textContent = g; }
+    const ok = ph.done ? !!ph.done() : false;
+    if(ok !== tut._hit){ tut._hit = ok; tutGoalEl.classList.toggle('hit', ok); }
+    // A beat on the finished goal before the next card, so the thing you just
+    // did is the last thing you saw rather than being wiped by new text.
+    if(ok){
+      tut.ready += dt;
+      if(tut.ready > (ph.hold === undefined ? 1.1 : ph.hold)) tutAdvance();
+    } else tut.ready = 0;
+  }
+
+  function tutLabel(x, y, text, col, size){
+    ctx.save();
+    ctx.font = "800 " + (size || 34) + "px 'Baloo 2', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(40,30,12,.8)'; ctx.strokeText(text, x, y);
+    ctx.fillStyle = col || '#FFF3D6'; ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+  function drawTutorialMarks(){
+    if(!tut.on) return;
+    const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
+    ctx.save();
+
+    // A line that crawls from your hero to wherever the step wants you. No step
+    // should ever be a search of the map — least of all the first one.
+    // Rings first, then the step's marker, then whatever it spawned for you to
+    // shoot — a creep you have to find is as much a search as a camp is.
+    let lead = tut.rings.find(r=>!r.hit) || (tut.mark && tut.mark.lead !== false ? tut.mark : null);
+    if(!lead){
+      let bd = Infinity;
+      for(const c of tut.watch){
+        if(!tutAlive(c)) continue;
+        const hh = playerTeam[activePlayerIdx];
+        const d = hh ? dist(hh.x, hh.y, c.x, c.y) : 0;
+        if(d < bd){ bd = d; lead = { unit:c, r:c.r + 20 }; }
+      }
+    }
+    const h = playerTeam[activePlayerIdx];
+    if(lead && h && h.alive){
+      const lx = lead.unit ? lead.unit.x : lead.x, ly = lead.unit ? lead.unit.y : lead.y;
+      const d = dist(h.x, h.y, lx, ly);
+      const stop = (lead.r || 60) + 18;
+      if(d > stop + 90){
+        const ux = (lx-h.x)/d, uy = (ly-h.y)/d;
+        ctx.save();
+        ctx.setLineDash([22,18]);
+        ctx.lineDashOffset = -(performance.now()/26) % 40;
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = 'rgba(255,243,214,.6)';
+        ctx.beginPath();
+        ctx.moveTo(h.x + ux*(h.r+16), h.y + uy*(h.r+16));
+        ctx.lineTo(lx - ux*stop, ly - uy*stop);
+        ctx.stroke();
+        ctx.restore();
+        // An arrowhead a little way out, so the direction reads at a glance even
+        // where the line runs off the edge of the view.
+        const ad = Math.max(h.r + 90, Math.min(d - stop - 20, d*0.5));
+        const ax = h.x + ux*ad, ay = h.y + uy*ad, ang = Math.atan2(uy, ux);
+        ctx.save();
+        ctx.translate(ax, ay); ctx.rotate(ang);
+        ctx.beginPath(); ctx.moveTo(24,0); ctx.lineTo(-15,-17); ctx.lineTo(-15,17); ctx.closePath();
+        ctx.fillStyle = 'rgba(255,213,79,'+(0.55+0.4*pulse).toFixed(3)+')';
+        ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(40,30,12,.55)'; ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    ctx.lineWidth = 6;
+    for(const r of tut.rings){
+      ctx.fillStyle = 'rgba(255,213,79,'+(0.12+0.10*pulse).toFixed(3)+')';
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, 7); ctx.fill();
+      ctx.strokeStyle = r.hit ? 'rgba(140,227,155,.9)' : 'rgba(255,213,79,'+(0.6+0.35*pulse).toFixed(3)+')';
+      ctx.setLineDash(r.hit ? [] : [20,14]);
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.r + (r.hit ? 0 : pulse*6), 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
+      tutLabel(r.x, r.y - r.r - 26, 'STAND HERE', '#FFD54F');
+    }
+    ctx.setLineDash([]);
+    const m = tut.mark;
+    if(m){
+      const mx = m.unit ? m.unit.x : m.x, my = m.unit ? m.unit.y : m.y;
+      ctx.strokeStyle = m.col; ctx.lineWidth = m.thin ? 3 : 6;
+      ctx.setLineDash([18,12]);
+      ctx.beginPath(); ctx.arc(mx, my, m.r + pulse*4, 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
+      if(m.label) tutLabel(mx, my - Math.min(m.r, 150) - 30, m.label, m.col);
+    }
+    for(const c of tut.watch){
+      if(!tutAlive(c)) continue;
+      ctx.strokeStyle = 'rgba(232,89,90,'+(0.5+0.4*pulse).toFixed(3)+')';
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 16 + pulse*4, 0, 7); ctx.stroke();
+    }
+
+    // The card is at the bottom of the screen and your eyes are on your hero, so
+    // the task rides over his head as well. High enough to clear two rows of
+    // damage numbers, which stack upward from the same point.
+    if(h && h.alive && tut._goal) tutLabel(h.x, h.y - h.r - 150, tut._goal, '#FFE9A8', 27);
+    ctx.restore();
+  }
+  // Screen space, so it goes on after the minimap rather than inside it.
+  function drawTutorialMini(){
+    if(!tut.on || !tut.mark || !tut.mark.mini) return;
+    const m = tut.mark, r = minimapRect();
+    const wx = m.unit ? m.unit.x : m.x, wy = m.unit ? m.unit.y : m.y;
+    const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
+    ctx.save();
+    ctx.strokeStyle = m.col; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(r.x + (wx/WORLD_W)*r.w, r.y + (wy/WORLD_H)*r.h, 4 + pulse*5, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  bindTap(tutGoBtn, ()=>{
+    if(!tut.on) return tutHide();
+    const ph = TUT_PHASES[tut.i];
+    if(ph && ph.act) ph.act();
+    else tut.ack = true;
+  });
+  bindTap(tutSkipBtn, ()=>{ if(tut.on) tutAdvance(); });
+  for(const el of [tutGoBtn, tutSkipBtn, tutQuitBtn]){
+    el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
+  }
+  bindTap(tutQuitBtn, ()=>{ if(tut.on) tutQuit(); else tutHide(); });
+  window.addEventListener('resize', ()=>{ if(!tutCardEl.classList.contains('hidden')) tutPlaceCard(); });
+
+  let lastMode = 'regular';
   function startRound(mode){
+    lastMode = mode;
     gameMode = (mode==='survival') ? 'survival' : 'regular';
+    tutMap = (mode === 'tutorial');    // read by buildMap below, so set it first
     survWave = 0;
     buildMap();
     state='playing';
     hideTip();
     keys = {};
     moveTouch=null; touchMoveVec={x:0,y:0}; touchShotAt=null; touchSkillTap=false; orderDrag=null; pendingTouch={}; pings=[];
+    scoutTouch=null; scout=null;
     hideJoystick(moveJoyEl);
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
     canvas.focus();
@@ -6875,6 +7906,7 @@ window.addEventListener('DOMContentLoaded', function(){
     timeLeft = gameMode==='survival' ? 0 : ROUND_TIME;
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
+    squadTogether = false;
     allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[];
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
@@ -6913,10 +7945,21 @@ window.addEventListener('DOMContentLoaded', function(){
     const hud = document.getElementById('scoreHud');
     if(hud) hud.classList.toggle('hidden', gameMode === 'survival');
     resetScoreHud();
-    if(isTouchDevice){ skillBtnEl.style.display='flex'; mobileHintEl.style.display='block'; setTimeout(()=>{ mobileHintEl.style.display='none'; }, 4000); }
+    if(isTouchDevice){
+      skillBtnEl.style.display='flex';
+      // The tutorial's first card says all of this and more, so the hint would
+      // be two sets of instructions arguing over the same corner of the screen.
+      if(mode !== 'tutorial'){
+        mobileHintEl.style.display='block';
+        setTimeout(()=>{ mobileHintEl.style.display='none'; }, 4000);
+      }
+    }
+    if(mode === 'tutorial') tutStart();
+    else tutStop();
   }
   function endRound(reason){
     state='ended';
+    tutStop();
     bottomDock.classList.add('hidden');
     partyEl.classList.add('hidden');
     const shud = document.getElementById('scoreHud');
@@ -6958,12 +8001,13 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   bindTap(startBtn, ()=>guardedStart('regular'));
   bindTap(startSurvBtn, ()=>guardedStart('survival'));
+  bindTap(startTutBtn, ()=>guardedStart('tutorial'));
   // Keyboard and a whole-panel fallback, so there is always a way in even if the
   // button itself is unreachable on your device.
   window.addEventListener('keydown', (e)=>{
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
   });
-  bindTap(restartBtn, ()=>startRound(gameMode));
+  bindTap(restartBtn, ()=>startRound(lastMode));
   window.__laneLoaded = true;
 })();
 </script>

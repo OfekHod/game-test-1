@@ -1,4 +1,4 @@
-// Builds a headless, instrumented copy of the game from lane.html.
+// Builds a headless, instrumented copy of the game from index.html.
 //
 // The game ships as one self-contained HTML file. Rather than maintain a second
 // copy of the source for testing, we lift the script out of it and patch in
@@ -10,12 +10,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const HTML = path.join(__dirname, '..', 'lane.html');
+const HTML = path.join(__dirname, '..', 'index.html');
 
 function extract(){
   const html = fs.readFileSync(HTML, 'utf8');
   const blocks = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
-  if(!blocks.length) throw new Error('no <script> block found in lane.html');
+  if(!blocks.length) throw new Error('no <script> block found in index.html');
   const last = blocks[blocks.length - 1];
   return last.replace(/^<script>/, '').replace(/<\/script>$/, '');
 }

@@ -1,7 +1,7 @@
 # Gameplay screenshots
 
 Frames from one full 10-minute Match and one Survival round, played in a
-headless Chromium against the shipped `lane.html` (build v154). The hero you
+headless Chromium against the shipped `index.html` (build v154). The hero you
 control was driven by a small autopilot that walks its lane, trades with
 creeps, focuses enemy heroes, uses its skill and backs off when low, and the
 camera followed whichever of the three heroes was closest to the enemy team.
@@ -145,7 +145,7 @@ taking a **CRITICAL 169** as the screen fades.
 
 ## How these were taken
 
-The game's script was lifted out of `lane.html` the same way `sim/harness.js`
+The game's script was lifted out of `index.html` the same way `sim/harness.js`
 does it, with one extra hook that exposes the live state (teams, creeps,
 projectiles, towers, camera) to the page. A Playwright script then:
 
