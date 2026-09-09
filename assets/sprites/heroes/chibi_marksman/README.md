@@ -16,22 +16,29 @@ at the back of the helmet, tying it to the Radiant creeps.
 
 ## Surface treatment
 
-Unlike the creep set, this sprite keeps procedural texture: per-material grain
-and bump mapping (scuffed plate, woven gear, grained leather, brushed gold),
-plus modelled hard detail — helmet rim seam, ear cups, collar, diagonal chest
-strap and buckle, hip pouch, knee pads, boot soles, and a sight rail and
-magazine on the weapon. Rendering at 4x and downsampling turns that grain into
-texture rather than noise at 92x122.
+Texture here is **quantised, not continuous**. `patches()` in `rt.py` steps
+noise into a few discrete levels, so surfaces break into hard-edged tonal
+blocks that read as painted 2D shapes. Continuous `fbm` grain — and any bump
+mapping — reads as real surface roughness instead, which is the opposite of the
+intent, so `bAmp` is 0 on every material of this sprite.
+
+Definition comes from modelled geometry rather than surface noise: helmet rim
+seam, ear cups, collar, diagonal chest strap and buckle, hip pouch, knee pads,
+boot soles, and a sight rail and magazine on the weapon. Geometry survives the
+downsample to 92x122; painted detail would not.
+
+Rendering at 4x and downsampling keeps the block edges clean.
 
 Look is tuned per character through the `STYLE` dict in `chibi_marksman.py`,
 passed to `render(..., style=STYLE)`:
 
 | Key | Here | Effect |
 |---|---|---|
-| `shadowTint` | `(0.46,0.435,0.50)` | Colour the cel shadow band leans to. The creep default `(0.44,0.49,0.66)` is cool and reads pale on tan. |
-| `contrast` | `1.05` | Deepens the shadow band. |
-| `ink` | `1.30` | Silhouette line strength. |
-| `spec` | `0.40` | Stepped specular pop. |
+| `shadowTint` | `(0.50,0.432,0.428)` | Colour the cel shadow band leans to. The creep default `(0.44,0.49,0.66)` is cool and reads pale on tan. |
+| `lift` | `0.36` | How far the lit band lifts toward white. With the warm shadow this is what gives the high-contrast read. |
+| `ink` | `1.45` | Silhouette line strength. |
+| `spec` | `0.26` | Stepped specular pop — kept low, a hard specular reads as glossy realism. |
+| `contrast` | `1.0` | Extra shadow deepening; not needed once `lift` is up. |
 
 Omitting `style` reproduces the creep look exactly, so the creep sheets are
 unaffected by these controls.

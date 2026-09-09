@@ -11,27 +11,29 @@ BODY = r"""
 void material(float id, vec3 p, vec3 n, out vec3 albedo, out float rough,
               out float metal, out float bAmp, out float bScale, out vec3 emis){
   emis=vec3(0.0);
-  float fine = fbm(p*46.0);          // close grain
-  float blot = fbm(p*13.0);          // broad mottling, keeps flats from going dead
-  if(id<1.5){                        // bone/tan plate: scuffed, not pale
-    albedo = vec3(0.540,0.442,0.306) * (0.86+0.30*blot) * (0.90+0.22*fine);
-    metal=0.0; rough=0.86; bAmp=0.011; bScale=110.0;
-  } else if(id<2.5){                 // dark gear, woven
-    albedo = vec3(0.048,0.043,0.039) * (0.66+0.74*fbm(p*90.0));
-    metal=0.25; rough=0.62; bAmp=0.020; bScale=210.0;
-  } else if(id<3.5){                 // gold accent, brushed
-    albedo = vec3(0.740,0.404,0.048) * (0.80+0.40*fbm(p*70.0));
-    metal=0.65; rough=0.34; bAmp=0.007; bScale=150.0;
-  } else if(id<4.5){                 // goggle glass, stays clean
-    albedo = vec3(0.400,0.478,0.520); metal=0.80; rough=0.12; bAmp=0.0; bScale=1.0;
-  } else if(id<5.5){                 // leather strap, grained
-    albedo = vec3(0.230,0.156,0.084) * (0.72+0.58*fbm(p*80.0));
-    metal=0.0; rough=0.82; bAmp=0.022; bScale=170.0;
+  bAmp=0.0; bScale=1.0;                 // flat: bump reads as real roughness
+  float big  = patches(p,  6.5, 3.0);   // broad painted blocks
+  float mid  = patches(p, 14.0, 2.0);   // a second, smaller pass
+  float tone = mix(0.90, 1.14, big) * mix(0.96, 1.06, mid);
+  if(id<1.5){                        // bone/tan plate
+    albedo = vec3(0.560,0.462,0.320) * tone;
+    metal=0.0; rough=0.88;
+  } else if(id<2.5){                 // dark gear
+    albedo = vec3(0.062,0.058,0.056) * mix(0.80,1.35,big);
+    metal=0.20; rough=0.66;
+  } else if(id<3.5){                 // gold accent
+    albedo = vec3(0.790,0.436,0.052) * mix(0.90,1.12,big);
+    metal=0.45; rough=0.40;
+  } else if(id<4.5){                 // goggle glass
+    albedo = vec3(0.400,0.500,0.552); metal=0.70; rough=0.14;
+  } else if(id<5.5){                 // leather strap
+    albedo = vec3(0.250,0.170,0.092) * mix(0.86,1.18,big);
+    metal=0.0; rough=0.84;
   } else if(id<6.5){                 // teal band
-    albedo = vec3(0.052,0.250,0.186) * (0.78+0.44*fine);
-    metal=0.0; rough=0.80; bAmp=0.013; bScale=160.0;
-  } else {                           // recessed seam / shadow line
-    albedo = vec3(0.012,0.011,0.012); metal=0.0; rough=0.95; bAmp=0.0; bScale=1.0;
+    albedo = vec3(0.058,0.272,0.202) * mix(0.88,1.14,big);
+    metal=0.0; rough=0.82;
+  } else {                           // recessed seam
+    albedo = vec3(0.014,0.013,0.014); metal=0.0; rough=0.95;
   }
 }
 
@@ -124,6 +126,6 @@ vec2 mapRaw(vec3 p){
   return res;
 }
 """
-STYLE = dict(shadowTint=(0.46,0.435,0.50), ink=1.30, spec=0.40, contrast=1.05)
+STYLE = dict(shadowTint=(0.500,0.432,0.428), ink=1.45, spec=0.26, contrast=1.0, lift=0.36)
 CAM = dict(target=(0.0, 0.55, 0.0), dist=4.20, fl=3.45, elev=0.46)
 RIG = dict(hipY=0.26, shldY=0.47, armZ=0.17, amp=0.42, legAmp=1.0)
