@@ -2389,6 +2389,14 @@ window.addEventListener('DOMContentLoaded', function(){
   let rivers = [];    // shallow: you can ford them, they just slow you
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
   const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // Lakes are three times the radius they used to be. A 165-unit pond was
+  // scenery you clipped the corner of on the way past; at 495 it is a piece of
+  // terrain you commit to walking around, which is the only way still water
+  // changes how a fight goes. Every keep-out is written against the lake's own
+  // radius, so the roads, the camps and the trees make room for the new size on
+  // their own — what had to move by hand is where the two Match lakes sit, and
+  // how far out the arena's lakes look for a gap wide enough to hold them.
+  const LAKE_SCALE = 3;
   let neutralCreeps = [];
   const TREE_COUNT = 48;
   const TREE_MIN_R = 26, TREE_MAX_R = 40;
@@ -2517,17 +2525,44 @@ window.addEventListener('DOMContentLoaded', function(){
   // A lake wants a spot; if the road or another body is already there it walks
   // sideways and then inwards rather than being dropped on top of them. A lake
   // ON a lane would be a wall across it — mobs collide with lakes in the arena.
-  function survLake(a, rad, r){
+  // Tripled, a lake no longer fits where the small one sat, and the old search
+  // — sidestep a little, then walk inwards — could not find the room because
+  // the room is outwards and around the corner. So the wedge is swept instead:
+  // every heading within a rough quadrant of the one asked for, every distance
+  // from the plaza's edge out to the rim, and the legal spot nearest to what was
+  // asked for wins. Nothing about what makes a spot legal changed — off the
+  // roads by a lane's width, clear of the towers, clear of other water — and the
+  // lake must now also sit wholly inside the world: you fight to the rim in the
+  // arena, and half a lake over the boundary is half a lake you cannot walk
+  // around. A spot is scored on how far it drifted, so a lake still lands as
+  // close to its intended heading and distance as the arena allows.
+  const SURV_LAKE_FAN = 1.0;     // radians either side of the heading asked for
+  // The arena is not the match map: two snaking roads and the river between
+  // them leave one genuinely big pocket per side, and the first lake takes it.
+  // Rather than drop the rest — which left three quarters of the arena with no
+  // still water at all — a lake that cannot have the full size settles for the
+  // largest step that fits. Even the smallest step is still comfortably wider
+  // than the pond that used to sit there.
+  const SURV_LAKE_STEPS = [1, 0.78, 0.6];
+  function survLake(a, rad, r0){
     const cx=WORLD_W/2, cy=WORLD_H/2;
-    for(let k=0;k<16;k++){
-      const aa = a + (k%2 ? -1 : 1)*Math.floor(k/2)*0.11;
-      const rr = rad - Math.floor(k/6)*110;
-      const x = cx+Math.cos(aa)*rr, y = cy+Math.sin(aa)*rr;
-      if(survRoadDist(x,y) < r*1.35 + LANE_HALF + 40) continue;
-      if(nearAnyTower(x, y, r*1.35 + 90)) continue;   // never wall a tower in
-      if(nearWater(x, y, r*1.35 + 60)) continue;
-      makeLake(x, y, r);
-      return;
+    for(const f of SURV_LAKE_STEPS){
+      const r = r0*f, reach = r*1.35;
+      let best=null, bestCost=Infinity;
+      for(let da=-SURV_LAKE_FAN; da<=SURV_LAKE_FAN+1e-6; da+=0.05){
+        const aa = a + da, ca = Math.cos(aa), sa = Math.sin(aa);
+        for(let rr=SURV_PLAZA_R+260; rr<=2600; rr+=60){
+          const cost = Math.abs(rr-rad) + Math.abs(da)*900;
+          if(cost >= bestCost) continue;
+          const x = cx+ca*rr, y = cy+sa*rr;
+          if(x < reach || y < reach || x > WORLD_W-reach || y > WORLD_H-reach) continue;
+          if(survRoadDist(x,y) < reach + LANE_HALF + 40) continue;
+          if(nearAnyTower(x, y, reach + 90)) continue;   // never wall a tower in
+          if(nearWater(x, y, reach + 60)) continue;
+          best = { x, y }; bestCost = cost;
+        }
+      }
+      if(best){ makeLake(best.x, best.y, r); return; }
     }
   }
   function generateWater(){
@@ -2538,6 +2573,11 @@ window.addEventListener('DOMContentLoaded', function(){
       // it on purpose: shallow water is a thing you should meet while nothing
       // is chasing you.
       makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 12, 55);
+      // The practice ground is the match map, so it gets the match map's lakes:
+      // both sit in the jungle beyond the lanes, clear of the corridor the
+      // tutorial keeps you in, so they are terrain you can see and learn the
+      // shape of before a real game rather than an obstacle in a lesson.
+      makeMatchLakes();
       return;
     }
     if(gameMode==='survival'){
@@ -2554,21 +2594,34 @@ window.addEventListener('DOMContentLoaded', function(){
         const a = gap.a + s, ca = Math.cos(a), sa = Math.sin(a);
         makeRiver(cx+ca*SURV_RIVER_IN, cy+sa*SURV_RIVER_IN,
                   cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, 14, wob);
-        survLake(a-0.66, 1340, 176);
-        survLake(a+0.66, 1080, 158);
-        // And one close in, at the edge of the base clearing. It is the only
-        // water a defender can actually use: something solid to put between you
-        // and a wave without leaving the tower's cover.
-        survLake(a+0.34, 760, 128);
+        survLake(a-0.66, 1340, 176*LAKE_SCALE);
+        survLake(a+0.66, 1080, 158*LAKE_SCALE);
+        // And one closer in, on the base's side of the wedge. It is the water a
+        // defender can actually use: something solid to put between you and a
+        // wave without leaving the tower's cover. At this size it can no longer
+        // sit at the lip of the plaza — that would be a moat — so it starts its
+        // search further out and takes the nearest gap that will hold it.
+        survLake(a+0.34, 760, 128*LAKE_SCALE);
       }
     } else {
       // The river runs the length of the corridor between the lanes — right where
       // rotations happen, so you actually see it. It is shallow: crossing costs
       // you speed rather than being impossible, which keeps the map connected.
       makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 16, 105);
-      makeLake(1450, 880, 165);
-      makeLake(2550, WORLD_H-880, 155);
+      makeMatchLakes();
     }
+  }
+  // Both lakes moved out towards the map's north and south edges when they
+  // tripled. There is 1110 units of jungle between the top lane and the world's
+  // rim and a 495-unit lake needs 1290 of it, so a lake that still cleared the
+  // road at its old spot would have been a wall across the lane. Pushed to the
+  // rim it is a shoreline instead: the jungle it takes is the strip nobody
+  // walked, the gank route between the lane and the water still exists, and the
+  // lane itself is untouched.
+  const MATCH_LAKE_Y = 420;
+  function makeMatchLakes(){
+    makeLake(1450, MATCH_LAKE_Y, 165*LAKE_SCALE);
+    makeLake(2550, WORLD_H-MATCH_LAKE_Y, 155*LAKE_SCALE);
   }
   function nearAnyLane(x, y, pad){
     if(gameMode==='survival') return false;   // no lanes in the arena
@@ -2611,9 +2664,14 @@ window.addEventListener('DOMContentLoaded', function(){
         // across a whole quadrant, so a camp slot that used to be reliably empty
         // is now sometimes tarmac, and the search has to be free to walk away
         // from it rather than give up and leave that quarter of the map bare.
+        // And a longer reach outwards than the ring used to need: the lakes are
+        // three times the size, so a slot that was open ground is now sometimes
+        // the middle of a lake, and a camp that cannot step past the water is a
+        // camp that never gets placed — the arena was coming out with two of its
+        // four camps missing.
         for(let att=0; att<260 && !placed; att++){
-          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.55,0.55);
-          const rr = rand(720, 1260);
+          const a = (i/SURV_CAMPS)*Math.PI*2 + Math.PI/SURV_CAMPS + rand(-0.7,0.7);
+          const rr = rand(720, 1800);
           const x = WORLD_W/2+Math.cos(a)*rr, y = WORLD_H/2+Math.sin(a)*rr;
           if(nearAnyTower(x,y,340)) continue;
           if(onRoadway(x,y,CAMP_RING_R+30)) continue;
