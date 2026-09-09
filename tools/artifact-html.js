@@ -3,8 +3,8 @@
 // The artifact host wraps whatever it is given in its own <!doctype>, <html>,
 // <head> and <body> and adds the charset meta itself, so those lines are
 // removed here. Everything else — the viewport meta, title, font links, style,
-// markup and both scripts — is left byte for byte identical to the committed
-// file, so what gets tested is what is in the repo.
+// markup and all three scripts — is left byte for byte identical to the
+// committed file, so what gets tested is what is in the repo.
 //
 // It refuses to run if index.html does not start and end the way it expects,
 // rather than quietly publishing something that differs from the source.

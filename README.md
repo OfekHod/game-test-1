@@ -44,9 +44,18 @@ detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
 ## Why the harness reads index.html
 
 There is deliberately no second copy of the game source. `harness.js` extracts
-the script from the shipped HTML and patches counters into it, so a tuning
-experiment and the playable build can never disagree. If a hook stops matching
-after an edit, the harness throws rather than quietly reporting zeros.
+the game's script from the shipped HTML and patches counters into it, so a
+tuning experiment and the playable build can never disagree. If a hook stops
+matching after an edit, the harness throws rather than quietly reporting zeros.
+
+`index.html` holds three inline scripts: a guard that reports a truncated file,
+the music synthesiser, and the game. The synthesiser comes first and on its own
+so that it can play while the megabyte below it is still arriving — a browser
+runs no part of an inline script until it has parsed all of it, so music kept
+in the game's script cannot sound until the whole file has landed. The harness
+takes the LAST script, which is the game, so nothing under Node ever sees the
+synthesiser: the game reaches it through `window.LaneMusic` and copes with it
+being absent.
 
 ## Known state
 
