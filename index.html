@@ -11,6 +11,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- What iOS Safari tints its own status bar with. Without it Safari samples
+     the document background, which is the field's green — so the strip above
+     the game came out flat green whatever was actually on screen, and read as
+     a border the page could not paint over. syncThemeColor keeps this matched
+     to whichever screen is up, so the strip continues the picture instead. -->
+<meta name="theme-color" id="themeColor" content="#0a0f16">
 <title>Lane — POC v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,7 +37,12 @@
   *{box-sizing:border-box;}
   /* overscroll-behavior stops the iOS rubber band, which drags the whole fixed
      layer down and shows this background underneath it as a moving green gap. */
-  html,body{margin:0;height:100%;background:#1E9419;font-family:'Baloo 2',sans-serif;
+  /* The document background is what a browser samples to tint its own chrome,
+     so it must not be the field's green: that is what put a green strip above
+     the game on iOS even after the stage itself reached the edge. The green
+     moved onto .wrap, whose padding IS the desktop frame, so that is unchanged.
+     overscroll-behavior stops the iOS rubber band showing any of it anyway. */
+  html,body{margin:0;height:100%;background:#0a0f16;font-family:'Baloo 2',sans-serif;
     overflow:hidden;overscroll-behavior:none;}
   /* THE GAME GOES EDGE TO EDGE. The safe-area insets used to be padding here,
      which pushed the stage in and left the body's grass green showing as a
@@ -40,7 +51,7 @@
      not gone away; they moved onto the things that must not sit under the
      notch (the party chips, the scoreboard, the dock, the skill button), so
      the picture fills the screen and only the controls step back. */
-  .wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;padding:0;}
+  .wrap{position:fixed;left:0;right:0;top:0;height:100vh;height:100dvh;padding:0;background:#1E9419;}
   #stage{position:relative;width:100%;height:100%;overflow:hidden;}
   #safeProbe{position:absolute;left:0;top:0;width:0;
     height:var(--sat);pointer-events:none;visibility:hidden;}
@@ -7956,12 +7967,43 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+  // iOS Safari paints a strip of its own above the page — the status bar — and
+  // colours it from theme-color. One fixed colour is wrong four times out of
+  // five here, because the top of the screen is dark art, then cream board,
+  // then sky, then field. So it follows the screen, and the strip reads as more
+  // of the picture rather than as a band laid on top of it.
+  //
+  // Driven from the frame loop and read off the DOM rather than pushed from each
+  // transition: there are eight places that show or hide a screen, and a colour
+  // that is set in seven of them is a colour that is wrong in the eighth. The
+  // write is skipped unless the value actually changed, so this costs a string
+  // compare a frame.
+  const themeColorEl = document.getElementById('themeColor');
+  // The end screen is the olive veil over the field, mixed down by hand:
+  // .45 of (30,40,20) over the grass lands on (30,99,23).
+  const THEME_INTRO='#0a0f16', THEME_SKY='#2C82C4', THEME_MENU='#EEEAE2',
+        THEME_END='#1E6317', THEME_FIELD=GRASS_COLOR;
+  let themeColorNow = '';
+  function syncThemeColor(){
+    if(!themeColorEl) return;
+    const vis = el => el && !el.classList.contains('hidden');
+    // Topmost screen wins, in the same order they stack.
+    const want = vis(introScreen) ? THEME_INTRO
+               : (vis(curtainEl) || vis(loadScreen)) ? THEME_SKY
+               : vis(startScreen) ? THEME_MENU
+               : vis(endScreen) ? THEME_END
+               : THEME_FIELD;
+    if(want === themeColorNow) return;
+    themeColorNow = want;
+    themeColorEl.setAttribute('content', want);
+  }
+
   let last = performance.now();
   function loop(now){
     const dt = Math.min(0.05,(now-last)/1000); last=now;
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
-    try { update(dt); render(); if(roundHold) warmFrames++; }
+    try { update(dt); render(); syncThemeColor(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
