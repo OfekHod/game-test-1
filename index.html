@@ -4786,6 +4786,9 @@ window.addEventListener('DOMContentLoaded', function(){
     h.dashing=true; h.dashElapsed=0; h.dashFrom={x:h.x,y:h.y}; h.dashTo={x:tx,y:ty};
     h.skillCd=s.skillCd; h.mana-=s.skillManaCost; h.invuln=DASH_IFRAME;
     addBurst(h.x,h.y,'#5AC8E8',10);
+    // Scheduled with the animation's own length, so the landing sounds when the
+    // hero is drawn arriving rather than a frame either side of it.
+    sfxTeleport(fromX, fromY, tx, ty, DASH_DURATION);
     // Cooldown is set above, so a kill during the sweep simply clears it. Mana is
     // not refunded, so a chain is limited by the bar rather than being free.
     tut.dashWindow = true;                       // so a kill in this sweep is known to be the blink's
@@ -4958,6 +4961,7 @@ window.addEventListener('DOMContentLoaded', function(){
     c.atkT = MOB_ATTACK_SHOW;
     const dmg = Math.round(c.dmg*rand(0.85,1.15)*defenseMult(target));
     target.hp -= dmg; target.flash = 0.2;
+    sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
     registerHurt(target, dmg);
     addHitFloater(target, dmg, dmgColor(target.side==='player', false), false);
     applyKnockbackImpulse(target, target.x-c.x, target.y-c.y, KNOCKBACK_HERO*0.45);
@@ -5327,6 +5331,10 @@ window.addEventListener('DOMContentLoaded', function(){
   function collectXpOrb(o, h){
     if(tut.on && h.side==='player') tutNote('orb');
     addTally(h, 'xp', o.value, ' XP', '#FFD54F', 0);
+    // Only your own side chimes. An enemy hero hoovering up the wave you just
+    // killed, three steps away and audibly climbing the same ladder, reads as
+    // your pickup and is not.
+    if(h.side==='player') sfxPickup('gold', o.x, o.y);
     addBurst(o.x,o.y,'#FFD54F',12);
     addPing(h.x, h.y-h.r*0.35, '#FFE28A', 5, 30, 0.28);
     // Only the focused hero has a bar on screen to fly into; everyone else — and
@@ -5357,6 +5365,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function collectMana(m, h){
     if(tut.on && h.side==='player') tutNote('mana');
     addTally(h, 'mp', m.value, ' MP', '#7FB8F2', 54);
+    if(h.side==='player') sfxPickup('mana', m.x, m.y);
     addBurst(m.x,m.y,'#8fc4f2',12);
     addPing(h.x, h.y-h.r*0.35, '#9FD4FF', 5, 30, 0.28);
     const flying = h===playerTeam[activePlayerIdx]
@@ -6755,6 +6764,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(isCrit) dmg*=CRIT_MULT;
     dmg=Math.round(dmg);
     creep.hp-=dmg; creep.flash=0.18;
+    sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
     addFloater(creep.x, creep.y-creep.r-6, String(dmg), dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit, false, isCrit);
     addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
     applyKnockbackImpulse(creep, dirX, dirY, KNOCKBACK_CREEP*(isCrit?1.7:1));
@@ -6789,6 +6799,10 @@ window.addEventListener('DOMContentLoaded', function(){
     dmg *= defenseMult(target);
     dmg=Math.round(dmg);
     target.hp-=dmg; target.flash=0.18;
+    // Whose bar just moved is the one thing this has to say. Your own hero
+    // taking one is a different sound from every hit you land, including the
+    // ones your team-mates take: it is the only one you have to react to.
+    sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
     registerHurt(target, dmg);
     addHitFloater(target, dmg, dmgColor(target.side==='player', isCrit), isCrit);
     addBurst(target.x, target.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
@@ -9609,6 +9623,310 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
 
+
+  /* -------------------------------------------------------------------- sfx
+     Five moments get a sound: landing a hit on a creep, critting one, landing
+     one on an enemy hero, taking one yourself, and picking up gold or mana.
+     They are synthesised the same way the music is — a handful of oscillators
+     and one shared noise buffer per event — so nothing is fetched, nothing is
+     decoded, and the whole thing is a few hundred bytes rather than a folder
+     of samples.
+
+     A fight lands a hit every two or three frames, so the hard part is not the
+     sounds, it is stopping them from becoming a texture of gravel:
+
+      - Position. Everything is panned and attenuated by where it happened
+        relative to the view, and anything past the edge of the screen is never
+        scheduled at all. Two waves trading blows in the other lane are silent,
+        which is exactly how they look.
+      - A budget. Eight one-shots per tenth of a second, plus a floor on the
+        gap between two of the same kind. A five-creep wave dying together
+        should thump once, not tear.
+      - Detune. Every voice is jittered a few percent and every noise burst
+        starts from a different point in the buffer, so a stream of hits reads
+        as one thing happening repeatedly rather than one recording repeated.
+      - A ladder on the pickups. Consecutive orbs climb a pentatonic scale and
+        drop back after a second of not picking anything up. It is the trick
+        every platformer's coin uses, and it is most of why hoovering up what a
+        wave dropped feels like it is going somewhere. */
+
+  /* sfx:engine begin — tools/sfx-demo.js lifts everything down to the end
+     marker into a standalone audition page, so what is tuned there is exactly
+     what plays here. It may use rng, mtof and clamp; nothing else from the
+     game, and nothing about the camera — the caller decides where a sound is
+     and hands in a { pan, gain }. */
+  function createLaneSfx(ctx){
+    const sr = ctx.sampleRate;
+    const master = ctx.createGain();
+    master.gain.value = 0.55;
+    // A wave dying at once is a dozen transients inside 200ms. The limiter is
+    // what keeps that a thump instead of a click.
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -15; comp.knee.value = 8; comp.ratio.value = 6;
+    comp.attack.value = 0.003; comp.release.value = 0.18;
+    master.connect(comp); comp.connect(ctx.destination);
+
+    // Half a second of white noise, reused by every transient and re-coloured
+    // by whichever filter it plays through. Deterministic for the same reason
+    // the music is: two builds must sound identical.
+    const noiseBuf = (function(){
+      const n = Math.floor(sr * 0.5);
+      const b = ctx.createBuffer(1, n, sr);
+      const d = b.getChannelData(0);
+      const r = rng(90210);
+      for(let i = 0; i < n; i++) d[i] = r() * 2 - 1;
+      return b;
+    })();
+
+    // One gain and one panner per event, everything in that event hanging off
+    // it. Positioning is therefore decided once, not per voice.
+    function place(p){
+      const g = ctx.createGain();
+      g.gain.value = p.gain;
+      if(ctx.createStereoPanner){
+        const pan = ctx.createStereoPanner();
+        pan.pan.value = clamp(p.pan, -1, 1);
+        g.connect(pan); pan.connect(master);
+      } else g.connect(master);
+      return g;
+    }
+
+    // The crack of contact: noise, shaped by a filter and gone in under a
+    // tenth of a second. Where the filter sits is what makes it wood, cloth or
+    // stone; the buffer underneath is the same every time.
+    function burst(dest, t, amp, freq, q, dur, type, freq2){
+      const s = ctx.createBufferSource();
+      s.buffer = noiseBuf;
+      s.loop = true;
+      s.playbackRate.value = 0.75 + Math.random() * 0.5;
+      const f = ctx.createBiquadFilter();
+      f.type = type || 'bandpass';
+      f.frequency.setValueAtTime(clamp(freq, 40, sr * 0.45), t);
+      // A band walked up or down the spectrum is a swish; a band held still is
+      // a thump. It is the same noise underneath either way.
+      if(freq2) f.frequency.exponentialRampToValueAtTime(clamp(freq2, 40, sr * 0.45), t + dur);
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f); f.connect(g); g.connect(dest);
+      s.start(t, Math.random() * 0.4);
+      s.stop(t + dur + 0.02);
+    }
+
+    // A single enveloped oscillator, optionally sliding. The slide is the
+    // whole weight of an impact: a body that holds its pitch is a beep, and a
+    // body that falls an octave and a half in 60ms is something landing.
+    function tone(dest, t, type, f0, f1, amp, dur, atk){
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      if(f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(24, f1), t + dur * 0.55);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(amp, t + (atk == null ? 0.003 : atk));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(dest);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+
+    /* ------------------------------------------------------------ impacts */
+
+    // Four impacts, one shape: a filtered crack for the contact and a
+    // pitch-dropping body under it for the weight. What separates them is
+    // mostly where that body sits. A creep is a light papery tick you can hear
+    // fifty of; an enemy hero is a thock; and being hit yourself is lower,
+    // longer and duller than anything you can do to somebody else, because the
+    // one thing this has to say without a word is WHOSE health just moved.
+    //          crack: [amp, Hz,   Q,   sec ]  body: [from, to, amp,  sec ]
+    const IMPACT = {
+      creep: { crack: [0.40, 2600, 1.1, 0.055], body: [300,  96, 0.30, 0.10] },
+      crit:  { crack: [0.46, 3300, 1.5, 0.075], body: [430, 120, 0.34, 0.13], ring: true },
+      hero:  { crack: [0.44, 1700, 0.9, 0.085], body: [230,  74, 0.44, 0.17] },
+      hurt:  { crack: [0.38,  760, 0.7, 0.110], body: [165,  52, 0.52, 0.26], groan: true },
+    };
+
+    function impact(kind, p){
+      const spec = IMPACT[kind] || IMPACT.creep;
+      const t = ctx.currentTime + 0.002;
+      const dest = place(p);
+      const j = 0.93 + Math.random() * 0.14;
+      const c = spec.crack, b = spec.body;
+      burst(dest, t, c[0], c[1] * j, c[2], c[3]);
+      tone(dest, t, 'triangle', b[0] * j, b[1] * j, b[2], b[3]);
+      // A crit rings. Two partials a fifth apart, started six milliseconds in
+      // so they read as part of the same hit rather than a second sound after
+      // it — much later and it stops being a crit and starts being a pickup.
+      if(spec.ring){
+        tone(dest, t + 0.006, 'sine', 1580 * j, 1580 * j, 0.15, 0.30, 0.004);
+        tone(dest, t + 0.006, 'sine', 2370 * j, 2370 * j, 0.09, 0.22, 0.004);
+      }
+      // Taking one gets a low sawtooth under it, filtered nearly shut. It is
+      // felt more than heard, and it is the whole difference between "I hit
+      // something" and "something hit me".
+      if(spec.groan){
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 620; lp.Q.value = 0.7;
+        lp.connect(dest);
+        tone(lp, t, 'sawtooth', 190 * j, 62 * j, 0.28, 0.24);
+      }
+    }
+
+    /* ------------------------------------------------------------ pickups */
+
+    // A major pentatonic ladder: nine rungs, no interval in it can sound wrong
+    // against the next, and it keeps climbing long enough to cover the drops
+    // from a whole wave without ever leaving the top of the piano.
+    const LADDER = [0, 2, 4, 7, 9, 12, 14, 16, 19];
+
+    function pickup(kind, step, p){
+      const t = ctx.currentTime + 0.002;
+      const dest = place(p);
+      const rung = LADDER[Math.min(step, LADDER.length - 1)];
+      if(kind === 'mana'){
+        // Mana pools where gold clinks: one note gliding up a fourth, a fifth
+        // lower than the coin sits, with a breath of high noise over it. No
+        // attack transient at all — that is what makes it read as liquid.
+        const f = mtof(74 + rung);
+        tone(dest, t, 'sine', f * 0.749, f, 0.26, 0.34, 0.014);
+        tone(dest, t, 'sine', f * 2, f * 3, 0.06, 0.26, 0.020);
+        burst(dest, t + 0.008, 0.07, 5400, 1.4, 0.22, 'highpass');
+      } else {
+        // Gold is the two-note coin everything from Mario onwards uses: a
+        // short blip, then a longer note a fifth above it. Triangles rather
+        // than squares — a chiptune coin in this game sounded like it had
+        // wandered in from another one — with sine partials on the second note
+        // for the glassy top that makes it read as metal.
+        const f = mtof(81 + rung);
+        tone(dest, t, 'triangle', f, f, 0.20, 0.05, 0.002);
+        const t2 = t + 0.048, f2 = f * 1.5;
+        tone(dest, t2, 'triangle', f2, f2, 0.22, 0.26, 0.003);
+        tone(dest, t2, 'sine', f2 * 2, f2 * 2, 0.07, 0.18, 0.003);
+        tone(dest, t2, 'sine', f2 * 2.99, f2 * 2.99, 0.04, 0.13, 0.003);
+      }
+    }
+
+    /* ----------------------------------------------------------- teleport */
+
+    // The blink is the only thing in the game that happens in two places at
+    // once, so it is the only sound that does: air closing over where the hero
+    // was, and a landing where he now is, separated by exactly the length of
+    // the animation between them. Both are scheduled here off the audio clock
+    // rather than by a timer in the frame loop — 120ms is short enough that a
+    // dropped frame would smear the two halves into one noise.
+    //
+    // The gesture is a mirror. Leaving sweeps up and thins to nothing; arriving
+    // sweeps down and lands on a body. Anyone who has heard the first knows
+    // what the second is going to be, which is what makes a pair of sounds read
+    // as one event rather than two.
+    function teleport(from, to, gap){
+      const t = ctx.currentTime + 0.002;
+      const j = 0.95 + Math.random() * 0.10;
+      if(from){
+        const d = place(from);
+        tone(d, t, 'triangle', 250 * j, 1180 * j, 0.26, 0.13, 0.016);
+        tone(d, t, 'sine', 500 * j, 2360 * j, 0.09, 0.11, 0.020);
+        burst(d, t, 0.20, 900, 1.2, 0.12, 'bandpass', 5200);
+      }
+      if(to){
+        const d = place(to);
+        const a = t + (gap == null ? 0.12 : gap);
+        tone(d, a, 'triangle', 1500 * j, 330 * j, 0.24, 0.12, 0.004);
+        // The body under the landing. Without it the hero arrives as a whistle
+        // and weighs nothing.
+        tone(d, a + 0.02, 'triangle', 230 * j, 72 * j, 0.36, 0.17);
+        burst(d, a + 0.02, 0.18, 3200, 1.0, 0.05);
+        // Two partials of ice on top, because the blink is drawn in cyan and a
+        // warm arrival sounded like it belonged to a different ability.
+        tone(d, a + 0.03, 'sine', 1880 * j, 1880 * j, 0.12, 0.34, 0.004);
+        tone(d, a + 0.03, 'sine', 2810 * j, 2810 * j, 0.07, 0.24, 0.004);
+      }
+    }
+
+    return { impact, pickup, teleport, master, kinds: Object.keys(IMPACT) };
+  }
+  /* sfx:engine end */
+
+  // Built on the same terms as the music: only ever from a context that a
+  // gesture has already created, never one of its own, so nothing here can
+  // trip the autoplay policy or exist under sim/stub.js.
+  //
+  // The same terms decide whether it is heard, too. There is no separate mute:
+  // sound plays when the context is running and the tab is in front, which is
+  // the exact condition musicSync tests. This used to read a musicOn flag as
+  // well — the flag the ♪ button set — and the button and the flag both left
+  // with the beta splash, so an ordinary hit would have thrown a ReferenceError
+  // inside the merge and taken the frame with it.
+  let sfxRig = null, sfxDead = false;
+  function sfxReady(){
+    if(sfxDead || !musicCtx || document.hidden) return false;
+    if(!sfxRig){
+      try{ sfxRig = createLaneSfx(musicCtx); }
+      catch(err){ sfxDead = true; console.error('sfx unavailable', err); return false; }
+    }
+    return true;
+  }
+
+  // Where a sound sits, and how loud, from where it happened relative to what
+  // is on screen. Past the edge of the view the gain reaches zero and the
+  // caller drops the event entirely — which is a mercy for the ears and, since
+  // most of the map's fighting is off-camera, most of the work never done.
+  function sfxPlace(wx, wy){
+    const dx = (wx - camera.x - W / 2) / (W / 2);
+    const dy = (wy - camera.y - H / 2) / (H / 2);
+    const g = 1.25 - 0.75 * Math.sqrt(dx * dx + dy * dy);
+    if(g <= 0.03) return null;
+    return { pan: clamp(dx, -1, 1) * 0.75, gain: Math.min(1, g) };
+  }
+
+  // Eight voices per tenth of a second, and a floor on the gap between two of
+  // the same kind. Everything past that is dropped rather than queued: a hit
+  // that arrives late is worse than one that never arrives.
+  let sfxWinAt = -9, sfxWinN = 0;
+  const sfxLast = Object.create(null);
+  function sfxGate(kind, gap){
+    const now = musicCtx.currentTime;
+    if(now - (sfxLast[kind] || -9) < gap) return false;
+    if(now - sfxWinAt > 0.1){ sfxWinAt = now; sfxWinN = 0; }
+    if(++sfxWinN > 8) return false;
+    sfxLast[kind] = now;
+    return true;
+  }
+
+  // Either end may be off the edge of the view on its own — blinking out of
+  // sight is most of the point of blinking — so the two halves are placed
+  // independently and either can be dropped while the other plays.
+  function sfxTeleport(fromX, fromY, toX, toY, gap){
+    if(!sfxReady()) return;
+    const a = sfxPlace(fromX, fromY), b = sfxPlace(toX, toY);
+    if(!a && !b) return;
+    if(!sfxGate('blink', 0.06)) return;
+    sfxRig.teleport(a, b, gap);
+  }
+
+  function sfxImpact(kind, wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate(kind, kind === 'creep' ? 0.05 : 0.03)) return;
+    sfxRig.impact(kind, p);
+  }
+
+  // Consecutive pickups climb the ladder; a second without one and you are
+  // back at the bottom. Gold and mana keep separate counts, so alternating
+  // between them is two rising lines rather than one confused one.
+  const sfxStreak = { gold: { n: 0, t: -9 }, mana: { n: 0, t: -9 } };
+  function sfxPickup(kind, wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('pick:' + kind, 0.035)) return;
+    const now = musicCtx.currentTime, s = sfxStreak[kind];
+    s.n = (now - s.t > 1.0) ? 0 : s.n + 1;
+    s.t = now;
+    sfxRig.pickup(kind, s.n, p);
+  }
   // The end screen is a menu too: after a match the player is sitting on an
   // overlay deciding whether to go again, and the match track under a
   // scoreboard would be the wrong piece.
@@ -9731,6 +10049,16 @@ window.addEventListener('DOMContentLoaded', function(){
   // door itself. A window-level handler would dismiss the overlay and let the
   // same tap carry on into whichever mode button happened to be underneath.
   bindTap(introScreen, introDismiss);
+
+  // Proof of life, in the one place already on screen before anything is
+  // pressed. A menu that RENDERS is not a menu that RUNS: the markup and the
+  // CSS can arrive while the script is blocked — an embed that refuses to
+  // execute it, a preview pane that never runs one — and then every button is
+  // dead and nothing on the page says why. The cut-off guard above cannot
+  // cover that case, because it is a script too. If the build tag does not end
+  // in "ready", nothing below the markup ran and no button will ever answer.
+  const buildTagEl = document.getElementById('buildTag');
+  if(buildTagEl) buildTagEl.textContent += ' · ready';
 
   window.__laneLoaded = true;
 })();
