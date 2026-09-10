@@ -190,34 +190,6 @@
   .pchip[data-stat="FLLW"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="ASSM"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="DEAD"] .pstat{color:#FF8E7C;}
-  /* The chips grew a row, and the party is a stretch row, so centre the ASSEMBLE
-     button's own contents rather than leaving them stranded at the top. */
-  /* Narrower than a player chip since the cards arrived: it is a button, not a
-     hero, and at a card's width it read as a fourth card with the picture
-     missing. It still stretches to their height — the row is one block — and
-     centres what it holds in that. The word sets the width — width:auto plus a
-     gutter either side — rather than a number measured against the fallback
-     font: Baloo 2 arrives over the network and is wider than what a machine
-     with no network renders ASSEMBLE in, and a width picked from the second one
-     clips the first. min-width is only a floor for a shorter word. */
-  .asmBtn{width:auto;min-width:76px;padding:0 12px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
-          display:flex;flex-direction:column;justify-content:center;align-items:center;}
-  .asmBtn:active{transform:translateY(1px);}
-  .asmBtn.cooling{opacity:.55;}
-  .asmBtn.cooling:active{transform:none;}
-  .asmCd{position:absolute;left:0;right:0;bottom:0;height:0%;background:rgba(60,40,10,.45);pointer-events:none;}
-  .asmIcon,.asmLabel{position:relative;}
-  .asmIcon{position:relative;width:24px;height:24px;margin:3px auto 6px;border-radius:50%;border:3px solid var(--text-strong);opacity:.8;}
-  .asmIcon::before{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:var(--text-strong);transform:translate(-50%,-50%);}
-  /* A point smaller than the chip's own type, because the word it carries is
-     ASSEMBLE and it has to read across a button narrower than a card. */
-  .asmLabel{display:block;font-size:11px;font-weight:800;letter-spacing:.4px;white-space:nowrap;}
-  /* The key to press. It rode the top right corner of every card once — 1, 2, 3
-     against the level badge on the left — and now only the ASSEMBLE button
-     carries one. The keys themselves are unchanged: 1/2/3 still take a hero
-     over, and the HUD hint line and the tutorial still say so. */
-  .pkey{position:absolute;top:-10px;right:-8px;font-size:13px;font-weight:800;background:var(--panel-border);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;}
-
   /* The dock reaches the bottom edge and pads itself off it, so the strip the
      home indicator sits on is the dock's own cream rather than a gap. It keeps
      its own background for that strip; dockH is measured from offsetHeight, so
@@ -790,24 +762,14 @@
        Only the chip's WIDTH carries those — .pcard is
        246/364 of whatever it is given, so the picture grows by a tenth in both
        directions and keeps its shape, while the nameplate under it stays the
-       height it was and simply takes up less of the chip.
-       The ASSEMBLE button stays a bar underneath rather than a fourth column,
-       which is a better target for a thumb and is what let the cards have the
-       width in the first place — the row shares the top of the screen with the
-       scoreboard, and a 390px phone leaves it about 200 pixels. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;padding-bottom:32px;}
+       height it was and simply takes up less of the chip. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;}
     .pchip{width:56px;border-width:1.5px;border-radius:7px;}
     .plevel{top:-6px;left:-5px;font-size:8px;width:14px;height:14px;line-height:14px;}
-    .pkey{top:-6px;right:-5px;font-size:8px;width:13px;height:13px;line-height:13px;}
     .pcard{border-radius:5.5px 5.5px 0 0;}
     .pmeter{padding:4px 4px 4px;border-radius:0 0 5.5px 5.5px;}
     .pbar{height:3px;border-radius:1.5px;margin-top:1.5px;}
     .pstat{font-size:8px;letter-spacing:.2px;margin-top:2.5px;}
-    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;height:28px;
-      flex-direction:row;gap:6px;border-radius:7px;}
-    .asmIcon{width:12px;height:12px;margin:0;border-width:1.5px;}
-    .asmIcon::before{width:4px;height:4px;}
-    .asmLabel{font-size:9px;letter-spacing:.35px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -832,12 +794,7 @@
     .skillName{display:none;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
-    /* A phone on its side has width to spare and no height at all, so the ASSEMBLE
-       button climbs back into the row rather than costing the party another
-       forty pixels down a 390px-tall screen. */
-    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));padding-bottom:0;}
-    .asmBtn{position:static;width:auto;height:auto;flex-direction:column;gap:0;}
-    .asmIcon{margin:0 auto 5px;}
+    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
     .waveBanner b{font-size:52px;}
@@ -908,7 +865,6 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ASSEMBLE</span><span class="pkey">0</span></button>
     </div>
 
     <div class="bottomDock hidden" id="bottomDock">
@@ -8313,6 +8269,16 @@ window.addEventListener('DOMContentLoaded', function(){
   let touchSkillTap = false;
   let skillKeyWasDown = false;   // last frame's space, so a held key is one cast and not sixty
   let usedTouch = false;    // true once the player has actually touched the screen
+  // Two fingers pulled toward each other calls the squad home — the touch
+  // stand-in for the 0 key, since there is no ASSEMBLE button to tap on a
+  // phone. Tracked apart from the join/order machinery above: neither finger
+  // is claimed as a joystick or a drag while a pinch might be forming, so it
+  // never fights the two-thumb move-and-shoot combo.
+  let pinch = null;   // {aId, bId, dist0, t0, fired}
+  const PINCH_MIN_SPREAD = 90;   // fingers must start this far apart (css px)...
+  const PINCH_SHRINK = 0.55;     // ...and close to at most this fraction of that...
+  const PINCH_WINDOW = 1200;     // ...within this many ms, or it reads as drift, not a pinch.
+  function touchDist(t1, t2){ return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
 
   function canvasRect(){ return canvas.getBoundingClientRect(); }
   function toCanvasCoords(clientX, clientY){
@@ -8372,10 +8338,38 @@ window.addEventListener('DOMContentLoaded', function(){
         moved: 0, wx: wpt.x, wy: wpt.y
       };
     }
+    // A second finger landing while the first is free (not already steering
+    // the minimap or dragging a hero) opens a pinch window. Whether it turns
+    // into an assemble depends on how those two fingers move from here.
+    if(!pinch && e.touches.length===2){
+      const [ta, tb] = e.touches;
+      const busy = id => id===scoutTouch || (orderDrag && orderDrag.id===id);
+      if(!busy(ta.identifier) && !busy(tb.identifier)){
+        pinch = { aId:ta.identifier, bId:tb.identifier, dist0:touchDist(ta,tb), t0:performance.now(), fired:false };
+      }
+    }
     e.preventDefault();
   }
   function onTouchMove(e){
     if(state!=='playing') return;
+    if(pinch && !pinch.fired){
+      let ta=null, tb=null;
+      for(const t of e.touches){
+        if(t.identifier===pinch.aId) ta=t;
+        else if(t.identifier===pinch.bId) tb=t;
+      }
+      if(ta && tb && pinch.dist0 >= PINCH_MIN_SPREAD
+         && touchDist(ta,tb) <= pinch.dist0*PINCH_SHRINK
+         && performance.now()-pinch.t0 <= PINCH_WINDOW){
+        pinch.fired = true;
+        assembleOnFocus();
+        // Neither finger should also be steering the joystick it may have opened.
+        if(moveTouch && (moveTouch.id===pinch.aId || moveTouch.id===pinch.bId)){
+          moveTouch = null; touchMoveVec = {x:0,y:0}; hideJoystick(moveJoyEl);
+        }
+        delete pendingTouch[pinch.aId]; delete pendingTouch[pinch.bId];
+      }
+    }
     const r = stageEl.getBoundingClientRect();
     let handled = false;
     for(const t of e.changedTouches){
@@ -8420,6 +8414,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function onTouchEnd(e){
     let handled = false;
     for(const t of e.changedTouches){
+      if(pinch && (t.identifier===pinch.aId || t.identifier===pinch.bId)) pinch = null;
       if(scoutTouch === t.identifier){
         scoutTouch = null; scout = null; glideCam(0.8);    // let go: slide back to your hero
         handled = true;
@@ -8483,18 +8478,6 @@ window.addEventListener('DOMContentLoaded', function(){
       if(state==='playing') focusHero(i);
     });
   }
-
-  const assembleBtn = document.getElementById('assembleBtn');
-  const assembleCdFillEl = document.getElementById('assembleCdFill');
-  assembleBtn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); }, {passive:false});
-  bindTap(assembleBtn, assembleOnFocus);
-  bindTip(assembleBtn, ()=>
-    '<b>Assemble &mdash; 0</b>Sends your other two heroes to follow whichever hero you are '
-    + 'controlling right now. They hold formation until you drag one somewhere else.<br>'
-    + 'For one hero instead of both, drag him onto a team-mate — or onto that '
-    + 'team-mate\'s square — and he escorts him.<br><i>'
-    + (assembleCd>0 ? 'Ready in '+Math.ceil(assembleCd)+'s' : ASSEMBLE_CD+'s cooldown') + '</i>');
-
 
   let boltSeq = 0;              // walks every fired bolt onto a different frame
   function fireBasic(h, aimX, aimY, useAssist, rateMult){
@@ -12405,8 +12388,6 @@ window.addEventListener('DOMContentLoaded', function(){
       chip.querySelector('.pbar.xp span').style.width = Math.max(0,h.xp/h.xpToNext*100)+'%';
       chip.querySelector('.plevel').textContent = h.level;
     }
-    assembleBtn.classList.toggle('cooling', assembleCd>0);
-    assembleCdFillEl.style.height = (assembleCd/ASSEMBLE_CD*100)+'%';
     const activeH = playerTeam[activePlayerIdx];
     const skillKey = activeH.type==='carry'?'dash':activeH.type==='tank'?'rocket':'heal';
     skillIconEl.className = 'skillIcon skill-' + skillKey;
@@ -13460,10 +13441,10 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Assemble',
     text:()=>tutPick(
-      '<k>0</k>, or <b>ASSEMBLE</b> beside the cards, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
-      '<b>ASSEMBLE</b>, under the cards, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
+      '<k>0</k> drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
+      '<b>Pinch two fingers together</b> anywhere on the field to drop every order and pull both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
     goal:()=>'Call the squad back to you',
-    hl:()=>assembleBtn,
+    hl:()=>partyEl,
     done:()=>!!tut.p.assemble
   },
   {
@@ -13623,7 +13604,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
       return '3 · Destroy their outpost — ' + left + '% left';
     },
-    hl:()=>assembleBtn,
+    hl:()=>partyEl,
     enter(){
       // The phase that finally lets the waves out: a lane push is a wave with
       // heroes behind it, and there is nothing to walk behind without one.
@@ -13674,7 +13655,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const stage = (p.assemble ? 1 : 0) + (p.lane ? 1 : 0);
       if(stage !== p.stage){
         p.stage = stage;
-        tutHighlight(stage === 0 ? assembleBtn : null);
+        tutHighlight(stage === 0 ? partyEl : null);
         tutPaint();                    // the card says something new at each one
       }
     },
