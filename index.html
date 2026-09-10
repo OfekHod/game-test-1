@@ -5537,6 +5537,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // gathers in, not all at once.
   const ASSEMBLE_FX_MIN_DUR = 0.32, ASSEMBLE_FX_MAX_DUR = 0.85, ASSEMBLE_FX_SPEED = 1000;
   const ASSEMBLE_AURA_DUR = 1.35;   // outlives the longest streak, so the orbit is still turning when the last one lands
+  const ASSEMBLE_RING_MULT = 5.2;   // matches the orbit radius in spawnAuraMote/drawAssembleAuras
   function triggerAssembleFX(anchor, mates){
     const pal = FX_PAL.assemble;
     anchor.aAura = { t:0, dur:ASSEMBLE_AURA_DUR, motes:[] };
@@ -5544,11 +5545,19 @@ window.addEventListener('DOMContentLoaded', function(){
     // ring is already alive by the time the first streak lands in it rather
     // than popping into existence.
     for(let i=0;i<3;i++) spawnAuraMote(anchor, rand(0,Math.PI*2), 0);
+    // Each streak's target is where it crosses the ring, not the anchor's own
+    // position, so the arrival — and the burst it triggers — lands ON the
+    // circle. That is the splash the ring motes then pick up and carry on.
+    const ringR = anchor.r*ASSEMBLE_RING_MULT;
     for(const m of mates){
       if(!m.alive) continue;
       const d = dist(m.x, m.y, anchor.x, anchor.y);
-      const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, d/ASSEMBLE_FX_SPEED));
-      assembleFx.push({ x0:m.x, y0:m.y, x1:anchor.x, y1:anchor.y, life:0, dur, pal, arrived:false, anchor });
+      const inside = d <= ringR;
+      const tx = inside ? anchor.x : anchor.x + (m.x-anchor.x)/d*ringR;
+      const ty = inside ? anchor.y : anchor.y + (m.y-anchor.y)/d*ringR;
+      const travelD = inside ? d : d-ringR;
+      const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, travelD/ASSEMBLE_FX_SPEED));
+      assembleFx.push({ x0:m.x, y0:m.y, x1:tx, y1:ty, life:0, dur, pal, arrived:false, anchor });
     }
     anchor.levelGlow = Math.max(anchor.levelGlow||0, 1.3);
     anchor.glowCol = pal.glow;
@@ -5562,7 +5571,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const ar = anchor.aAura; if(!ar) return;
     ar.motes.push({
       angle, speed: rand(1.5,2.2) * (Math.random()<0.5 ? 1 : -1),
-      rBase: anchor.r*5.2, rAmp: anchor.r*0.22, freq: rand(1.4,2.2), phase: rand(0,6.28),
+      rBase: anchor.r*ASSEMBLE_RING_MULT, rAmp: anchor.r*0.22, freq: rand(1.4,2.2), phase: rand(0,6.28),
       born: bornAt
     });
   }
@@ -5572,17 +5581,22 @@ window.addEventListener('DOMContentLoaded', function(){
       f.life += dt;
       if(!f.arrived && f.life >= f.dur){
         f.arrived = true;
-        addBurst(f.x1, f.y1, f.pal.mid, 9);
-        spawnSparkles(f.x1, f.y1, 6, f.pal.spark, 0.55);
-        // The streak's own arrival angle seeds two fresh motes on the ring, so
-        // the light that just flew in visibly folds into the orbit instead of
-        // the two effects reading as separate systems.
+        // The mini-explosion where the streak actually meets the ring: a
+        // proper burst rather than a puff, plus a quick ripple so the impact
+        // itself is legible, not just the particles it throws.
+        addBurst(f.x1, f.y1, f.pal.mid, 16);
+        addBurst(f.x1, f.y1, '#FFFFFF', 6);
+        spawnSparkles(f.x1, f.y1, 10, f.pal.spark, 0.8);
+        addPing(f.x1, f.y1, f.pal.r2, 3, 30, 0.3);
+        // The streak's own arrival angle seeds fresh motes on the ring, so the
+        // light that just splashed against it visibly folds into the orbit
+        // instead of the two effects reading as separate systems.
         if(f.anchor && f.anchor.aAura){
           const ang = Math.atan2(f.y0-f.y1, f.x0-f.x1);
           for(let k=0;k<3;k++) spawnAuraMote(f.anchor, ang+rand(-0.2,0.2), f.anchor.aAura.t);
         }
       }
-      if(f.life >= f.dur + 0.16) assembleFx.splice(i,1);
+      if(f.life >= f.dur + 0.3) assembleFx.splice(i,1);
     }
   }
   function updateAssembleAuras(dt){
@@ -5602,7 +5616,23 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for(const f of assembleFx){
-      if(f.arrived) continue;
+      if(f.arrived){
+        // The splash itself: a bright flash that blows open into a soft ring
+        // right where the streak met the circle, gone within a couple of
+        // frames — the burst/sparkles/ping triggered on arrival carry the
+        // rest of the moment.
+        const st = Math.min(1, (f.life-f.dur)/0.3);
+        const flash = Math.max(0, 1-st*st*st);
+        if(flash>0.01){
+          const rr = 8 + st*40;
+          const fg = ctx.createRadialGradient(f.x1,f.y1,0,f.x1,f.y1,rr);
+          fg.addColorStop(0,   'rgba(255,255,255,'+(0.85*flash).toFixed(3)+')');
+          fg.addColorStop(0.55,'rgba(190,235,255,'+(0.5*flash).toFixed(3)+')');
+          fg.addColorStop(1,   'rgba(190,235,255,0)');
+          ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(f.x1,f.y1,rr,0,7); ctx.fill();
+        }
+        continue;
+      }
       const t = Math.min(1, f.life/f.dur);
       const e = 1 - (1-t)*(1-t)*(1-t);           // ease-out cubic
       const eTail = Math.max(0, e - 0.22);
@@ -5640,7 +5670,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // A wide halo clear of the body itself, breathing gently, so the ring
       // reads as something the squad gathered around him rather than a glow
       // painted on his sprite.
-      const haloR = h.r*5.2 + Math.sin(ar.t*2.2)*h.r*0.12;
+      const haloR = h.r*ASSEMBLE_RING_MULT + Math.sin(ar.t*2.2)*h.r*0.12;
       const halo = ctx.createRadialGradient(h.x,h.y,h.r*0.9,h.x,h.y,haloR*1.4);
       halo.addColorStop(0,   'rgba(205,239,255,0)');
       halo.addColorStop(0.68,'rgba(180,230,255,'+(0.14*envelope).toFixed(3)+')');
