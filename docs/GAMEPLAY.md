@@ -147,7 +147,7 @@ every third wave, and the banner says so under the number when one does:
 
 | from wave | who | how they travel |
 |---|---|---|
-| 4 | the **tank** | at the head of a mob pack, never more than a stride in front of it |
+| 4 | the **tank** | with a mob pack, capped at a stride ahead of it — so it fights at the front of the wave instead of arriving alone |
 | 7 | the **carry** | on the same road, sheltering behind the tank |
 | 10 | the **healer** | shadowing the carry, and topping up whoever is hurt |
 | 13 | all three | as one column, nobody outrunning the rearmost |
@@ -157,6 +157,11 @@ about a level-4 player tank, and by wave 36 they are capped at 26. They push,
 and only push: they walk their road to your tower and hit what stands on it,
 they never farm a camp or chase you into the trees, and they hold outside an
 outpost until their own wave is closer to it than they are.
+
+**A lane's guns come down in order**, so the two outposts on a road are what
+stands between an enemy player and your base: while one of them is up, your base
+is not something that hero will attack at all. Mobs still walk past and chip it;
+heroes do not. Hold your outposts and the thing being pushed is the outpost.
 
 There is no respawn timer on them. Kill one and it is gone until the next wave
 brings it back, at that wave's level and with full bars — which is what turning

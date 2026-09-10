@@ -96,6 +96,20 @@ There is no respawn timer. Kill one and it is gone until the next wave brings it
 back — which is the whole reward for turning round to fight a hero instead of
 clearing the pack.
 
+### A lane's guns come down in order
+
+`pushTowers` narrows what an arena hero may *attack*: while an outpost on the
+road it walked in on still stands, your base is not on its list. Without it the
+carry walked past both outposts behind its wave and deleted a 500hp base in one
+mana bar — two full play-throughs that spent their stat points, used their
+skills and fought at their own towers were both overrun on wave 8, which would
+have made the healer at wave 10 and the column at wave 13 content nobody ever
+saw.
+
+It only narrows the CHOICE of target. Tower danger, the keep-out in `walkLane`
+and every shielding test still read every tower on the map, because a building
+a hero may not attack can still kill it.
+
 ### Pacing
 
 Three rules, all applied after the move and all written in distance from the
@@ -103,9 +117,11 @@ plaza, which is monotonic along both roads. Each says how deep this hero may
 stand; only forward progress is ever undone.
 
 - **Lead the pack, do not leave it.** A hero walks half again as fast as a mob,
-  so the tank arrives half a minute ahead of the wave it is leading and dies
-  alone. It leads the front mob of its own road by `SURV_LEAD_AHEAD` and no
-  more, and only while that road still has mobs on it.
+  so with no cap the tank arrives half a minute ahead of the wave it came in
+  with and dies alone. It may lead the front mob of its own road by
+  `SURV_LEAD_AHEAD` and no more, and only while that road still has mobs on it.
+  It is a CAP, not a station: a hero that stops to fight gets walked past by its
+  own pack and then closes the gap again, which is what it should do.
 - **Shelter.** The carry holds `CARRY_SHELTER` behind the tank and the healer
   `SUPPORT_SHELTER` behind the carry — the same numbers a Match uses.
 - **The column**, from stage four: nobody is more than `SURV_GROUP_LEAD` ahead

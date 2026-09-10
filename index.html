@@ -3095,6 +3095,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // gaining as the waves do. Both numbers are re-read at the top of every wave,
   // so a hero that survived a wave is built exactly like a fresh arrival — the
   // difficulty is a property of the wave, never of who happened to live.
+  // Roughly a level-appropriate player hero: a wave-4 tank has about the health
+  // a player's tank has at level 4, and the curve reaches the cap around wave
+  // 36. Halving both was tried and MEASURED TO DO NOTHING — a scripted
+  // play-through was overrun on wave 8 either way, and so was an idle one on
+  // wave 7 — because what ends an arena round is a carry with a mana bar
+  // standing next to a 500hp base, not what level it is. Left where they read
+  // sensibly rather than tuned against a number they do not move.
   const SURV_HERO_LV_BASE = 4;      // the tank's level on the wave it debuts
   const SURV_HERO_LV_STEP = 0.7;    // levels gained per wave after that
   // They arrive ON the road, with the wave, rather than at a base the arena
@@ -3491,6 +3498,32 @@ window.addEventListener('DOMContentLoaded', function(){
     // moment you do — but never throw the hero away for no progress.
     return isEndgame() && survive > toKill * 0.8;
   }
+  // IN THE ARENA, A LANE'S GUNS COME DOWN IN ORDER.
+  //
+  // An enemy player will not touch your base while an outpost on the road it
+  // walked in on is still standing. Without this the carry walked past both
+  // outposts behind its wave and deleted the base in one mana bar — measured,
+  // two full play-throughs that spent their stat points, used their skills and
+  // fought at their own towers were both overrun on wave 8, which would have
+  // made the healer at wave 10 and the column at wave 13 content nobody ever
+  // saw. It is also just how a lane is supposed to fall, and it gives the two
+  // outposts on a road something to be: hold them and your base is not the
+  // thing being pushed.
+  //
+  // Only the CHOICE of target is narrowed. Every safety rule — tower danger,
+  // the keep-out in walkLane, whether the wave is soaking the shells — still
+  // reads every tower on the map, because a building it may not attack can
+  // still kill it.
+  function pushTowers(h){
+    const own = h.side==='player' ? enemyTowers : playerTowers;
+    if(gameMode !== 'survival' || h.side !== 'enemy') return own;
+    const guards = [];
+    for(const t of own){
+      if(t.main || t.hp <= 0) continue;
+      if(distToOwnLane(h, t.x, t.y) < LANE_HALF*2) guards.push(t);   // the outposts on OUR road
+    }
+    return guards.length ? guards : own;
+  }
   function laneSeekTarget(h){
     const oppCreeps = h.side==='player' ? enemyCreeps : allyCreeps;
     const oppTeam   = h.side==='player' ? enemyTeam : playerTeam;
@@ -3504,7 +3537,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const oh of oppTeam){ if(oh.alive) consider(oh); }
     // Buildings were never in this list, so a hero standing beside an enemy
     // outpost with his wave alive saw no target at all and simply held.
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
     for(const t of oppTowers){
       if(t.hp<=0) continue;
       const d = dist(h.x,h.y,t.x,t.y) - t.r;
@@ -5336,6 +5369,13 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function grantXP(h, amount){
     if(!h || h.level>=MAX_LEVEL) return;
+    // IN THE ARENA AN ENEMY PLAYER'S LEVEL IS THE WAVE'S. It is set when the
+    // hero walks in and nothing else moves it, so how hard a wave hits is a
+    // property of the wave rather than of who happened to live through the last
+    // one — measured, a tank that survived a few waves was fighting two levels
+    // above the wave that brought it, and a wave you cleared cheaply made the
+    // next one harder for having cleared it.
+    if(gameMode==='survival' && h.side==='enemy') return;
     h.xp += amount;
     while(h.level<MAX_LEVEL && h.xp>=h.xpToNext){
       h.xp -= h.xpToNext;
@@ -7631,7 +7671,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     const oppCreeps = h.side==='player' ? enemyCreeps : allyCreeps;
     const oppTeam   = h.side==='player' ? enemyTeam : playerTeam;
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
 
     // A swing is a swing: everything hostile standing in the cone takes it, not
     // just whoever happened to be nearest. Own-side creeps and heroes are never
@@ -7694,7 +7734,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // first and only starts chipping the structure once nothing else is in
     // range — otherwise shots flip between a creep and the base and waste travel.
     if(skipTowers) return null;
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
     for(const t of oppTowers){
       if(t.hp<=0) continue;
       if(dist(h.x,h.y,t.x,t.y) - t.r >= range) continue;
@@ -10737,15 +10777,22 @@ window.addEventListener('DOMContentLoaded', function(){
     // An arena hero is part of the wave, and the wave is all on the map — the
     // whole reason the mobs are drawn unscouted is that a wave has to be
     // cleared before the next one marches, and a hero is the hardest thing in
-    // it to find. It is drawn a size up so it reads as a hero, not a big mob.
+    // it to find.
+    //
+    // A size up and a dark outline was not enough, and the picture said so: the
+    // enemy tank's colour is within a few points of a mob's on all three
+    // channels, the whole panel is 75 pixels across, and a wave arriving reads
+    // as ONE dark red smudge with the hero somewhere inside it. So the ring is
+    // the panel's own cream, which nothing else out on the field is, and it is
+    // drawn wide enough to see at that size.
     for(const h of enemyTeam){
       if(!h.alive) continue;
       if(gameMode!=='survival' && !isVisible(h.x,h.y,h.r)) continue;
       p=mp(h.x,h.y);
       ctx.fillStyle=HERO_STATS[h.type].colorEnemy;
-      ctx.beginPath(); ctx.arc(p.x,p.y, gameMode==='survival' ? 4.2 : 3.2, 0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x,p.y, gameMode==='survival' ? 4.6 : 3.2, 0,7); ctx.fill();
       if(gameMode==='survival'){
-        ctx.strokeStyle='rgba(48,26,17,.85)'; ctx.lineWidth=1.2; ctx.stroke();
+        ctx.strokeStyle='#FFF3D6'; ctx.lineWidth=2; ctx.stroke();
       }
     }
 
