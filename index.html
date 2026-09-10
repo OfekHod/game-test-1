@@ -561,7 +561,7 @@
     pointer-events:none;}
   .menuKnightPeek img{display:block;width:100%;height:100%;}
   .menuBoard{position:absolute;left:21.8%;right:21.8%;top:24.9%;bottom:37.4%;
-    display:flex;flex-direction:column;align-items:stretch;justify-content:center;
+    display:flex;flex-direction:column;align-items:flex-end;justify-content:center;
     gap:calc(2.2 * min(1vw,0.5582vh));}
   /* Crimson, taken off the knight's cape. The cyan these started as was the one
      saturated colour anywhere on this screen — everything in the art sits in a
@@ -572,7 +572,7 @@
   .menuBoard button{margin:0;border:none;background:#BC4A40;color:#FFF1E8;cursor:pointer;
     font-family:'Baloo 2',sans-serif;font-weight:800;white-space:nowrap;
     font-size:clamp(12px,calc(2.45 * min(1vw,0.5582vh)),20px);
-    padding:calc(1.5 * min(1vw,0.5582vh)) calc(2 * min(1vw,0.5582vh));
+    width:66%;padding:calc(1.5 * min(1vw,0.5582vh)) calc(2 * min(1vw,0.5582vh));
     border-radius:calc(1.6 * min(1vw,0.5582vh));
     box-shadow:0 calc(0.55 * min(1vw,0.5582vh)) 0 #8A2F28;
     transition:transform .05s,background .12s,box-shadow .12s;}
@@ -618,34 +618,42 @@
      Two animations, kept in step by sharing one duration (introDismiss's
      INTRO_TURN_MS):
 
-       - .introStage rotates around its own left edge — a right-hand page
-         turning the ordinary way — with perspective() as the transform's
-         own first function, so the 3D is local to the page and nothing about
-         the stage underneath has to change to host it. The curve is a full
-         ease-in-out rather than an ease-in that never lets up: a page this
-         size does not accelerate the whole way through its own arc, it
-         swings fastest through the middle (edge-on, where there is least of
-         it left to move) and eases both into the lift and out of the fall.
+       - The stage (.introStage, or .menuStage on the way out of the menu —
+         see guardedStart) rotates around its own left edge — a right-hand
+         page turning the ordinary way — with perspective() as the
+         transform's own first function, so the 3D is local to the page and
+         nothing about whatever is underneath has to change to host it. The
+         curve is a full ease-in-out rather than an ease-in that never lets
+         up: a page this size does not accelerate the whole way through its
+         own arc, it swings fastest through the middle (edge-on, where there
+         is least of it left to move) and eases both into the lift and out
+         of the fall.
        - A second animation on the same element grows a drop shadow as the
          page lifts off the veil, holds it through the fastest part of the
          swing, and lets it go as the page turns away — the depth cue that
          sells "lifting", not just "rotating".
-       - #introScreen itself (the dark veil behind the page) holds solid
+       - The overlay itself (the dark veil behind the page) holds solid
          while the page is still flat enough to be recognisable, then fades
          continuously from there to the end, finishing exactly as the turn
-         does. That is what makes the menu grow in behind the page rather
-         than popping in once the page is gone: past the hold, the veil and
-         the page are fading together (opacity on a parent carries to its
-         children), so the thinning, ghosting page and the solidifying menu
-         behind it are the same motion, not two.
+         does. That is what makes whatever is underneath grow in behind the
+         page rather than popping in once the page is gone: past the hold,
+         the veil and the page are fading together (opacity on a parent
+         carries to its children), so the thinning, ghosting page and the
+         solidifying layer behind it are the same motion, not two.
+       - z-index rises to match #introScreen's own while turning, which
+         matters for #startScreen: it sits at the shared .overlay z-index
+         normally, level with #loadScreen, and #loadScreen is later in the
+         DOM — without this the menu would turn away UNDER the very loading
+         panel it is supposed to be revealing rather than over it.
 
-     pointer-events:none the instant the turn starts: a second tap mid-turn
-     must not re-enter introDismiss, and Playwright's own click() already
-     retries past an obscuring element, so this does not race the tooling
-     either — see tools/shoot.js. */
-  #introScreen.turning{pointer-events:none;animation:introVeilOut 1s ease forwards;}
+     .overlay.turning rather than an ID keeps this usable from both screens
+     instead of copied per screen; pointer-events:none the instant it starts
+     so a second tap mid-turn cannot re-enter the dismiss handler, and so
+     Playwright's own click() (which already retries past an obscuring
+     element) does not race the tooling either — see tools/shoot.js. */
+  .overlay.turning{pointer-events:none;z-index:20;animation:introVeilOut 1s ease forwards;}
   @keyframes introVeilOut{0%,45%{opacity:1}100%{opacity:0}}
-  #introScreen.turning .introStage{transform-origin:left center;
+  .overlay.turning .introStage, .overlay.turning .menuStage{transform-origin:left center;
     animation:introTurn 1s cubic-bezier(.61,.04,.44,.98) forwards,
               introShadow 1s ease-in-out forwards;}
   @keyframes introTurn{
@@ -659,8 +667,8 @@
     100%{box-shadow:0 0 min(4vw,30px) rgba(0,0,0,0);}
   }
   @media (prefers-reduced-motion:reduce){
-    #introScreen.turning{animation:cFadeOut .3s ease-out forwards;}
-    #introScreen.turning .introStage{animation:none;box-shadow:none;}
+    .overlay.turning{animation:cFadeOut .3s ease-out forwards;}
+    .overlay.turning .introStage, .overlay.turning .menuStage{animation:none;box-shadow:none;}
   }
   /* The parchment under the group was left blank for exactly this, so the card
      sits straight on it — no floating panel needed. Insets measured off the
@@ -14220,10 +14228,28 @@ window.addEventListener('DOMContentLoaded', function(){
   let roundHold = false, loadingRound = false, warmFrames = 0, curtainTimer = 0;
   // Every way into a round — Match, Survival, Tutorial, Play Again, the Enter
   // key — goes through here, so none of them can skip the panel.
+  // Leaving the menu gets the same book-turn the menu itself arrived with —
+  // same CSS classes, same sound, same INTRO_TURN_MS — so the two ends of the
+  // menu's life on screen match. Leaving the end screen (Play Again) does
+  // not: that panel never had a page to turn, so it still cuts straight to
+  // the loading panel underneath, as it always has.
   function guardedStart(mode){
     if(loadingRound) return;
     loadingRound = true;
-    startScreen.classList.add('hidden');
+    if(!startScreen.classList.contains('hidden')){
+      startScreen.classList.add('turning');
+      sfxPageTurn();
+      setTimeout(()=>{
+        startScreen.classList.add('hidden');
+        startScreen.classList.remove('turning');
+        beginRoundLoad(mode);
+      }, INTRO_TURN_MS);
+    } else {
+      startScreen.classList.add('hidden');
+      beginRoundLoad(mode);
+    }
+  }
+  function beginRoundLoad(mode){
     endScreen.classList.add('hidden');
     // Sky first, then the panel on top of it. Both go up in this same tick so
     // the field is never briefly naked between the click and the cover.
@@ -15072,7 +15098,8 @@ window.addEventListener('DOMContentLoaded', function(){
   menuKnightPeek.src = KNIGHT_PEEK;
 
   // Turns like a book cover rather than cutting straight to the menu: see
-  // .introScreen.turning and its keyframes. The menu is already sitting under
+  // .overlay.turning and its keyframes, shared with guardedStart's own use
+  // of the same turn leaving the menu. The menu is already sitting under
   // it (the comment by #introScreen explains why), so everything here has to
   // do is get the page on top out of the way. INTRO_TURN_MS must match the
   // animation's own duration — CSS drives what it looks like, this only
