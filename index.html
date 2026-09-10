@@ -5562,7 +5562,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const ar = anchor.aAura; if(!ar) return;
     ar.motes.push({
       angle, speed: rand(1.5,2.2) * (Math.random()<0.5 ? 1 : -1),
-      rBase: anchor.r*2.6, rAmp: anchor.r*0.22, freq: rand(1.4,2.2), phase: rand(0,6.28),
+      rBase: anchor.r*5.2, rAmp: anchor.r*0.22, freq: rand(1.4,2.2), phase: rand(0,6.28),
       born: bornAt
     });
   }
@@ -5631,7 +5631,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function drawAssembleAuras(){
     for(const h of playerTeam){
       const ar = h.aAura; if(!ar || !h.alive) continue;
-      if(!onScreen(h.x,h.y,h.r+140) || !isVisible(h.x,h.y,h.r)) continue;
+      if(!onScreen(h.x,h.y,h.r*8) || !isVisible(h.x,h.y,h.r)) continue;
       const t = ar.t/ar.dur;
       const envelope = t<0.1 ? t/0.1 : (t>0.7 ? Math.max(0,1-(t-0.7)/0.3) : 1);
       if(envelope<=0) continue;
@@ -5640,7 +5640,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // A wide halo clear of the body itself, breathing gently, so the ring
       // reads as something the squad gathered around him rather than a glow
       // painted on his sprite.
-      const haloR = h.r*2.6 + Math.sin(ar.t*2.2)*h.r*0.12;
+      const haloR = h.r*5.2 + Math.sin(ar.t*2.2)*h.r*0.12;
       const halo = ctx.createRadialGradient(h.x,h.y,h.r*0.9,h.x,h.y,haloR*1.4);
       halo.addColorStop(0,   'rgba(205,239,255,0)');
       halo.addColorStop(0.68,'rgba(180,230,255,'+(0.14*envelope).toFixed(3)+')');
