@@ -1,3 +1,7 @@
 node_modules/
 *.log
 .DS_Store
+
+# Artifact test builds (tools/artifact-html.js output) — published to Claude,
+# not checked in.
+/lane-*.html
