@@ -64,15 +64,22 @@ is solid, so all of it is tuning.
 | **`DECOR_TOWER_KEEP`** | **`TOWER_RANGE` + 120** | see below. This one is not cosmetic |
 | `DECOR_CAMP_KEEP` | 90 | beyond the camp ring, so a clearing you have to walk into stays walkable |
 
-All of it together costs nothing. 240 games each, this map against the same
-build with no scenery on it at all:
+All of it together costs nothing that shows in an outcome. 240 games each, this
+map against the same build with no scenery on it at all:
 
 | | no scenery | shipped |
 |---|---|---|
-| base destroyed | 221/240 (92%) | 215/240 (90%) |
-| median win | 268s | 280s |
-| enemy deaths/game | 0.85 | 0.97 |
-| end levels | 12.0 / 14.5 / 8.6 | 12.3 / 14.6 / 9.0 |
+| base destroyed | 221/240 (92%) | 221/240 (92%) |
+| median win | 270s | 281s |
+| enemy deaths/game | 0.77 | 0.95 |
+| end levels | 12.1 / 14.8 / 8.1 | 12.4 / 15.1 / 9.2 |
+
+The one line that is not flat is deaths, and they are mostly deaths to towers:
+0.90 a game against 0.75. That is the same deflection the keep-out below is
+about, an order of magnitude smaller — solid ground furniture near a lane
+occasionally walks a retreating hero into somebody's guns, and no keep-out short
+of removing the scenery makes it exactly zero. It does not reach the result:
+bases destroyed is identical to the game.
 
 **But solid scenery must clear a tower's REACH, not its footprint.** This is the
 same trap `scatterClumps` fell into and wrote down, and solid bushes and rocks
