@@ -2621,6 +2621,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // anything. A fifth of what it was, which puts the ceiling back on sustained
   // shooting without touching regen.
   const MANA_UNIT_VALUE = 3;
+  // A kill drops half its victim's max HP, banked in coins worth this much
+  // each — a 200 HP hero leaves exactly four.
+  const HP_COIN_VALUE = 50;
   const PROJ_R = 7;
   const DMG_VARIANCE = 0.12;
   const CRIT_CHANCE = 0.12;
@@ -4367,6 +4370,7 @@ window.addEventListener('DOMContentLoaded', function(){
   let particles = [];
   let xpOrbs = [];
   let manaOrbs = [];
+  let hpOrbs = [];
   let levelFx = [];
   let healWaves = [];
   let assembleFx = [];   // light streaks travelling each called hero's real position -> the anchor
@@ -7716,12 +7720,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const COIN_FRAME_W = 40, COIN_FRAME_H = 41, COIN_FRAMES = 10;
   const COIN_FPS = 14, COIN_DRAW = 24;
   const coinImg = new Image();
-  let coinReady = false, coinGold = null, coinBlue = null;
+  let coinReady = false, coinGold = null, coinBlue = null, coinRed = null;
   coinImg.onload = ()=>{
     coinGold = coinImg;
-    // Same spin, hue-rotated to blue. recolorSheet leaves low-saturation pixels
-    // alone, so the white glints stay white on both.
+    // Same spin, hue-rotated to blue or red. recolorSheet leaves low-saturation
+    // pixels alone, so the white glints stay white on all three.
     coinBlue = recolorSheet(coinImg, 207, 1.0, 1.0, 0, 360);
+    coinRed = recolorSheet(coinImg, 358, 1.0, 1.0, 0, 360);
     coinReady = true;
   };
   coinImg.src = 'data:image/png;base64,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';
@@ -9710,7 +9715,7 @@ window.addEventListener('DOMContentLoaded', function(){
       target.alive=false; target.respawnTimer=RESPAWN_TIME; target.hp=0;
       addScore(target.side==='player' ? 'enemy' : 'player', PTS.hero, target.x, target.y);
       addBurst(target.x, target.y, '#FF6B6B', 20);
-      spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL);
+      spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL, target.maxHp);
       if(target===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.35);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
@@ -10023,7 +10028,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // space, so they ignore the camera; the last few pixels slip behind the dock,
   // which reads as the bar swallowing them.
   let hudSparks = [];
-  const hudAnchor = { xp:{x:0,y:0}, mp:{x:0,y:0}, ok:false };
+  const hudAnchor = { xp:{x:0,y:0}, mp:{x:0,y:0}, hp:{x:0,y:0}, ok:false };
   function refreshHudAnchor(){
     if(state!=='playing'){ hudAnchor.ok = false; return; }
     const c = canvas.getBoundingClientRect();
@@ -10034,6 +10039,7 @@ window.addEventListener('DOMContentLoaded', function(){
     };
     hudAnchor.xp = map(xpFillEl.parentNode);
     hudAnchor.mp = map(mpFillEl.parentNode);
+    hudAnchor.hp = map(hpFillEl.parentNode);
     hudAnchor.ok = true;
   }
   function addHudSpark(wx, wy, key, col, payload){
@@ -10056,6 +10062,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(p.hero.side==='player'){ xpLooted += p.xp; xpCountEl.textContent = xpLooted; }
     }
     if(p.mp) p.hero.mana = Math.min(p.hero.maxMana, p.hero.mana + p.mp);
+    if(p.hp) p.hero.hp = Math.min(p.hero.maxHp, p.hero.hp + p.hp);
   }
   function updateHudSparks(dt){
     refreshHudAnchor();
@@ -10075,7 +10082,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function flashBar(key){
-    const el = key==='xp' ? xpFillEl : mpFillEl;
+    const el = key==='xp' ? xpFillEl : key==='hp' ? hpFillEl : mpFillEl;
     el.classList.add('hit');
     clearTimeout(el._hitT);
     el._hitT = setTimeout(()=>el.classList.remove('hit'), 150);
@@ -10135,9 +10142,18 @@ window.addEventListener('DOMContentLoaded', function(){
       manaOrbs.push({ x,y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed, value:MANA_UNIT_VALUE, mode:'pop', bobT: rand(0,10), trailCol:'#BFE4FF', ttl:ORB_TTL });
     }
   }
+  // A slain hero leaves half their max HP behind in coins, so the kill pays
+  // out to whoever finishes the fight instead of just to the killer.
+  function spawnHpOrbs(x,y,maxHp){
+    const n = Math.max(1, Math.round(maxHp*0.5/HP_COIN_VALUE));
+    for(let i=0;i<n;i++){
+      const a = rand(0,Math.PI*2), speed = rand(90,220);
+      hpOrbs.push({ x,y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed, value:HP_COIN_VALUE, mode:'pop', bobT: rand(0,10), trailCol:'#FF9B8C', ttl:ORB_TTL });
+    }
+  }
   // A kill's XP is no longer handed out — it is scattered on the ground as orbs
   // split from the kill's total, and whoever reaches them banks it.
-  function spawnKillDrops(x,y,mult,isCrit,xpTotal){
+  function spawnKillDrops(x,y,mult,isCrit,xpTotal,dropMaxHp){
     // Nothing a kill was carrying falls out until the step that explains it.
     // The first two kills would otherwise litter the ground with orbs the
     // player has been told nothing about, and half of them would be gone by
@@ -10149,6 +10165,8 @@ window.addEventListener('DOMContentLoaded', function(){
     const n = Math.max(1, Math.min(XP_ORBS_MAX, Math.round(total/XP_PER_ORB)));
     spawnXpOrbs(x, y, n, Math.max(1, Math.round(total/n)));
     spawnManaOrbs(x, y, rollDropCount(mult));
+    // Only a hero kill hands dropMaxHp, so creeps never leave HP coins.
+    if(dropMaxHp) spawnHpOrbs(x, y, dropMaxHp);
   }
   // Orbs lie on the ground and belong to whoever walks over them — any living
   // hero, either side. Nothing is shared and nothing is awarded automatically.
@@ -10283,6 +10301,31 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       const taker = updatePickup(m, dt);
       if(taker){ collectMana(m, taker); manaOrbs.splice(i,1); }
+    }
+  }
+  function collectHp(o, h){
+    addTally(h, 'hp', o.value, ' HP', '#FF5A52', 0);
+    if(h.side==='player') sfxPickup('hp', o.x, o.y);
+    addBurst(o.x,o.y,'#FF5A52',12);
+    addPing(h.x, h.y-h.r*0.35, '#FF8A80', 5, 30, 0.28);
+    const flying = h===playerTeam[activePlayerIdx]
+      && addHudSpark(o.x, o.y, 'hp', '#FF5A52', { hero:h, hp:o.value });
+    if(flying){
+      addHudSpark(o.x, o.y, 'hp', '#FFB3AC', null);
+      shake = Math.max(shake, 0.08);
+    } else {
+      h.hp = Math.min(h.maxHp, h.hp+o.value);
+    }
+  }
+  function updateHpOrbs(dt){
+    for(let i=hpOrbs.length-1;i>=0;i--){
+      const o = hpOrbs[i];
+      if(o.ttl !== undefined && !tut.on){
+        o.ttl -= dt;
+        if(o.ttl <= 0){ hpOrbs.splice(i,1); continue; }
+      }
+      const taker = updatePickup(o, dt);
+      if(taker){ collectHp(o, taker); hpOrbs.splice(i,1); }
     }
   }
 
@@ -10954,6 +10997,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateProjectiles(dt);
     updateXpOrbs(dt);
     updateManaOrbs(dt);
+    updateHpOrbs(dt);
     updateWoodDrops(dt);
     updateTrees(dt);
     updateLevelFx(dt);
@@ -12497,7 +12541,7 @@ window.addEventListener('DOMContentLoaded', function(){
       addFloater(target.x, target.y-target.r-34, 'KILL!', '#FF6B6B', true);
       addBurst(target.x,target.y,'#FF6B6B',22);
       shake=Math.max(shake,0.4);
-      spawnKillDrops(target.x, target.y, 3, isCrit, XP_HERO_KILL);
+      spawnKillDrops(target.x, target.y, 3, isCrit, XP_HERO_KILL, target.maxHp);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
   }
@@ -12746,6 +12790,31 @@ window.addEventListener('DOMContentLoaded', function(){
     grad.addColorStop(0,'#EAF6FF'); grad.addColorStop(0.6,'#6FB8F2'); grad.addColorStop(1,'#2f6fa8');
     ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fillStyle=grad; ctx.fill();
     ctx.lineWidth=1.3; ctx.strokeStyle='rgba(30,70,110,.6)'; ctx.stroke();
+    ctx.restore();
+  }
+
+  // Same shape and pace as a mana orb — a kill's HP is currency the same way
+  // mana is — just recoloured red so it is never mistaken for one.
+  function drawHpOrb(o){
+    const hop = o.mode==='idle' ? Math.abs(Math.sin(o.bobT*3))*4 : 0;
+    if(coinReady){
+      const fade = (o.ttl !== undefined && o.ttl < 2.5) ? Math.max(0, o.ttl/2.5) : 1;
+      if(fade < 1){
+        ctx.save(); ctx.globalAlpha = fade;
+        drawCoinSprite(coinRed, o.x, o.y, hop, o.bobT, COIN_DRAW*pickupScale(o));
+        ctx.restore();
+      } else {
+        drawCoinSprite(coinRed, o.x, o.y, hop, o.bobT, COIN_DRAW*pickupScale(o));
+      }
+      return;
+    }
+    ctx.save(); ctx.translate(o.x, o.y+hop);
+    const spin = Math.max(0.25, Math.abs(Math.cos(o.bobT*6)));
+    ctx.scale(spin,1);
+    const grad = ctx.createRadialGradient(-2,-2,1,0,0,8);
+    grad.addColorStop(0,'#FFEAEA'); grad.addColorStop(0.6,'#F2504A'); grad.addColorStop(1,'#7a1414');
+    ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fillStyle=grad; ctx.fill();
+    ctx.lineWidth=1.3; ctx.strokeStyle='rgba(110,15,15,.6)'; ctx.stroke();
     ctx.restore();
   }
 
@@ -13483,6 +13552,10 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!onScreen(m.x,m.y,30) || !isVisible(m.x,m.y,ORB_SIGHT_R)) continue;
       ground.push({ y:m.y, k:5, o:m, b:true });
     }
+    for(const o of hpOrbs){
+      if(!onScreen(o.x,o.y,30) || !isVisible(o.x,o.y,ORB_SIGHT_R)) continue;
+      ground.push({ y:o.y, k:8, o:o });
+    }
     // Logs go in on the same terms as the coins: sorted on w.y, which is where
     // the log's SHADOW is whatever height it is at, so a log thrown over a bush
     // passes behind the leaves on the way down exactly as a coin lying under
@@ -13521,7 +13594,7 @@ window.addEventListener('DOMContentLoaded', function(){
           ? 1 + Math.sin(Math.min(1, 1 - o.levelPop/LEVEL_POP_TIME)*Math.PI)*0.26 : 1;
         softShadow(ctx, o.x, o.y + o.r*0.62*sc, o.r*1.22*sc, o.r*0.55*sc);
       }
-      else if(e.k===5) drawPickupShadow(o);
+      else if(e.k===5 || e.k===8) drawPickupShadow(o);
       else if(e.k===6) drawWoodShadow(o);
     }
     drawBirdShadows();
@@ -13534,6 +13607,7 @@ window.addEventListener('DOMContentLoaded', function(){
       else if(e.k===2) drawTower(o, e.a, e.b);
       else if(e.k===3) drawCreep(o, e.a, e.b);
       else if(e.k===5){ if(e.b) drawManaOrb(o); else drawXpOrb(o); }
+      else if(e.k===8) drawHpOrb(o);
       else if(e.k===6) drawWoodDrop(o);
       else if(e.k===7) drawCorpse(o);
       else {
@@ -15052,7 +15126,7 @@ window.addEventListener('DOMContentLoaded', function(){
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
-    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; dashFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
+    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; hpOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; dashFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
     woodDrops=[]; fellingTrees=[]; woodBanked=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
@@ -15626,6 +15700,14 @@ window.addEventListener('DOMContentLoaded', function(){
         tone(dest, t, 'sine', f * 0.749, f, 0.26, 0.34, 0.014);
         tone(dest, t, 'sine', f * 2, f * 3, 0.06, 0.26, 0.020);
         burst(dest, t + 0.008, 0.07, 5400, 1.4, 0.22, 'highpass');
+      } else if(kind === 'hp'){
+        // Life given back should feel warm and immediate, not clinked or
+        // poured — a single rising swell an octave under gold so it never
+        // reads as currency, with a soft low thump under it for weight.
+        const f = mtof(69 + rung);
+        tone(dest, t, 'sine', f*0.98, f*1.05, 0.30, 0.24, 0.008);
+        tone(dest, t, 'triangle', f*1.5, f*1.5, 0.10, 0.20, 0.008);
+        burst(dest, t + 0.01, 0.10, 2600, 1.6, 0.16, 'lowpass');
       } else {
         // Gold is the two-note coin everything from Mario onwards uses: a
         // short blip, then a longer note a fifth above it. Triangles rather
@@ -15859,7 +15941,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // Consecutive pickups climb the ladder; a second without one and you are
   // back at the bottom. Gold and mana keep separate counts, so alternating
   // between them is two rising lines rather than one confused one.
-  const sfxStreak = { gold: { n: 0, t: -9 }, mana: { n: 0, t: -9 }, wood: { n: 0, t: -9 } };
+  const sfxStreak = { gold: { n: 0, t: -9 }, mana: { n: 0, t: -9 }, wood: { n: 0, t: -9 }, hp: { n: 0, t: -9 } };
   function sfxPickup(kind, wx, wy){
     if(!sfxReady()) return;
     const p = sfxPlace(wx, wy);
@@ -16178,6 +16260,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // nothing on screen shows it: from the console, and from the screenshot
   // scripts that have to prove a log actually banked.
   window.__laneWood = ()=>woodBanked;
+  // Same reason as __laneWood: the screenshot scripts need to know a hero
+  // death actually dropped HP coins before they can go looking for one, and
+  // whether the drop landed somewhere the camera can actually see.
+  window.__laneHpOrbs = ()=>hpOrbs.length;
+  window.__laneHpOrbOnScreen = ()=>hpOrbs.some(o=>onScreen(o.x,o.y,30) && isVisible(o.x,o.y,ORB_SIGHT_R));
   window.__laneLoaded = true;
 })();
 </script>
