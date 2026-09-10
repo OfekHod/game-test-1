@@ -6006,21 +6006,113 @@ window.addEventListener('DOMContentLoaded', function(){
   const CLOUD_COUNT = 14;
   const CLOUD_SPEED_MIN = 5, CLOUD_SPEED_MAX = 12;   // birds fly at ~90; this is a drift
   let clouds = [];
-  function makeCloud(x, y){
-    const scale = rand(0.95, 2.55);      // 35% larger
-    const a = rand(0, Math.PI*2), sp = rand(CLOUD_SPEED_MIN, CLOUD_SPEED_MAX);
-    const puffs = [];
-    const n = 5 + (Math.random()*4|0);
+  /* Shape, and it is the same cumulus the loading sky is built from: a lumpy
+     skyline over a flat base. The old build scattered puffs around a centre
+     line with the outer ones sitting HIGHER than the middle, which is the one
+     arrangement a cloud never has — it came out as a smudge with no top and no
+     bottom. Here every lump's underside is pinned to one baseline, so the big
+     middle lumps rise and the small end ones do not, and the silhouette reads
+     as weather from a single glance.
+
+     A wide flat ellipse fills the scallops between the lumps along that
+     baseline, exactly as the `radial-gradient(46% 20% at 50% 76%)` slab does
+     in the curtain's clouds. */
+  function cloudShapes(scale){
+    const shapes = [];
+    // Four to seven lumps rather than five to eight: at this size a lump has to
+    // be big enough to own a bulge of the skyline, or the top comes out as
+    // ripples and the cloud goes back to being a smear.
+    const n = 4 + (Math.random()*4|0);
+    const rBase = 52*scale, spread = 200*scale;
     for(let i=0;i<n;i++){
       const t = i/(n-1) - 0.5;
-      puffs.push({
-        dx: t*150*scale + rand(-18,18)*scale,
-        dy: rand(-16,16)*scale - Math.abs(t)*14*scale,
-        r: (52 - Math.abs(t)*22 + rand(-8,8)) * scale
-      });
+      // Fat in the middle, tapering to the ends — cos() over the span rather
+      // than a straight |t| ramp, so the profile curves instead of peaking.
+      const r = rBase * (0.68 + 0.42*Math.cos(t*Math.PI)) * rand(0.88, 1.14);
+      shapes.push({ x: t*spread + rand(-10,10)*scale,
+                    y: -r + rand(-4,4)*scale, rx: r, ry: r });
     }
+    shapes.push({ x: rand(-8,8)*scale, y: -22*scale,
+                  rx: spread*0.54 + rBase*0.30, ry: 27*scale });
+    return { shapes, rBase };
+  }
+  /* One offscreen sprite per cloud, painted once at build time.
+
+     Drawing the puffs straight onto the field is what kept the old clouds
+     vague: translucent circles compound where they overlap, so the middle went
+     dense, every join showed as a seam, and the only way to hide that was a
+     falloff so long the cloud had no edge left. Painted opaque into a sprite
+     the silhouette is a clean union — a defined rim all the way round, and the
+     whole thing goes translucent as ONE veil when it is drawn, which is what
+     keeps it as airy as before. It is also one drawImage a frame per cloud
+     instead of eight radial gradients.
+
+     Sprite pixels are world units. The field is drawn at most 2x that on a
+     retina screen, and a rim that is already a soft gradient has nothing much
+     to lose to being stretched — where a supersampled sprite would cost four
+     times the memory for it. */
+  function buildCloudSprite(scale){
+    const { shapes, rBase } = cloudShapes(scale);
+    let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
+    for(const s of shapes){
+      if(s.x-s.rx < minX) minX = s.x-s.rx;
+      if(s.x+s.rx > maxX) maxX = s.x+s.rx;
+      if(s.y-s.ry < minY) minY = s.y-s.ry;
+      if(s.y+s.ry > maxY) maxY = s.y+s.ry;
+    }
+    const drop = rBase*0.13, m = 3;
+    minX -= m; minY -= m; maxX += m; maxY += m + drop;
+    const w = Math.max(1, Math.ceil(maxX-minX)), h = Math.max(1, Math.ceil(maxY-minY));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.translate(-minX, -minY);
+    // Gradient coordinates ride the current transform, so one built around the
+    // origin squashes with the ellipse it fills.
+    const paint = (s, dy, rmul, stops) => {
+      g.save();
+      g.translate(s.x, s.y + dy);
+      g.scale(1, s.ry/s.rx);
+      const r = s.rx*rmul;
+      const gr = g.createRadialGradient(0,0,r*0.1, 0,0,r);
+      for(const st of stops) gr.addColorStop(st[0], st[1]);
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill();
+      g.restore();
+    };
+    // Solid most of the way out and gone by the edge, as the curtain's clouds
+    // are. The fade is a fifth of the radius here rather than the curtain's
+    // quarter: these are half the size on screen, and the same proportion left
+    // them with more rim than body.
+    const body = [[0,'#fff'],[0.80,'#fff'],[1,'rgba(255,255,255,0)']];
+    for(const s of shapes) paint(s, 0, 1, body);
+    // A cooler underside. Pure white all over is a paper cutout; the shaded
+    // belly is most of what makes a lump look like a lump.
+    g.globalCompositeOperation = 'source-atop';
+    const sh = g.createLinearGradient(0, minY, 0, maxY);
+    sh.addColorStop(0, 'rgba(206,232,248,0)');
+    sh.addColorStop(0.5, 'rgba(178,210,234,0)');
+    sh.addColorStop(1, 'rgba(146,184,214,.32)');
+    g.fillStyle = sh;
+    g.fillRect(minX, minY, w, h);
+    // And the curtain's drop-shadow, which here can only show below the body
+    // it is painted behind: a thin cool edge that lifts the cloud off the
+    // field without darkening the field under it.
+    g.globalCompositeOperation = 'destination-over';
+    const shadow = [[0,'rgba(64,112,152,.30)'],[0.62,'rgba(64,112,152,.26)'],[1,'rgba(64,112,152,0)']];
+    for(const s of shapes) paint(s, drop, 1.02, shadow);
+    return { cv, ox: minX, oy: minY, w, h,
+             pad: Math.max(Math.max(-minX, maxX), Math.max(-minY, maxY)) + 8 };
+  }
+  function makeCloud(x, y){
+    const scale = rand(1.15, 2.8);       // a size up again on the 0.95-2.55 before it
+    const a = rand(0, Math.PI*2), sp = rand(CLOUD_SPEED_MIN, CLOUD_SPEED_MAX);
+    const spr = buildCloudSprite(scale);
+    // A shade fainter than the 0.30-0.46 these used to carry. A silhouette that
+    // no longer thins out towards its edges reads as heavier at the same
+    // opacity, and the field has to stay legible through it.
     return { x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
-             alpha: rand(0.30, 0.46), puffs, pad: 150*scale + 70 };
+             alpha: rand(0.26, 0.41), spr, pad: spr.pad };
   }
   function resetClouds(){
     clouds = [];
@@ -6040,18 +6132,10 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.save();
     for(const c of clouds){
       if(!onScreen(c.x, c.y, c.pad)) continue;
-      // soft-edged puffs, built up so the body is denser than the rim. The long
-      // gradual falloff is what blends the puffs into one cloud: tighten it and
-      // each one starts reading as its own disc where they overlap.
-      for(const p of c.puffs){
-        const px = c.x + p.dx, py = c.y + p.dy;
-        const g = ctx.createRadialGradient(px, py, p.r*0.15, px, py, p.r);
-        g.addColorStop(0, 'rgba(255,255,255,'+(c.alpha).toFixed(3)+')');
-        g.addColorStop(0.55,'rgba(255,255,255,'+(c.alpha*0.66).toFixed(3)+')');
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(px, py, p.r, 0, 7); ctx.fill();
-      }
+      // The whole silhouette fades together — no part of a cloud is ever more
+      // solid than the rest of it, however its lumps overlap.
+      ctx.globalAlpha = c.alpha;
+      ctx.drawImage(c.spr.cv, c.x + c.spr.ox, c.y + c.spr.oy, c.spr.w, c.spr.h);
     }
     ctx.restore();
   }
