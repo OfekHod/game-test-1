@@ -14383,9 +14383,13 @@ window.addEventListener('DOMContentLoaded', function(){
       // something hollow — over a short knock. The trunk landing is the same
       // shape an octave and a half down and four times as long, which is the
       // only honest way to say "that was big" without a sample of one.
-      // Both amps carry the same +50% every wood sound below got, so a wave
-      // of chopping still sits under the hits and the coin, not over them.
-      chop:  { crack: [0.66, 1500, 3.2, 0.050], body: [210,  78, 0.48, 0.11] },
+      // Both started with the same +50% every wood sound below got. The chop
+      // took a second +50% on top of that on its own — the axe swing needed
+      // to read over a fight in progress even more than the drop or the
+      // trunk landing did — so it now sits louder than timber despite being
+      // the shorter, lighter hit; the compressor on the sfx bus (threshold
+      // -15dB) is what keeps a fast flurry of them from just clipping.
+      chop:  { crack: [0.99, 1500, 3.2, 0.050], body: [210,  78, 0.72, 0.11] },
       timber:{ crack: [0.51,  520, 0.9, 0.180], body: [120,  40, 0.75, 0.34] },
     };
 
