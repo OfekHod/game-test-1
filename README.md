@@ -17,6 +17,9 @@ sim/               headless simulation harness (Node, no dependencies)
   sweep.js         one configuration per invocation, one comparable line out
   analyse.js       timeline: when buildings fall, deaths, farming intensity
   stub.js          minimal DOM so the game runs under Node
+tools/
+  artifact-html.js  strips the document skeleton for a Claude Artifact build
+  shoot.js          drives the game headless and photographs it
 docs/
   GAMEPLAY.md      screenshots from a played match and a survival round
   FINDINGS.md      what was measured, including what did NOT work
@@ -96,6 +99,23 @@ A match is pure CPU work, so one process only ever uses one core. `parallel.js`
 forks one worker per available core and hands out matches from a shared queue;
 on a 4-core machine it finishes a batch in roughly a third of the time. It
 detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
+
+## Fast-forward
+
+`index.html?speed=N` steps the game loop N times per rendered frame, up to 32.
+It exists because headless Chromium renders at ~10fps and the loop caps `dt` at
+0.05s, so game time crawls at about half real: 45 seconds of match clock costs
+124 seconds of waiting, and the median win at 214s costs the better part of ten
+minutes. At `speed=8` that same 45 seconds costs 20.
+
+It works over `file://` only. The published build is served over https, where
+the flag does nothing at all — a URL nobody can speed up.
+
+The game logic is unaffected: stepping `update(dt)` in a loop is exactly how
+`sim/harness.js` has always driven a match. What does change is anything paced
+by the render cadence rather than by `dt` — a fade, a camera ease, a particle
+burst — because `render()` still runs once per frame. Use it to reach a state,
+not to look at a transition.
 
 ## Why the harness reads index.html
 
