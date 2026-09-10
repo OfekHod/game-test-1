@@ -119,26 +119,29 @@
     .scoreBox{min-width:72px;padding:5px 9px 4px;}
     .scoreBox b{font-size:21px;} .scoreBox > span{font-size:9px;letter-spacing:.02em;}
   }
-  /* HALF AGAIN THE OLD SIZE. Every length in the chip is the old one times 1.5
-     — 48px wide became 72, and the bars, the badges and the four-letter type
-     all followed — so the proportions are exactly what they were, only
-     readable. The one thing that did NOT simply scale is the portrait: it
-     stopped being a dot and became a card (see .pcard), and a card is tall,
-     which is why the chip gains more height than the 1.5 its width gained. */
-  .pchip{position:relative;width:72px;padding:8px;background:rgba(255,243,214,.88);border:3px solid var(--panel-border);border-radius:13px;text-align:center;}
+  /* THE CHIP IS THE CARD. It used to be a 48px tile with a 16px dot for a face.
+     The dot became a drawing, and a drawing 246 wide by 364 tall does not fit a
+     tile that also stacks three bars and a label under it: the card came out at
+     a third of the chip's area and the chip came out a narrow strip, half as
+     wide as it was tall, which is nothing like the shape the art is drawn in.
+     So the CHIP takes the card's proportions — aspect-ratio 246/364 — the
+     picture fills it corner to corner, and the bars and the four-letter status
+     ride OVER the bottom of it on a fade instead of sitting underneath.
+     96px is twice the tile it replaces and the height it lands at is the height
+     the stacked version already stood at, so the row costs no more room than it
+     did and the card in it is twice the width. */
+  .pchip{position:relative;width:96px;aspect-ratio:246/364;background:rgba(255,243,214,.88);
+    border:3px solid var(--panel-border);border-radius:13px;text-align:center;}
   .pchip.solo{border-color:#E8A44A;box-shadow:0 0 0 3px rgba(232,164,74,.4);}
   .pchip.active{border-color:#2f9bc4;box-shadow:0 0 0 4px rgba(90,200,232,.5);}
   .pchip.dead{opacity:.4;}
-  .plevel{position:absolute;top:-10px;left:-9px;font-size:13px;font-weight:800;background:#5A3E1B;color:#fff;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;}
-  /* The portrait. It was a 16px dot in the hero's colour, which at half again
-     the size would only have been a bigger dot; it is a trading card now, the
-     shape the art comes in — 246x364 including the transparent margin the cut
-     left round the rounded corners, so the box is that ratio and the drawing
-     lands in it edge to edge. A type with no card drawn yet keeps the old
-     behaviour, its flat colour, in the card's shape: updatePartyUI sets either
-     the picture or the colour, never both. */
-  .pcard{width:100%;aspect-ratio:246/364;border-radius:7px;margin:0 auto 6px;
-    background-position:center;background-size:contain;background-repeat:no-repeat;}
+  .plevel{position:absolute;top:-10px;left:-9px;font-size:13px;font-weight:800;background:#5A3E1B;color:#fff;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;z-index:2;}
+  /* The picture, filling the chip. `cover` rather than `contain` because the
+     border eats three pixels off each side of the box and would otherwise leave
+     the drawing floating in a hairline of cream; the ratios differ by under a
+     percent, so cover crops a pixel of width and nothing else. */
+  .pcard{position:absolute;inset:0;border-radius:10px;
+    background-position:center;background-size:cover;background-repeat:no-repeat;}
   /* No card drawn for this hero yet. A slab of his flat colour at this size is a
      paint chip, not a card, so it gets the frame the drawn ones have — dark rule
      outside, light rule inside it, a little shading down the ground — and stands
@@ -147,7 +150,17 @@
   .pcard.blank{background-color:currentColor;
     background-image:linear-gradient(rgba(255,255,255,.26),rgba(0,0,0,.20));
     box-shadow:inset 0 0 0 3px rgba(52,35,15,.72), inset 0 0 0 5px rgba(255,255,255,.34);}
-  .pbar{height:6px;border-radius:3px;background:rgba(0,0,0,.25);overflow:hidden;margin-top:3px;}
+  /* The bars and the status, laid over the foot of the picture. The fade is what
+     makes them readable: the drawing puts armour and a gun barrel down there and
+     both are light enough in places to swallow a thin bar. It starts fully clear
+     so the join is not a line across the man, and the dark reaches full strength
+     only under his chest. */
+  .pmeter{position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;border-radius:0 0 10px 10px;
+    background:linear-gradient(rgba(22,13,4,0),rgba(22,13,4,.62) 34%,rgba(22,13,4,.9) 66%,rgba(22,13,4,.95));}
+  /* The track is LIGHT. It was a dark one on the chip's cream, where an empty
+     bar read as a groove; on the fade a dark groove is the fade, and the xp bar
+     — empty for the first minute of every match — disappeared entirely. */
+  .pbar{height:6px;border-radius:3px;background:rgba(248,236,208,.34);overflow:hidden;margin-top:3px;}
   .pbar span{display:block;height:100%;width:0%;transition:width .22s ease-out;}
   .pbar.hp span{background:#E8453C;}
   .pbar.mp span{background:#4c8fe2;}
@@ -155,22 +168,24 @@
   /* Four letters under the bars saying what this hero is doing while you are not
      driving him: PUSH a lane, MOVE to a spot, FLLW another hero, ASSM with the
      squad, HOLD where he was left. Without it the only way to tell a posted hero
-     from a laning one was to watch him walk. */
+     from a laning one was to watch him walk.
+     The colours are the lighter end of the same hues they were: they sit on the
+     fade's dark ground now rather than on the chip's cream. */
   .pstat{display:block;margin-top:6px;font-size:13px;font-weight:800;letter-spacing:.75px;
-         line-height:1;color:#9A7B45;}
-  .pchip[data-stat="YOU"]  .pstat{color:#2f9bc4;}
-  .pchip[data-stat="PUSH"] .pstat{color:#C4771E;}
-  .pchip[data-stat="MOVE"] .pstat{color:#C4771E;}
-  .pchip[data-stat="FLLW"] .pstat{color:#3E8E5A;}
-  .pchip[data-stat="ASSM"] .pstat{color:#3E8E5A;}
-  .pchip[data-stat="DEAD"] .pstat{color:#A83A2C;}
+         line-height:1;color:#E4D0A6;text-shadow:0 1px 2px rgba(0,0,0,.55);}
+  .pchip[data-stat="YOU"]  .pstat{color:#7FD4F5;}
+  .pchip[data-stat="PUSH"] .pstat{color:#FFB861;}
+  .pchip[data-stat="MOVE"] .pstat{color:#FFB861;}
+  .pchip[data-stat="FLLW"] .pstat{color:#8BDCA6;}
+  .pchip[data-stat="ASSM"] .pstat{color:#8BDCA6;}
+  .pchip[data-stat="DEAD"] .pstat{color:#FF8E7C;}
   /* The chips grew a row, and the party is a stretch row, so centre the ALL
      button's own contents rather than leaving them stranded at the top. */
   /* Narrower than a player chip since the cards arrived: it is a button, not a
      hero, and at a card's width it read as a fourth card with the picture
      missing. It still stretches to their height — the row is one block — and
      centres what it holds in that. */
-  .asmBtn{width:56px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
+  .asmBtn{width:60px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
           display:flex;flex-direction:column;justify-content:center;align-items:center;}
   .asmBtn:active{transform:translateY(1px);}
   .asmBtn.cooling{opacity:.55;}
@@ -717,22 +732,27 @@
     .hud-right{gap:8px;font-size:12.5px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
-    /* A third bigger here rather than half again — 36px wide became 48 — and the
-       ALL button gives up eight more. The row shares the top of the screen with
-       the scoreboard, and on a 390px phone the full half-again ran the chips
-       thirty pixels UNDER it. The cards are the same drawing at the same
-       proportions either way; this is the width the phone has to give them. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:6px;}
-    .pchip{width:48px;padding:4px;border-width:2px;border-radius:9px;}
+    /* The row shares the top of the screen with the scoreboard, and on a 390px
+       phone that leaves it about 200px for three cards and the ALL button — so
+       the card is 48px wide, and 48px of card is only 71px tall. The bars want
+       thirty-five of those, which laid over the picture would put the fade
+       across the man's chin. So on a phone the meter comes OFF the picture and
+       sits on a plate under it: the card keeps its proportions, the chip is a
+       card with a nameplate, and the status keeps the same light colours it has
+       on the fade. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;}
+    .pchip{width:48px;aspect-ratio:auto;border-width:2px;border-radius:9px;}
     .plevel{top:-7px;left:-6px;font-size:9.5px;width:17px;height:17px;line-height:17px;}
     .pkey{top:-7px;right:-6px;font-size:9.5px;width:16px;height:16px;line-height:16px;}
-    .pcard{border-radius:5px;margin-bottom:4px;}
-    .pbar{height:5px;border-radius:2.5px;margin-top:2px;}
-    .asmBtn{width:40px;}
+    .pcard{position:static;width:100%;aspect-ratio:246/364;border-radius:7px 7px 0 0;}
+    .pmeter{position:static;padding:4px 4px 3px;border-radius:0 0 7px 7px;
+      background:rgba(26,15,5,.9);}
+    .pbar{height:4px;border-radius:2px;margin-top:2px;}
+    .asmBtn{width:34px;}
     .asmIcon{width:16px;height:16px;margin:1.5px auto 4px;border-width:2px;}
     .asmIcon::before{width:5px;height:5px;}
     .asmLabel{font-size:10px;letter-spacing:.4px;}
-    .pstat{font-size:10px;letter-spacing:.25px;margin-top:4px;}
+    .pstat{font-size:9.5px;letter-spacing:.25px;margin-top:3px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -824,9 +844,9 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
     </div>
     <div class="party hidden" id="party">
-      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">1</span></div>
-      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">2</span></div>
-      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">3</span></div>
+      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">1</span></div>
+      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">2</span></div>
+      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">3</span></div>
       <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ALL</span><span class="pkey">0</span></button>
     </div>
 
