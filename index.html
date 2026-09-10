@@ -213,6 +213,13 @@
   .ability .orb{width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#5AC8E8 60%,#2f9bc4);}
   .ability .cd{position:absolute;left:0;right:0;bottom:0;background:rgba(60,40,10,.55);height:0%;}
   .ability .key{position:absolute;bottom:1px;right:3px;font-size:9px;font-weight:800;color:var(--text-strong);}
+  /* While the tank's shell is in the air the skill is a detonator, so the button
+     it lives on says so: the press does something, and it is not the thing the
+     cooldown ring is counting down to. */
+  @keyframes armedPulse{0%,100%{box-shadow:0 0 0 2px rgba(255,140,66,.45),0 0 10px rgba(255,140,66,.45);}
+    50%{box-shadow:0 0 0 3px rgba(255,140,66,.85),0 0 20px rgba(255,140,66,.8);}}
+  .ability.armed{border-color:#FF8C42;animation:armedPulse 0.75s ease-in-out infinite;}
+  .skillBtn.armed{border-color:#FF8C42;animation:armedPulse 0.75s ease-in-out infinite;}
   .skillIcon{width:20px;height:20px;border-radius:6px;}
   .skillIcon.skill-dash{background:radial-gradient(circle at 35% 30%,#fff,#FFD54F 60%,#c98f1f);border-radius:50%;}
   .skillIcon.skill-rocket{background:radial-gradient(circle at 35% 30%,#fff,#E8654A 60%,#8c2f1f);}
@@ -2391,6 +2398,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const cdFillEl = document.getElementById('cdFill');
   const dashCdFillEl = document.getElementById('dashCdFill');
   const skillIconEl = document.getElementById('skillIcon');
+  const skillNameEl = document.getElementById('skillNameLabel');
   const hpFillEl = document.getElementById('hpFill');
   const mpFillEl = document.getElementById('mpFill');
   const xpFillEl = document.getElementById('xpFill');
@@ -2607,7 +2615,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const ROCKET_SPLASH_RADIUS = 180;
   const ROCKET_DMG_MIN = 30, ROCKET_DMG_MAX = 210;
   const ROCKET_DMG_BASE = ROCKET_DMG_MIN;
-  const ROCKET_TRAVEL_MAX = 700;
+  // Doubled from 700. The shell is the tank's only ranged answer and 700 barely
+  // cleared his own creep wave: a lane fight two screens away had to be walked
+  // to. At 1400 he can open on a wave he can see rather than one he is standing
+  // in — which is also why the camera now rides the shell (see updateCamera) and
+  // why a second press sets it off early (see detonateRocket): a throw that long
+  // needs to be watched, and needs to be stoppable short of its target.
+  const ROCKET_TRAVEL_MAX = 1400;
   // Starts far weaker than it was: 200 flat meant 50 hp/s, which outpaced any
   // tower and made a healed diver unkillable from level one.
   const HEAL_MIN = 65, HEAL_MAX = 280;
@@ -4080,6 +4094,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const TREE_BLOCK_FACTOR = 0.8;
   const TREE_COLLIDE_FACTOR = 0.62;
   const HERO_VISION = 700, CREEP_VISION = 380, TOWER_VISION = 520;
+  // The tank's shell scouts on its way out, a little wider than a creep. It has
+  // to: at 1400 units the throw crosses ground nothing on the team is standing
+  // in, and the camera rides it there, so without a light of its own the view
+  // pans out over fog and the shot is aimed blind. Wider than a creep because
+  // the shell is the middle of the screen while it flies, and a bubble smaller
+  // than the view reads as a hole rather than as sight.
+  const ROCKET_VISION = 420;
 
   const HP_COLOR = '#E8453C';
   const HP_LOST_COLOR = 'rgba(255,216,172,.92)';
@@ -4773,6 +4794,17 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const h of playerTeam){ if(h.alive) addVisionSource(h.x, h.y, HERO_VISION); }
     for(const c of allyCreeps) addVisionSource(c.x, c.y, CREEP_VISION);
     for(const t of playerTowers){ if(t.hp>0) addVisionSource(t.x, t.y, TOWER_VISION); }
+    // A shell in the air is one more thing the team can see out of, so it lights
+    // the ground it crosses and the fog closes behind it. Only a hero's: a tower
+    // fires one a second at something it can already see, and flashing every lane
+    // open sixty times a minute is noise rather than information.
+    for(const p of projectiles){
+      if(p.isRocket && p.owner === 'player' && p.attacker) addVisionSource(p.x, p.y, ROCKET_VISION);
+    }
+    // The camera holds on the blast for a beat after the shell has gone. The
+    // light has to stay for exactly that beat too, or the explosion you were
+    // kept there to watch goes off inside fog that closed a frame too early.
+    if(rocketCamTail && rocketCamHold > 0) addVisionSource(rocketCamTail.x, rocketCamTail.y, ROCKET_VISION);
   }
   // Pure draw-time reject. Anything outside the camera box gets clipped by the
   // canvas anyway, so testing it against every vision source first is wasted
@@ -5001,6 +5033,22 @@ window.addEventListener('DOMContentLoaded', function(){
   function treeBlockingProjectile(px,py){
     for(const t of trees){
       if(dist(px,py,t.x,t.y) < PROJ_R + t.r*TREE_BLOCK_FACTOR) return t;
+    }
+    return null;
+  }
+  // The same foot-bar that stops a hero walking through a bush or a boulder,
+  // tested against a shell instead: you cannot walk through the base of one, so
+  // a rocket has no business flying through it either. The BASE only — the bar
+  // is 40% of the sprite's width and a few units thick — so a shell still passes
+  // the canopy of a bush it goes by, which is what it looks like it should do.
+  function propBlockingProjectile(px,py){
+    const rr = PROJ_R + PROP_BAR_T;
+    for(const d of props){
+      const ny = py - d.y;
+      if(ny > rr || ny < -rr) continue;              // above or below the bar
+      const half = d.w*PROP_BAR_HALF;
+      const nx = px - (d.x + Math.max(-half, Math.min(half, px - d.x)));
+      if(nx*nx + ny*ny < rr*rr) return d;
     }
     return null;
   }
@@ -5456,8 +5504,10 @@ window.addEventListener('DOMContentLoaded', function(){
       + 'Anything that dies on the way through refunds the cooldown instantly &mdash; chain it as long as your mana holds.<br><i>'
       + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Grows every level.</i>';
     if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast. '
-      + 'Whatever it catches is frozen, and while it is frozen everything you land on it hits for double.<br><i>'
+      + 'Whatever it catches is frozen, and while it is frozen everything you land on it hits for double. '
+      + 'The shell sees for you on the way out and the camera rides along with it, coming back where it lands. Press the skill again while it is still in the air and it goes off there and then, for free &mdash; the only way to catch something that has moved since you fired.<br><i>'
       + Math.round(heroRocketDmg(h))+' damage (grows every level) in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '
+      + ROCKET_TRAVEL_MAX+' range &middot; '
       + STUN_TIME.toFixed(0)+'s stun, x'+STUN_DMG_MULT+' damage taken &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
     return '<b>Heal</b>A ring of light sweeps out from you, healing every friendly hero and creep it passes over.<br><i>~'
       + Math.round(heroHealAmount(h))+' health (grows every level) &middot; '+HEAL_RANGE_MANUAL+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
@@ -7308,6 +7358,7 @@ window.addEventListener('DOMContentLoaded', function(){
   let pendingTouch = {};    // presses not yet resolved into a drag or a tap
   const TOUCH_DRAG_SLOP = 12;   // css px of travel before a press counts as a drag
   let touchSkillTap = false;
+  let skillKeyWasDown = false;   // last frame's space, so a held key is one cast and not sixty
   let usedTouch = false;    // true once the player has actually touched the screen
 
   function canvasRect(){ return canvas.getBoundingClientRect(); }
@@ -7752,9 +7803,40 @@ window.addEventListener('DOMContentLoaded', function(){
     h.skillCd = s.skillCd; h.mana -= s.skillManaCost;
     const dx=aimX-h.x, dy=aimY-h.y; const len=Math.max(1,Math.sqrt(dx*dx+dy*dy));
     const travelDist = Math.min(ROCKET_TRAVEL_MAX, len);
-    projectiles.push({ x:h.x, y:h.y, vx:dx/len*ROCKET_SPEED, vy:dy/len*ROCKET_SPEED, owner:h.side,
-      isRocket:true, traveled:0, maxDist:travelDist, dmgBase:heroRocketDmg(h), attacker:h });
+    const shell = { x:h.x, y:h.y, vx:dx/len*ROCKET_SPEED, vy:dy/len*ROCKET_SPEED, owner:h.side,
+      isRocket:true, traveled:0, maxDist:travelDist, dmgBase:heroRocketDmg(h), attacker:h };
+    projectiles.push(shell);
+    // Only the shell you fired yourself takes the screen with it. An AI tank's
+    // rocket — either team's — leaves the camera on the hero you are driving.
+    if(h === playerTeam[activePlayerIdx] && h.side === 'player') rideRocket(shell);
     addBurst(h.x,h.y,'#E8654A',8);
+  }
+
+  // A second press of the skill sets the shell off where it is now rather than
+  // where it was aimed: a 1400-unit throw spends four seconds in the air, and
+  // the thing worth hitting has usually moved by the time it lands. Free — the
+  // cooldown and the mana were paid when it was fired — and it consumes the
+  // press, so it can never roll straight into a recast. Returns whether there
+  // was in fact a shell of this hero's to set off.
+  function detonateRocket(h){
+    if(h.type !== 'tank') return false;
+    for(let i=projectiles.length-1;i>=0;i--){
+      const p = projectiles[i];
+      if(p.isRocket && p.attacker === h){
+        projectiles.splice(i,1);
+        explodeRocket(p.x,p.y,p.owner,p.dmgBase,p.attacker,p.splash,p.heroDmg);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Is the hero you are driving holding a shell in the air? The HUD asks so the
+  // skill button can say that the press does something other than nothing.
+  function hasLiveRocket(h){
+    if(!h || h.type !== 'tank') return false;
+    for(const p of projectiles) if(p.isRocket && p.attacker === h) return true;
+    return false;
   }
 
   function rollHeal(h){
@@ -8463,14 +8545,47 @@ window.addEventListener('DOMContentLoaded', function(){
     return best;
   }
 
+  // The camera rides your own rocket from the barrel to the blast. At the old
+  // 700 range the shell stayed on screen the whole way, so following it would
+  // have bought nothing; at 1400 the far half of a throw lands off the edge of
+  // the view, and a skill you cannot watch is a skill you cannot aim. rocketCam
+  // is the shell itself while it is in the air; when it leaves the projectile
+  // list — it hit something, a tree, the edge of the world, or you set it off —
+  // the camera holds on the spot for ROCKET_CAM_HOLD so the explosion is seen,
+  // then whips back to the tank.
+  let rocketCam = null;        // the live shell, or null
+  let rocketCamTail = null;    // {x,y} where it went off
+  let rocketCamHold = 0;       // seconds the camera still sits on the blast
+  const ROCKET_CAM_HOLD = 0.55;   // a touch longer than BLAST_TIME, so the fireball finishes
+  function rideRocket(p){ rocketCam = p; rocketCamTail = null; rocketCamHold = 0; camSnap = 0.35; }
+  function dropRocketCam(){ rocketCam = null; rocketCamTail = null; rocketCamHold = 0; }
+
   function updateCamera(dt){
     const h = playerTeam[activePlayerIdx];
-    const fx = scout ? scout.x : (h?h.x:0);
-    const fy = scout ? scout.y : (h?h.y:0);
+    // Every way a rocket can end removes it from the list, so watching for that
+    // covers all of them at once instead of hooking each removal site. The shell
+    // object is still ours, so its last position is where the blast is.
+    if(rocketCam && projectiles.indexOf(rocketCam) < 0){
+      rocketCamTail = { x: rocketCam.x, y: rocketCam.y };
+      rocketCamHold = ROCKET_CAM_HOLD;
+      rocketCam = null;
+    }
+    if(rocketCamHold > 0){
+      rocketCamHold = Math.max(0, rocketCamHold - dt);
+      if(rocketCamHold === 0){ rocketCamTail = null; camSnap = 0.55; }   // whip home to the tank
+    }
+    const ride = rocketCam || rocketCamTail;
+    // Scouting still wins: a finger on the minimap is you asking for the view,
+    // and letting go snaps back to the shell if it is somehow still flying.
+    const fx = scout ? scout.x : (ride ? ride.x : (h?h.x:0));
+    const fy = scout ? scout.y : (ride ? ride.y : (h?h.y:0));
     const desiredX = Math.min(WORLD_W-W, Math.max(0, fx - W/2));
     const desiredY = Math.min(WORLD_H-H, Math.max(0, fy - H/2));
     if(camSnap>0) camSnap = Math.max(0, camSnap-dt);
-    const rate = camSnap>0 ? 13 : 4;   // whip across on a switch, drift while following
+    // A drift rate of 4 leaves a 380-unit shell 95 units behind the middle of
+    // the screen and falling further back every time the view clamps at a world
+    // edge; 9 keeps it in the frame it is supposed to be the subject of.
+    const rate = camSnap>0 ? 13 : (rocketCam ? 9 : 4);   // whip across on a switch, drift while following
     camera.x += (desiredX-camera.x)*Math.min(1,dt*rate);
     camera.y += (desiredY-camera.y)*Math.min(1,dt*rate);
   }
@@ -8480,6 +8595,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(i<0 || i>=playerTeam.length || !playerTeam[i].alive) return false;
     if(i!==activePlayerIdx){
       camSnap = 0.5;
+      dropRocketCam();   // you asked for a different hero; the shell keeps flying without the camera
       // The hero you were driving holds where you left him instead of quietly
       // resuming a lane you never told him to push. Drag him to the minimap to
       // send him back out.
@@ -8754,13 +8870,35 @@ window.addEventListener('DOMContentLoaded', function(){
     // shot is yours.
     if(!(tut.on && tut.noAuto)) tryAutoAttack(h);   // only fills gaps when you are not shooting yourself
 
-    const skillRequested = keys[' '] || touchSkillTap;
+    // Holding space keeps asking for the skill, which is what a cooldown is for.
+    // Setting a shell off early has no cooldown to lean on, so it needs the press
+    // itself: the rising edge of the key, or one tap of the button (touchSkillTap
+    // is already consumed every frame, so it is an edge by construction).
+    const spaceDown = !!keys[' '];
+    const skillRequested = spaceDown || touchSkillTap;
+    const skillPressed = (spaceDown && !skillKeyWasDown) || touchSkillTap;
+    skillKeyWasDown = spaceDown;
     touchSkillTap = false;
 
     if(h.dashing) return;
 
-    if(skillRequested && h.skillCd<=0 && h.mana>=s.skillManaCost){
-      useSkill(h,dx,dy,wmx,wmy);
+    // Second press first: while your shell is up, the button is a detonator and
+    // nothing else. The shell does not exist yet on the frame that fires it, so
+    // the press that launches it can never be the press that sets it off.
+    if(skillPressed && detonateRocket(h)){
+      // handled — the press was spent on the shell
+    } else if(skillRequested && h.skillCd<=0 && h.mana>=s.skillManaCost){
+      // The touch aim ray is a fixed 400 units. That is plenty to point a shot,
+      // but it is also the distance the tank's shell is asked to fly, which would
+      // pin a 1400-range skill to 400 on a phone no matter how far the range goes.
+      // On touch the shell now goes the whole way down the ray and the second tap
+      // decides where it stops — which is what the detonator is for.
+      let sax = wmx, say = wmy;
+      if(usedTouch && h.type==='tank'){
+        sax = h.x + Math.cos(h.facing)*ROCKET_TRAVEL_MAX;
+        say = h.y + Math.sin(h.facing)*ROCKET_TRAVEL_MAX;
+      }
+      useSkill(h,dx,dy,sax,say);
       if(tut.on) tutNote('skill', h.type);
     }
     const len=Math.sqrt(dx*dx+dy*dy)||1;
@@ -9766,7 +9904,13 @@ window.addEventListener('DOMContentLoaded', function(){
       }
 
       const hitTree = treeBlockingProjectile(p.x,p.y);
-      if(hitTree){
+      // Only the tank's own shell is tested against the scenery. Bullets still
+      // thread past it — they are small, and stopping every lane trade on a
+      // boulder is a balance change nobody asked for — and a tower's shell can
+      // never reach a prop anyway, because scenery keeps TOWER_RANGE + 120 clear
+      // of every tower, so scanning for it would be pure waste.
+      const hitProp = (!hitTree && p.isRocket && p.attacker) ? propBlockingProjectile(p.x,p.y) : null;
+      if(hitTree || hitProp){
         if(p.isRocket){ explodeRocket(p.x,p.y,p.owner,p.dmgBase,p.attacker,p.splash,p.heroDmg); }
         else { addBurst(p.x,p.y,'#8a6a3c',8); if(p.fireBolt) boltImpact(p, true); }
         projectiles.splice(i,1);
@@ -10091,6 +10235,37 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.setLineDash([9,11]); ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(h.x,h.y,attackRange(h),0,7); ctx.stroke();
     ctx.restore();
+  }
+  // The blast the shell would make if it went off right now, drawn around it all
+  // the way out. This is what the second press is aimed with: a hero standing
+  // inside this ring but not in the shell's path is exactly the shot the
+  // detonator exists for, and without the ring you would be guessing at 180
+  // units. Only your own shell — putting the same ring on an enemy tank's would
+  // hand you a free read on where his blast lands.
+  const SPLASH_RING_BLOOM = 70;   // world units of travel to open up over
+  function drawRocketSplashRings(){
+    const dash = -performance.now()/1000*24;
+    for(const p of projectiles){
+      if(!p.isRocket || !p.attacker || p.owner !== 'player') continue;
+      if(!onScreen(p.x, p.y, ROCKET_SPLASH_RADIUS + 40)) continue;
+      // Opens out of the barrel rather than popping into existence at full size.
+      const bloom = Math.min(1, (p.traveled||0)/SPLASH_RING_BLOOM);
+      const r = ROCKET_SPLASH_RADIUS*(0.5 + 0.5*bloom);
+      ctx.save();
+      ctx.globalAlpha = bloom;
+      ctx.fillStyle = 'rgba(232,101,74,.10)';
+      ctx.strokeStyle = 'rgba(255,140,66,.7)';
+      // Everything here is in world units, and the desktop draws the world at
+      // half size — a 3-unit line lands under a pixel wide there and the ring
+      // simply is not on the screen. Scaling by VIEW_ZOOM keeps it the same
+      // thickness to look at on both, which is what a marker has to be.
+      ctx.lineWidth = 3*VIEW_ZOOM;
+      ctx.setLineDash([10*VIEW_ZOOM, 12*VIEW_ZOOM]);
+      ctx.lineDashOffset = dash*VIEW_ZOOM;   // creeping round, so it reads as live rather than as scenery
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
   }
   function drawHealRange(h){
     ctx.save();
@@ -10484,7 +10659,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const skillKey = activeH.type==='carry'?'dash':activeH.type==='tank'?'rocket':'heal';
     skillIconEl.className = 'skillIcon skill-' + skillKey;
     skillBtnIconEl.className = 'skillIcon skill-' + skillKey;
-    document.getElementById('skillNameLabel').textContent = activeH.type==='carry'?'Dash':activeH.type==='tank'?'Rocket':'Heal';
+    skillNameEl.textContent = activeH.type==='carry'?'Dash':activeH.type==='tank'?'Rocket':'Heal';
     updateStatStrip();
   }
 
@@ -10529,6 +10704,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawAimLine(worldMouseX, worldMouseY);
     drawOrders();
     drawPings();
+    drawRocketSplashRings();   // an aim marker, so it sits with the ranges and under the units
 
     drawBurns();            // scorched ground, under everything that walks on it
     drawRipples();          // on the surface, so units stand in them
@@ -10809,7 +10985,16 @@ window.addEventListener('DOMContentLoaded', function(){
       cdFillEl.style.height = (activeH.basicCd/s.basicInterval*100)+'%';
       dashCdFillEl.style.height = (activeH.skillCd/s.skillCd*100)+'%';
       skillBtnCdEl.style.setProperty('--cd', String(Math.max(0,Math.min(1, activeH.skillCd/s.skillCd))));
+      // A shell in the air turns the skill into a detonator for as long as it is
+      // up. The button glows and the label changes, because a second press that
+      // does something new is worth more than a cooldown ring nobody is watching.
+      const armed = hasLiveRocket(activeH);
+      dashCdFillEl.parentNode.classList.toggle('armed', armed);
+      skillBtnEl.classList.toggle('armed', armed);
       updatePartyUI();
+      // After updatePartyUI, which writes the resting name: this overrides it for
+      // as long as the shell is up.
+      if(armed) skillNameEl.textContent = 'Detonate';
     }
   }
 
@@ -11249,7 +11434,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Rocket and heal',
-    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands, hitting everything in the blast and freezing it &mdash; and anything frozen takes double damage until it comes round; the support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
+    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands, hitting everything in the blast and freezing it &mdash; and anything frozen takes double damage until it comes round. It flies a long way and the view goes with it; press again while it is up to set it off early. The support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
     goal:()=>{
       const c = tut.p.cast || {};
       return 'Fire a rocket, then cast a heal — '+((c.tank?1:0)+(c.support?1:0))+' / 2';
@@ -11745,8 +11930,8 @@ window.addEventListener('DOMContentLoaded', function(){
     state='playing';
     hideTip();
     keys = {};
-    moveTouch=null; touchMoveVec={x:0,y:0}; touchShotAt=null; touchSkillTap=false; orderDrag=null; pendingTouch={}; pings=[];
-    scoutTouch=null; scout=null;
+    moveTouch=null; touchMoveVec={x:0,y:0}; touchShotAt=null; touchSkillTap=false; skillKeyWasDown=false; orderDrag=null; pendingTouch={}; pings=[];
+    scoutTouch=null; scout=null; dropRocketCam();
     hideJoystick(moveJoyEl);
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
     canvas.focus();
