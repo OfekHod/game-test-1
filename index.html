@@ -10369,9 +10369,15 @@ window.addEventListener('DOMContentLoaded', function(){
     // toward the middle) until the drag ends, below.
     if(dragOrderEngaged()){
       const margin = Math.min(W,H) * EDGE_PAN_MARGIN_FRAC;
-      const edgeAxis = (pos, size) => pos < margin ? -(margin-pos)/margin
-                        : pos > size-margin ? (pos-(size-margin))/margin : 0;
-      const vx = edgeAxis(orderDrag.sx, W), vy = edgeAxis(orderDrag.sy, H);
+      // The bottom dock (stat strip + HP/MP/ability bar) sits over the canvas
+      // rather than shrinking it, so the world is already hidden well above the
+      // literal bottom edge whenever it is showing. Reaching its top counts as
+      // reaching the screen edge, the same as the rim does everywhere else.
+      const dockPx = bottomDock.classList.contains('hidden') ? 0 : bottomDock.offsetHeight;
+      const bottomMargin = Math.max(margin, dockPx * (H / Math.max(1, layoutH)));
+      const edgeAxis = (pos, size, near, far) => pos < near ? -(near-pos)/near
+                        : pos > size-far ? (pos-(size-far))/far : 0;
+      const vx = edgeAxis(orderDrag.sx, W, margin, margin), vy = edgeAxis(orderDrag.sy, H, margin, bottomMargin);
       if(vx || vy){
         if(!dragPanCam) dragPanCam = { x: h?h.x:camera.x+W/2, y: h?h.y:camera.y+H/2 };
         const panSpeed = Math.min(W,H) * EDGE_PAN_SPEED_FRAC;
