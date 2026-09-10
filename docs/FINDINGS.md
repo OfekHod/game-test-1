@@ -60,6 +60,49 @@ Recorded because these are the expensive ones to rediscover.
   window, retreat at 60%): every version reduced deaths and reduced wins in
   proportion.
 
+## Base range mends three times as fast, and costs the AI nothing
+
+`BASE_REGEN_MULT` triples both regen rates inside your own main tower's range.
+It is a player-facing convenience — walking home is a move rather than thirty
+wasted seconds — so the thing worth measuring was whether it quietly hands the
+idle-player scenario a win it did not have. It does not. Two matched 80-game
+sweeps, everything else identical:
+
+| | base destroyed | outposts | tower dmg | enemy deaths | median win |
+|---|---|---|---|---|---|
+| `BASE_REGEN_MULT` 3 | 77/80 | 3.9 | 1543 | 0.6 | 226s |
+| `BASE_REGEN_MULT` 1 | 75/80 | 3.9 | 1550 | 0.8 | 227s |
+
+Two games and one second apart on eighty — noise. Both sides get the bonus and
+both bases are the same size, and the enemy AI has no "go home and heal"
+behaviour to exploit it with, so the only hero it reliably changes is the
+player's own, who in this scenario is standing in his base doing nothing anyway.
+
+## A river doubles mana regen, and one 80-game run will lie to you about it
+
+`RIVER_MANA_MULT` doubles mana regen — mana only — while a hero stands in a
+river, on top of whatever the base ring is paying. Four 80-game sweeps, two of
+each configuration, everything else identical:
+
+| | base destroyed | outposts | tower dmg | enemy deaths | median win |
+|---|---|---|---|---|---|
+| `RIVER_MANA_MULT` 2, run 1 | 77/80 | 3.8 | 1528 | 0.7 | 202s |
+| `RIVER_MANA_MULT` 1, run 1 | 74/80 | 3.8 | 1529 | 0.6 | 223s |
+| `RIVER_MANA_MULT` 2, run 2 | 79/80 | 3.6 | 1466 | 0.9 | 234s |
+| `RIVER_MANA_MULT` 1, run 2 | 78/80 | 3.9 | 1552 | 0.8 | 227s |
+
+**Run 1 on its own reads as a 21-second speed-up and it is not one.** Against
+three same-configuration runs that had clustered at 223-227s, 202s looked like a
+real effect — cheaper mana, more shots fired, a faster push — and the second
+pair of runs put the same configuration at 234s, on the other side of the
+control. The `x2` spread is 202-234 and it straddles both `x1` values.
+
+The lesson is the one `docs/SIM.md` already gives and this nearly ignored: on
+this scenario 80 games fixes the *median win* to something like +/-15s, so a
+difference smaller than about 30s is not a difference until a second pair of
+runs says the same thing. Base kills behaved: 156/160 with the bonus against
+152/160 without.
+
 ## The aggression/deaths trade
 
 It held almost the whole way: safer carry, fewer wins.

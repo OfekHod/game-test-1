@@ -174,6 +174,9 @@
   .sDerived{color:var(--text-strong);font-size:8.5px;opacity:.65;white-space:nowrap;text-align:center;}
   .sPlus{width:18px;height:18px;border-radius:50%;border:none;background:#5AC8E8;color:#0a3a4a;font-weight:800;cursor:pointer;line-height:16px;padding:0;font-size:13px;}
   .sPlus.maxed{opacity:.3;pointer-events:none;}
+  .statBtn.regenBoost{border-color:#3E8E52;background:#D9F2DA;}
+  .statBtn.regenBoost .sName,.statBtn.regenBoost .sVal{color:#26602F;}
+  .statBtn.regenBoost .sDerived{color:#26602F;opacity:1;font-weight:800;}
 
   .tip{position:absolute;z-index:20;width:232px;background:rgba(74,52,22,.97);color:#FFF3D6;
     border:2px solid var(--panel-border);border-radius:11px;padding:8px 10px;font-size:11.5px;line-height:1.42;
@@ -2822,6 +2825,14 @@ window.addEventListener('DOMContentLoaded', function(){
     manaRegen:{base:2, per:0.7}, range:{base:250, per:13}
   };
 
+  // Standing inside your own base's tower range regenerates health AND mana
+  // this many times faster. It is what makes walking home a move rather than a
+  // waste of thirty seconds: a hero on a sliver either goes back and is whole
+  // again in a third of the time, or stays out and dies to the next wave. Both
+  // sides get it, and both sides' bases are the full TOWER_RANGE across, so it
+  // costs the same walk either way.
+  const BASE_REGEN_MULT = 3;
+
   // 26 starting points each. This is the design surface — change a hero here and
   // nothing else. Melee vs ranged is just an unspent range allocation.
   const START_BUILD = {
@@ -3086,6 +3097,18 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function mainTower(list){ for(const t of list){ if(t.main) return t; } return list[0]; }
   function mainDown(list){ const t = mainTower(list); return !t || t.hp<=0; }
+  // "Base range" is your own main tower's range — the faint ring drawTowerRange
+  // already draws around it, so the thing that heals you is a thing you can see.
+  function inBaseRange(h){
+    const t = mainTower(h.side==='player' ? playerTowers : enemyTowers);
+    return !!t && t.hp>0 && dist(h.x,h.y,t.x,t.y) < TOWER_RANGE;
+  }
+  function baseRegenMult(h){ return inBaseRange(h) ? BASE_REGEN_MULT : 1; }
+  // Mana takes the base bonus AND the river one rather than the larger of the
+  // two, and that overlap is real: the Match map's river runs west into the
+  // player's own base ring, so the last few strides of it pay x6. Mana only,
+  // at your own base, where you were safe anyway.
+  function manaRegenMult(h){ return baseRegenMult(h) * (inRiver(h.x,h.y) ? RIVER_MANA_MULT : 1); }
   // One base per side, dead centre on its edge. Kept as arrays so everything
   // that iterates towers — vision, minimap, projectiles, win check — is unchanged.
   let playerTowers = [ makeTower(playerTowerX, BASE_Y, 'player') ];
@@ -4033,6 +4056,12 @@ window.addEventListener('DOMContentLoaded', function(){
   let rivers = [];    // shallow: you can ford them, they just slow you
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
   const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // Standing in a river doubles mana regen. Rivers already cost you speed and
+  // stand between the lanes, so the trade is real: the ground that gets your
+  // mana back fastest outside your own base is also the ground you are slowest
+  // to leave. Lakes are solid and cannot be stood in, so this is inRiver, not
+  // inWater. Health is untouched — a river is not a base.
+  const RIVER_MANA_MULT = 2;
   // Lakes are three times the radius they used to be. A 165-unit pond was
   // scenery you clipped the corner of on the way past; at 495 it is a piece of
   // terrain you commit to walking around, which is the only way still water
@@ -5386,8 +5415,8 @@ window.addEventListener('DOMContentLoaded', function(){
     agi:      { name:'Agility',     unit:'move speed', text:'Raises how fast you move. Nothing else scales off it.' },
     maxHp:    { name:'Max health',  unit:'max hp',     text:'How much punishment you can take before you die and respawn.' },
     maxMana:  { name:'Max mana',    unit:'max mana',   text:'Attacks and skills cost mana. Blue orbs dropped by your kills refill it.' },
-    hpRegen:  { name:'Health regen',unit:'hp/s',       text:'Health you get back every second, in or out of combat.' },
-    manaRegen:{ name:'Mana regen',  unit:'mp/s',       text:'Mana you get back every second. The thing that decides how long you can keep firing.' },
+    hpRegen:  { name:'Health regen',unit:'hp/s',       text:'Health you get back every second, in or out of combat. Inside your own base’s ring it runs three times as fast.' },
+    manaRegen:{ name:'Mana regen',  unit:'mp/s',       text:'Mana you get back every second. The thing that decides how long you can keep firing — and it too triples inside your own base’s ring.' },
     range:    { name:'Range',       unit:'range',      text:'How far your shots travel before they fall short, and how far your auto-attack looks for a target. On a melee hero this is swing reach instead, and it grows about a third as fast.' }
   };
   function statLine(h,key){
@@ -5457,8 +5486,17 @@ window.addEventListener('DOMContentLoaded', function(){
     sdEls.agi.textContent = Math.round(heroSpeed(h))+' spd';
     sdEls.maxHp.textContent = Math.round(h.maxHp)+' hp';
     sdEls.maxMana.textContent = Math.round(h.maxMana)+' mp';
-    sdEls.hpRegen.textContent = h.stats.hpRegen.toFixed(1)+'/s';
-    sdEls.manaRegen.textContent = h.stats.manaRegen.toFixed(1)+'/s';
+    // The strip is the only place either rate is written down, so it is where
+    // the base bonus shows: the number is what is actually ticking, not what the
+    // build says, and the button goes green so the boost reads on a phone too
+    // (.sDerived is display:none in the narrow layout).
+    // Mana carries the river bonus on top of the base one, so the two rates do
+    // not always agree — they are computed apart.
+    const rm = baseRegenMult(h), mm = manaRegenMult(h);
+    sdEls.hpRegen.textContent = (h.stats.hpRegen*rm).toFixed(1)+'/s'+(rm>1?' ×'+rm:'');
+    sdEls.manaRegen.textContent = (h.stats.manaRegen*mm).toFixed(1)+'/s'+(mm>1?' ×'+mm:'');
+    spEls.hpRegen.parentElement.classList.toggle('regenBoost', rm>1);
+    spEls.manaRegen.parentElement.classList.toggle('regenBoost', mm>1);
     sdEls.range.textContent = Math.round(attackRange(h))+' rng';
   }
 
@@ -8617,13 +8655,17 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function updateHeroCommon(h,dt){
     updateBars(h, dt);
-    if(h.mana<h.maxMana) h.mana=Math.min(h.maxMana, h.mana+h.stats.manaRegen*dt);
+    // Read once each: a corpse is still standing where it fell as far as these
+    // are concerned, but respawnHero fills both bars anyway, so a dead hero's
+    // mana never notices either way.
+    const rm = baseRegenMult(h), mm = manaRegenMult(h);
+    if(h.mana<h.maxMana) h.mana=Math.min(h.maxMana, h.mana+h.stats.manaRegen*mm*dt);
     if(!h.alive){
       h.respawnTimer -= dt;
       if(h.respawnTimer<=0) respawnHero(h);
       return;
     }
-    if(h.hp<h.maxHp) h.hp=Math.min(h.maxHp, h.hp+h.stats.hpRegen*dt);
+    if(h.hp<h.maxHp) h.hp=Math.min(h.maxHp, h.hp+h.stats.hpRegen*rm*dt);
     if(h.basicCd>0) h.basicCd=Math.max(0,h.basicCd-dt);
     if(h.autoCd>0) h.autoCd=Math.max(0,h.autoCd-dt);
     if(h.manualT>0) h.manualT=Math.max(0,h.manualT-dt);
@@ -11275,8 +11317,8 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Your base',
-    text:()=>'The building you lose the game by losing. A tower outranges every hero by design, so it always gets the first shot &mdash; never walk into one without your own creeps in front of you to hold its attention.',
-    goal:()=>'Stand inside your tower’s range',
+    text:()=>'The building you lose the game by losing. A tower outranges every hero by design, so it always gets the first shot &mdash; never walk into one without your own creeps in front of you to hold its attention. It is also where you mend: inside the ring your health and mana come back <b>three times as fast</b>, so a hero on a sliver walks home rather than dying on the next wave.',
+    goal:()=>'Stand inside your tower’s range to mend',
     enter(){
       const t = mainTower(playerTowers);
       tut.p.tower = t;
