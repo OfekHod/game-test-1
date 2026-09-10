@@ -4910,7 +4910,7 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.save();
       fctx.globalAlpha = fade;
       fctx.fillStyle = '#ffffff';
-      // Two circles, ONE path and ONE fill: the mask is composited with
+      // Disc and column, ONE path and ONE fill: the mask is composited with
       // 'lighter', so filling them separately would add the overlap to itself
       // and leave a brighter lens down the trunk wherever fade is under 1.
       fctx.beginPath();
@@ -4922,14 +4922,20 @@ window.addEventListener('DOMContentLoaded', function(){
       const cdr = Math.max(t.r, t.dw*0.5)*TREE_RELIT_R;
       fctx.moveTo(t.x + cdr, cy);
       fctx.arc(t.x, cy, cdr, 0, 7);
-      // And the foot it stands on. The canopy disc sits well clear of the
-      // ground, so on a tree lit from the north the wedge's apex landed across
-      // the wood of the trunk — the one place a tree's own shadow can never
-      // be. Lighting the blocking circle as well starts the wedge at the
-      // silhouette the tree actually casts from, so it comes out from behind
-      // the trunk instead of over it.
-      fctx.moveTo(t.x + cr, t.y);
-      fctx.arc(t.x, t.y, cr, 0, 7);
+      // And the trunk under it, down to the sprite's own foot. The canopy disc
+      // stops well clear of the ground, so on a tree lit from the north the
+      // wedge's apex used to land across the wood — the one place a tree's own
+      // shadow can never fall.
+      //
+      // It has to end AT the foot and not past it. The circle the tree blocks
+      // with has radius t.r*TREE_BLOCK_FACTOR about t.y, while the art only
+      // reaches t.r*TREE_SINK below the same point: lighting the blocking
+      // circle relights half a radius of bare grass beyond the trunk and opens
+      // a lit gap between a tree and its own shadow. A column stops on the last
+      // row of pixels the tree draws, so the wedge comes out from under it.
+      const foot = t.y + t.r*TREE_SINK;
+      const half = t.dw*0.15;                    // a shade wider than the wood
+      fctx.rect(t.x - half, cy, half*2, foot - cy);
       fctx.fill();
       fctx.restore();
     }
