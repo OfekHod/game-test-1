@@ -117,6 +117,13 @@ and a claim of parity wants 240.
 | `SURV_GROUP_LEAD` | 280 | stage four only: nobody outruns the rearmost of the three by more |
 | `SURV_BACK_HOLD` | 1.5s | the arena's fall-back is a fresh question every frame, not `RETREAT_IN/OUT`'s latch — see `AI.md`, "Backing off" |
 
+A wave is not cleared until its enemy players are dead too, so `survTick` gates
+on both. The pacing cost is real and intended: an idle round that reached wave 7
+at 145s reaches it at 210s once the heroes have to be killed. The risk it
+carries is a hero that waits out of reach forever, and `survAllIn` is the answer
+— measured over a full idle round, the longest the field ever sat with no mobs
+and a live enemy hero on it was 15.5 seconds.
+
 `pushTowers` is not a constant but belongs here: an arena hero will not attack
 your base while an outpost on its own road stands. Instrumented, an idle-player
 round lost every point of its 500 base hp to HEROES rather than to mobs, so

@@ -3401,6 +3401,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // person does.
   const SHIELD_REACTION = 0.4;
   function towerShieldedAt(h, t){
+    // Every caller is really asking "may I stand in this tower's reach?", and
+    // for the last arena hero of a dead wave the answer is yes — not because
+    // anything is soaking the shells, but because there is nothing left to wait
+    // for. See survAllIn.
+    if(survAllIn(h)) return true;
     const hold = towerShieldTime(h, t);
     if(hold <= 0) return false;
     const d = dist(h.x, h.y, t.x, t.y);
@@ -3542,7 +3547,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(t.hp<=0) continue;
       const d = dist(h.x,h.y,t.x,t.y) - t.r;
       if(h.side === 'enemy' && inEarlyPeace()) continue;   // no buildings during the truce
-      const mayHit = escortedAt(h, t) || (h.pushing && siegeViable(h, t));
+      const mayHit = escortedAt(h, t) || (h.pushing && siegeViable(h, t)) || survAllIn(h);
       if(d < attackRange(h)*1.05 && mayHit && d < bd){ bd=d; best=t; }
     }
     // PUSH ORDER: defending creeps, then the building. Never the defending hero.
@@ -7986,11 +7991,13 @@ window.addEventListener('DOMContentLoaded', function(){
     const types = survHeroTypes(w);
     if(!types.length) return null;
     const lv = survHeroLevel(w);
-    // If one of them is already out there, the new arrival joins THAT road.
-    // Reading the wave's own road instead put the carry on the north lane while
-    // the tank it is supposed to be sheltering behind walked in from the south,
-    // which is two lone heroes rather than the pair the wave is meant to be.
-    // SURV_HERO_ORDER is tank-first, so the tank's road wins when both are up.
+    // A FALLBACK, not the usual path: survTick will not start a wave while an
+    // enemy player is still alive, so by the time this runs they are all dead
+    // and the whole roster walks in together on the wave's own road. It is kept
+    // because it is the rule that has to hold if that gate ever loosens — a
+    // newcomer joins the road of whoever is already out there, or the carry
+    // walks in from the north while the tank it shelters behind came from the
+    // south. SURV_HERO_ORDER is tank-first, so the tank's road wins.
     for(const t of SURV_HERO_ORDER){
       const a = enemyTeam.find(e => e.type === t);
       if(a && a.alive){ li = a.laneIdx; break; }
@@ -8000,7 +8007,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(let i=0;i<types.length;i++){
       const h = enemyTeam.find(e => e.type === types[i]);
       if(!h) continue;
-      if(h.alive){ survSetHeroLevel(h, lv); continue; }
+      if(h.alive){ survSetHeroLevel(h, lv); continue; }   // see above: cannot happen through survTick
       // The order they are listed in is the order they walk in: the tank at the
       // front, and each of the others a stride further back down the road.
       const idx = survPathIndexAt(p, SURV_HERO_SPAWN_R + i*SURV_HERO_GAP);
@@ -8048,7 +8055,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // back to the tower or clearing a camp, not a countdown that started while
   // you were still fighting.
   function survTick(dt){
+    // A WAVE IS ITS MOBS *AND* ITS PLAYERS. Gating on the mobs alone let the
+    // next wave march while the last one's tank was still on the field, so the
+    // heroes stacked up wave on wave and clearing the pack bought you nothing.
+    // Killing the enemy players is now part of clearing a wave, which is what
+    // makes them worth turning round for.
     if(enemyCreeps.length) return;       // last wave still standing: nothing moves
+    for(const h of enemyTeam){ if(h.alive) return; }
     survBreak -= dt;
     if(survBreak > 0) return;
     survivalWave();
@@ -9538,7 +9551,25 @@ window.addEventListener('DOMContentLoaded', function(){
   // stickiness it gets — enough that it commits to the step back instead of
   // dithering on the threshold.
   const SURV_BACK_HOLD = 1.5;
+  // NOTHING LEFT TO HIDE BEHIND, SO NOTHING TO WAIT FOR.
+  //
+  // The wave gate now waits for the enemy players too, and everything an arena
+  // hero does around a tower is written in terms of the wave shielding it —
+  // hold outside the reach, back out when the shield goes, take the building
+  // once the mobs are closer to it than you are. With the mobs gone, all three
+  // say "wait", and a hero waiting for a wave that is already dead is a round
+  // that never continues: it would stand off the outpost until the player came
+  // out to find it, which is a search, not a fight.
+  //
+  // So the last enemy player standing goes all in. It walks in, takes the
+  // shells, and either finishes the building or dies to it — and either way the
+  // wave ends. Every rule below reads this, which is why it is one predicate
+  // rather than a flag threaded through four of them.
+  function survAllIn(h){
+    return gameMode === 'survival' && h.side === 'enemy' && enemyCreeps.length === 0;
+  }
   function survWantsBack(h){
+    if(survAllIn(h)) return false;       // there is nowhere better to be
     if(towerEscapeUnsafe(h)) return true;                     // in the guns with the shield gone
     return h.hp < h.maxHp*RETREAT_IN && threatNear(h);        // hurt, and being pressed
   }

@@ -129,7 +129,8 @@ growing numbers, and — from wave 4 — the enemy team walking in behind them.
 
 The round is counted in **waves**, not seconds. A wave marches, its number goes
 up in the middle of the screen for a couple of seconds, and **nothing else
-spawns until every mob of that wave is dead** — the HUD's right-hand slot reads
+spawns until every mob of that wave is dead — and, from wave 4, every enemy
+player in it too** — the HUD's right-hand slot reads
 `Wave 7` where a Match reads a clock. So the pace is yours: meet a wave out on
 the road and the next one is along in a moment; let the outposts grind it down
 and you get a long breather to farm the camps with.
@@ -163,9 +164,16 @@ stands between an enemy player and your base: while one of them is up, your base
 is not something that hero will attack at all. Mobs still walk past and chip it;
 heroes do not. Hold your outposts and the thing being pushed is the outpost.
 
-There is no respawn timer on them. Kill one and it is gone until the next wave
-brings it back, at that wave's level and with full bars — which is what turning
-round to fight a hero instead of clearing the pack buys you. They are on the
+There is no respawn timer on them, and **the next wave will not march until
+they are dead**: clearing the pack is only half of clearing a wave now, so a
+hero you leave standing is a hero you are not being given a breather from. Kill
+one and it is gone until the next wave brings it back, at that wave's level and
+with full bars.
+
+The last of them left alive goes **all in**. With its wave dead there is nothing
+to shelter behind and nothing to wait for, so it stops holding outside your
+outposts and walks into them — a wave always ends, and never by making you go
+out and hunt a hero that has decided to wait in the trees. They are on the
 minimap the whole time, drawn a size up from the mobs.
 
 The end card reports the waves you held, with the clock and the loot under it.

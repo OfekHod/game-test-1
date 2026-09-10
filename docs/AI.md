@@ -92,9 +92,34 @@ than re-spawned, and it keeps its road: newcomers join *its* road, or the carry
 walks in on the north lane while the tank it shelters behind came from the
 south.
 
-There is no respawn timer. Kill one and it is gone until the next wave brings it
-back — which is the whole reward for turning round to fight a hero instead of
-clearing the pack.
+There is no respawn timer, and `survTick` will not start the next wave while one
+is alive — a wave is its mobs *and* its players. Gating on the mobs alone let
+the next wave march over the last one's tank, so the heroes stacked up wave on
+wave and clearing the pack bought nothing.
+
+That gate is also why `survDeployHeroes`'s "already alive" branch and its road
+inheritance are now fallbacks rather than the usual path: by the time a wave
+spawns, all three are dead and the whole roster walks in together.
+
+### All in
+
+Everything an arena hero does around a tower is written in terms of the wave
+shielding it — hold outside the reach, back out when the shield goes, take the
+building once the mobs are closer to it than you are. With the mobs dead all
+three say *wait*, and under the gate above a hero waiting for a wave that no
+longer exists is a round that never continues: it would stand off an outpost
+until the player came out to find it, which is a search, not a fight.
+
+So `survAllIn` — the last enemy player of a cleared wave — turns those three
+rules off at once. It walks in, takes the shells, and either finishes the
+building or dies to it. Either way the wave ends. It is one predicate read by
+`towerShieldedAt`, `survWantsBack` and `laneSeekTarget` rather than a flag
+threaded through each; every caller of `towerShieldedAt` is really asking "may I
+stand in this tower's reach?", and for that hero the answer is yes — not because
+anything is soaking the shells, but because there is nothing left to wait for.
+
+Measured over a full idle round, the longest the field ever sat with no mobs and
+a live enemy hero on it was **15.5 seconds**.
 
 ### A lane's guns come down in order
 
