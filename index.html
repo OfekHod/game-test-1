@@ -2597,7 +2597,11 @@ window.addEventListener('DOMContentLoaded', function(){
   const RESPAWN_TIME = 12;   // long enough that a kill buys a real window
 
   const ROCKET_SPEED = 380;
-  const ROCKET_SPLASH_RADIUS = 90;
+  // Doubled from 90. The rocket is the tank's one button and a 90-unit circle
+  // was narrower than the creep wave it was aimed at: a good throw caught two
+  // of six. At 180 it covers a wave, which is what a slow, telegraphed shell on
+  // a six-second cooldown should be worth.
+  const ROCKET_SPLASH_RADIUS = 180;
   const ROCKET_DMG_MIN = 30, ROCKET_DMG_MAX = 210;
   const ROCKET_DMG_BASE = ROCKET_DMG_MIN;
   const ROCKET_TRAVEL_MAX = 700;
@@ -5206,8 +5210,10 @@ window.addEventListener('DOMContentLoaded', function(){
     if(h.type==='carry') return '<b>Dash</b>Blink forward, damaging everything you pass through, and briefly untargetable. '
       + 'Anything that dies on the way through refunds the cooldown instantly &mdash; chain it as long as your mana holds.<br><i>'
       + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Grows every level.</i>';
-    if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast.<br><i>'
-      + Math.round(heroRocketDmg(h))+' damage (grows every level) in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
+    if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast. '
+      + 'Whatever it catches is frozen, and while it is frozen everything you land on it hits for double.<br><i>'
+      + Math.round(heroRocketDmg(h))+' damage (grows every level) in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '
+      + STUN_TIME.toFixed(0)+'s stun, x'+STUN_DMG_MULT+' damage taken &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
     return '<b>Heal</b>A ring of light sweeps out from you, healing every friendly hero and creep it passes over.<br><i>~'
       + Math.round(heroHealAmount(h))+' health (grows every level) &middot; '+HEAL_RANGE_MANUAL+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
   }
@@ -5502,7 +5508,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const DUST_STEP = 30;          // world distance between footfall puffs
   const SPLASH_STEP = 26;        // a touch tighter than dust: steps in water are shorter
   let ripples = [];
-  const STUN_TIME = 3.0;
+  const STUN_TIME = 5.0;
+  // A stunned unit is not just frozen, it is open: everything that lands on it
+  // while the mark is up hits for double. Three seconds of standing still was
+  // not long enough to convert, and the follow-up was doing list price anyway,
+  // so the rocket rarely turned into a kill. Five seconds and a x2 window make
+  // the blast the opening of a trade rather than the whole of it.
+  const STUN_DMG_MULT = 2;
   let burns = [];                 // lingering fire where a rocket landed
   function addBurn(x, y, r){ burns.push({ x, y, r, life:0, maxLife:2.4, seed:rand(0,9) }); }
   function updateBurns(dt){
@@ -5544,6 +5556,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // A stunned unit is frozen and wears a spinning question mark.
   function applyStun(u, secs){ u.stunT = Math.max(u.stunT||0, secs); }
   function isStunned(u){ return (u.stunT||0) > 0; }
+  // Every blow dealt to anything goes through one of the apply*Hit functions or
+  // the two creep swings, and all of them ask this. Buildings cannot be stunned,
+  // so nothing else has to know about the window.
+  function stunDmgMult(u){ return isStunned(u) ? STUN_DMG_MULT : 1; }
   function drawStunMark(u){
     if(!isStunned(u)) return;
     const spin = performance.now()/220;
@@ -7268,7 +7284,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // patched the first, so camp mobs hitting you never animated. Setting it
     // here means every present and future caller animates for free.
     c.atkT = MOB_ATTACK_SHOW;
-    const dmg = Math.round(c.dmg*rand(0.85,1.15)*defenseMult(target));
+    const dmg = Math.round(c.dmg*rand(0.85,1.15)*defenseMult(target)*stunDmgMult(target));
     target.hp -= dmg; target.flash = 0.2;
     sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
     registerHurt(target, dmg);
@@ -8840,8 +8856,8 @@ window.addEventListener('DOMContentLoaded', function(){
             // in the game happens — the animation was only wired into the
             // hero-contact path, which almost never runs, so it never showed.
             a.atkT = MOB_ATTACK_SHOW; e.atkT = MOB_ATTACK_SHOW;
-            const dA = a.dmg*CREEP_SCALE*rand(0.85,1.15);
-            const dB = e.dmg*CREEP_SCALE*rand(0.85,1.15);
+            const dA = a.dmg*CREEP_SCALE*rand(0.85,1.15)*stunDmgMult(e);
+            const dB = e.dmg*CREEP_SCALE*rand(0.85,1.15)*stunDmgMult(a);
             e.hp -= dA; a.hp -= dB;
             addMinorFloater(e.x, e.y-e.r-4, dA, MINOR_DMG_COL);
             addMinorFloater(a.x, a.y-a.r-4, dB, MINOR_DMG_COL);
@@ -9141,7 +9157,10 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     // Only a hero's rocket stuns; a tower shell does not, or a lane would be
-    // unplayable. Everything caught in the blast is frozen for STUN_TIME.
+    // unplayable. Everything caught in the blast is frozen for STUN_TIME and
+    // takes STUN_DMG_MULT damage for as long as the mark is up. The blast's own
+    // damage is resolved above, before the stun lands, so a rocket never doubles
+    // itself — the window is for what you land next.
     if(attackerHero){
       for(const list of [oppCreeps, neutralCreeps])
         for(const c of list) if(c.hp>0 && dist(x,y,c.x,c.y)<=R) applyStun(c, STUN_TIME);
@@ -9166,6 +9185,7 @@ window.addEventListener('DOMContentLoaded', function(){
     let dmg=dmgBase*rand(1-DMG_VARIANCE,1+DMG_VARIANCE);
     let isCrit=Math.random()<CRIT_CHANCE;
     if(isCrit) dmg*=CRIT_MULT;
+    dmg*=stunDmgMult(creep);
     dmg=Math.round(dmg);
     creep.hp-=dmg; creep.flash=0.18;
     sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
@@ -9201,6 +9221,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // even trade into a coin flip, and neither player can plan around it.
     const isCrit = false;
     dmg *= defenseMult(target);
+    dmg *= stunDmgMult(target);
     dmg=Math.round(dmg);
     target.hp-=dmg; target.flash=0.18;
     // Whose bar just moved is the one thing this has to say. Your own hero
@@ -10475,7 +10496,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Rocket and heal',
-    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands and hits everything in the blast; the support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
+    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands, hitting everything in the blast and freezing it &mdash; and anything frozen takes double damage until it comes round; the support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
     goal:()=>{
       const c = tut.p.cast || {};
       return 'Fire a rocket, then cast a heal — '+((c.tank?1:0)+(c.support?1:0))+' / 2';
