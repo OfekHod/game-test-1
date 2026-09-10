@@ -14731,28 +14731,26 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Push a lane, take a tower',
-    // Four things in one phase because they are one movement: pull the squad
-    // together, point it down a lane, catch up to the wave it sends, and walk
-    // in behind it. Taught apart they are gestures; taught together they are
-    // how a round is won. The catch-up beat is its own stage rather than
-    // folded into the tower instruction, because "walk in behind your
-    // creeps" means nothing if you are still standing at the fork alone —
-    // the wave has to be found before it can be walked behind.
+    // Three things in one phase, not four: pull the squad together, catch up
+    // to the wave it already sends down the lane, and walk in behind it.
+    // Dragging a hero onto the minimap is not asked for again here — "Pushing
+    // a lane" already taught that gesture on its own, and asking for it a
+    // second time mid-push would be re-teaching, not pushing. So the lane
+    // itself is just walked to, the same way "Walking" walks you to a
+    // ring: a dashed line and a circle, straight onto your own wave.
     text(){
       const p = tut.p;
       if(!p.assemble) return 'Your base now sends a <b>wave</b> down each lane every twenty seconds &mdash; one big creep leading three small. A lane is taken by a squad walking behind one, never by a hero alone. Their team has pulled back and their waves have stopped, so this lane is yours. <b>Pull your three together</b> first.';
-      if(!p.lane) return 'Now point them down the <b>' + p.laneName + ' lane</b>: drag the hero you are driving onto the <b>' + p.laneName + ' half of the minimap</b>. The other two are following him, so all three go together.';
-      if(!p.metCreeps) return 'Your wave is already marching. <b>Catch up to it</b> &mdash; a squad that arrives ahead of its own creeps takes the tower fire alone.';
+      if(!p.metCreeps) return 'Head down the <b>' + p.laneName + ' lane</b> and catch up to your creep wave &mdash; it is already marching. A squad that arrives ahead of its own creeps takes the tower fire alone.';
       return 'Walk in <b>behind your creeps</b>. A tower outranges every hero and hits harder than anything on the map, so let the wave hold its attention while the three of you cut the outpost down. Worth <b>200 points</b>.';
     },
     goal(){
       const p = tut.p;
       if(!p.assemble) return '1 · Assemble your squad';
-      if(!p.lane) return '2 · Send them down the ' + p.laneName + ' lane';
-      if(!p.metCreeps) return '3 · Catch up to your creep wave';
+      if(!p.metCreeps) return '2 · Get to the ' + p.laneName + ' lane';
       const t = p.tower;
       const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
-      return '4 · Destroy their outpost — ' + left + '% left';
+      return '3 · Destroy their outpost — ' + left + '% left';
     },
     hl:()=>partyEl,
     enter(){
@@ -14795,22 +14793,14 @@ window.addEventListener('DOMContentLoaded', function(){
     },
     tick(){
       const p = tut.p;
-      // Order is the lesson, not pedantry: assemble pulls the other two onto
-      // whoever you are driving, so a lane order given first is undone by the
-      // assemble that follows it. Ask again rather than leaving the squad
-      // standing in the base under a goal that says "destroy the outpost".
-      if(p.lane && !p.assemble){
-        p.lane = false;
-        tut.nudge = 'Pull them <b>together</b> first &mdash; assembling now calls him straight back.';
-        tut.nudgeT = 4;
-        tutPaint();
-        return;
-      }
-      // Between "sent down the lane" and "walk in behind it" the mark rides
-      // your own wave, not the tower: the closest of its four creeps, so the
-      // ring keeps up with whichever one is currently in front rather than
-      // trailing a fixed lead creep that outpaces its own escorts.
-      if(p.lane && !p.metCreeps){
+      // Once assembled, the mark rides your own wave — the closest of its
+      // four creeps, so the ring keeps up with whichever one is currently in
+      // front rather than trailing a fixed lead creep that outpaces its own
+      // escorts — and the dashed line/arrow every other ring or mark gets
+      // (drawTutorialMarks) is what actually walks you there. No drag, no
+      // separate "send them down the lane" ask: you already know that
+      // gesture from "Pushing a lane", so this just points at the lane.
+      if(p.assemble && !p.metCreeps){
         const h = tutHero();
         const wave = allyCreeps.filter(c => c.lane === p.laneIdx);
         let near = false, best = null, bd = Infinity;
@@ -14825,7 +14815,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(p.metCreeps && tut.p.tower && (!tut.mark || tut.mark.label !== 'THEIR OUTPOST'))
         tut.mark = { x:tut.p.tower.x, y:tut.p.tower.y, r:TOWER_RANGE, col:'#FF9A8B',
                      label:'THEIR OUTPOST', thin:true, mini:true };
-      const stage = (p.assemble ? 1 : 0) + (p.lane ? 1 : 0) + (p.metCreeps ? 1 : 0);
+      const stage = (p.assemble ? 1 : 0) + (p.metCreeps ? 1 : 0);
       if(stage !== p.stage){
         p.stage = stage;
         tutHighlight(stage === 0 ? partyEl : null);
