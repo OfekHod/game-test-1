@@ -3316,7 +3316,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // hedge. Roughly 2200 units all told, and each obstacle sits in the middle of
   // its leg rather than at the end of it — crossing the water with the ring
   // already under your feet teaches nothing about the water.
-  const TUT_ROUTE   = [ { x:1250, y:1700 }, { x:2200, y:2250 }, { x:2150, y:1600 } ];
+  // The river leg is levelled off at the far ring's own y, so the crossing runs
+  // due east with no north/south drift at all — the current's direction is a
+  // reveal for the forest step later on, and a diagonal crossing here would
+  // give it away by having you drift downstream while you "just walk across".
+  const TUT_ROUTE   = [ { x:1250, y:2250 }, { x:2200, y:2250 }, { x:2150, y:1600 } ];
   const TUT_RIVER_X = 1520;                        // 680 of the second leg lies past it
   const TUT_WALL    = { x: 2200, y: 1950 };        // lies across the third leg, 350 short of its ring
   const TUT_CAMP    = { x: 2100, y: BASE_Y+520 };
