@@ -2408,6 +2408,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOG_ALPHA = 0.82;
   const canvas = document.getElementById('game');
   const stageEl = document.getElementById('stage');
+  const scoreHudEl = document.getElementById('scoreHud');
   const ctx = canvas.getContext('2d');
 
   // A phone is held close and shows a small window; a monitor is further away
@@ -2427,6 +2428,14 @@ window.addEventListener('DOMContentLoaded', function(){
   const BG_DPR = 1;
   function setupCanvas(cv, c, w, h, dpr){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); c.setTransform(dpr,0,0,dpr,0,0); }
   setupCanvas(bgCanvas, bgCtx, WORLD_W, WORLD_H, BG_DPR);
+
+  // The minimap panel's own geometry, declared here (rather than by
+  // drawMinimap, further down) because applyLayout positions the scoreboard
+  // off of it and runs long before drawMinimap is ever called.
+  // 30% bigger than the original 150 — towers and hero faces need the room.
+  const MM_SCALE = 1.3;
+  const MM_W = Math.round(150*MM_SCALE), MM_H = Math.round(150*MM_SCALE), MM_TOP = 16, MM_RIGHT = 16;
+  const MM_CAMP_R = 2.8*MM_SCALE, MM_TOWER_R = 6.5, MM_TOWER_R_MAIN = 9.5, MM_HERO_R = 8;
 
   // The canvas fills the stage and the stage fills the screen. Logical
   // resolution follows the stage's real measured size rather than
@@ -2478,6 +2487,21 @@ window.addEventListener('DOMContentLoaded', function(){
     const soft = FOG_EDGE_SOFT * FOG_SCALE * canvasScale;
     fogEdgeFilter = soft >= 0.5 ? 'blur('+soft.toFixed(2)+'px)' : 'none';
     rimGrads.clear();
+    positionScoreHud(r);
+  }
+  // The scoreboard used to share the top-right corner with the minimap at a
+  // fixed CSS offset; now the minimap lives there and the scoreboard sits
+  // wherever the panel's bottom edge actually falls, in CSS pixels converted
+  // from the panel's world-unit box the same way the canvas itself is scaled.
+  // On a narrow phone that box is relatively taller, which is exactly the
+  // layout that used to put the party cards over the minimap — pushing the
+  // score down instead of overlapping it either way is why this exists.
+  function positionScoreHud(stageRect){
+    if(!scoreHudEl) return;
+    const mm = minimapRect();
+    const scaleX = stageRect.width / W, scaleY = stageRect.height / H;
+    scoreHudEl.style.right = Math.max(0, stageRect.width - (mm.x+mm.w)*scaleX) + 'px';
+    scoreHudEl.style.top = ((mm.y+mm.h)*scaleY + 10) + 'px';
   }
   applyLayout(true);
   window.addEventListener('resize', ()=>applyLayout());
@@ -12287,15 +12311,16 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.moveTo(0,-15); ctx.lineTo(0,-6); ctx.moveTo(0,6); ctx.lineTo(0,15); ctx.stroke(); ctx.restore();
   }
 
-  // 30% bigger than the original 150 — towers and hero faces need the room.
-  const MM_SCALE = 1.3;
-  const MM_W = Math.round(150*MM_SCALE), MM_H = Math.round(150*MM_SCALE), MM_TOP = 16;
-  const MM_CAMP_R = 2.8*MM_SCALE, MM_TOWER_R = 6.5, MM_TOWER_R_MAIN = 9.5, MM_HERO_R = 8;
   // Every read of the minimap's box — drawing it, hit-testing a hold, deciding
   // which lane a drag landed on — goes through this one function, so the notch
   // offset only has to be added in one place.
   function mmTop(){ return MM_TOP + safeTopUnits; }
-  function minimapRect(){ return { x:(W-MM_W)/2, y:mmTop(), w:MM_W, h:MM_H }; }
+  // Top-right, not centred: centred used to sit right over the party cards on
+  // a narrow phone screen, where the card row and the panel both want the top
+  // third of the width. The scoreboard used to share this corner and now
+  // stacks under the panel instead (see positionScoreHud), so this corner is
+  // the minimap's alone.
+  function minimapRect(){ return { x: W-MM_W-MM_RIGHT, y:mmTop(), w:MM_W, h:MM_H }; }
   // Hold on the minimap to look somewhere else. Dragging while held keeps
   // moving the view, and letting go snaps back to whoever you are controlling.
   let scout = null;                       // {x,y} world point, or null
@@ -12333,7 +12358,7 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.restore();
   }
   function drawMinimap(){
-    const mmW=MM_W, mmH=MM_H, mmX=(W-mmW)/2, mmY=mmTop();
+    const mmW=MM_W, mmH=MM_H, mmX=W-mmW-MM_RIGHT, mmY=mmTop();
     ctx.save();
     ctx.fillStyle='rgba(255,243,214,.88)';
     ctx.strokeStyle='rgba(217,168,92,.9)'; ctx.lineWidth=2;
