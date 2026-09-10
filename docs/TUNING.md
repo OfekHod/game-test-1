@@ -29,6 +29,7 @@ Values as shipped, with the evidence.
 | `CREEP_SCALE` | 8 (320hp) | must survive more than one tower shell |
 | `ROUND_TIME` | 600 | see FINDINGS on match length |
 | `EARLY_PEACE` | 20 | 120 was 40% of the match spent not fighting |
+| `BASE_REGEN_MULT` | 3 | health and mana come back three times as fast inside your own main tower's range. Symmetric, and 80 games with it off finish within noise of 80 with it on (see FINDINGS) |
 
 ## AI shape
 

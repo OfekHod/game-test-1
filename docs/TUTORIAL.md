@@ -173,6 +173,13 @@ quietly, several steps before anything mentions it. Its `resetCamps()` empties
 `neutralCreeps` on the way, so nothing the earlier steps spawned can wake up and
 walk at you the moment the hold lifts.
 
+**11 · Your base.** The step already walks you inside your own tower's ring, so
+it is where the game says out loud that the ring mends you: health and mana come
+back at `BASE_REGEN_MULT` times the usual rate inside it. The lesson and the
+mechanic are the same walk, and the circle it draws is the circle the bonus is
+measured against — `drawTowerRange` puts a faint version of it on the field in
+every mode, so nothing about it is tutorial-only.
+
 **14 · The enemy.** Their carry is driven by `tutSparAI` rather than by his own
 AI: he walks to arm's length, holds there, and fires once every two seconds
 instead of five times a second. He carries `TUT_SPAR_HP` rather than his own, and

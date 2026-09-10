@@ -57,6 +57,14 @@ the dotted line all end there; switch away again and he holds that ground rather
 than resuming a march you had forgotten about. An assembled squad is the one
 order that survives a switch, because it re-forms on whoever you pick up.
 
+## Your base
+
+Standing inside your own base's ring — the faint circle its tower draws on the
+field — mends you three times as fast, health and mana both. Nowhere else on the
+map does, so a hero on a sliver walks home rather than dying to the next wave.
+While you are inside it the HPR and MPR buttons on the stat strip turn green and
+show the rate you are actually regenerating at.
+
 ## Running the simulation
 
 ```bash

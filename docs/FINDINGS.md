@@ -60,6 +60,24 @@ Recorded because these are the expensive ones to rediscover.
   window, retreat at 60%): every version reduced deaths and reduced wins in
   proportion.
 
+## Base range mends three times as fast, and costs the AI nothing
+
+`BASE_REGEN_MULT` triples both regen rates inside your own main tower's range.
+It is a player-facing convenience — walking home is a move rather than thirty
+wasted seconds — so the thing worth measuring was whether it quietly hands the
+idle-player scenario a win it did not have. It does not. Two matched 80-game
+sweeps, everything else identical:
+
+| | base destroyed | outposts | tower dmg | enemy deaths | median win |
+|---|---|---|---|---|---|
+| `BASE_REGEN_MULT` 3 | 77/80 | 3.9 | 1543 | 0.6 | 226s |
+| `BASE_REGEN_MULT` 1 | 75/80 | 3.9 | 1550 | 0.8 | 227s |
+
+Two games and one second apart on eighty — noise. Both sides get the bonus and
+both bases are the same size, and the enemy AI has no "go home and heal"
+behaviour to exploit it with, so the only hero it reliably changes is the
+player's own, who in this scenario is standing in his base doing nothing anyway.
+
 ## The aggression/deaths trade
 
 It held almost the whole way: safer carry, fewer wins.
