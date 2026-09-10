@@ -15001,6 +15001,13 @@ window.addEventListener('DOMContentLoaded', function(){
     tut.i++;
     tut.ready = 0; tut.ack = false; tut.t = 0; tut.p = {};
     tut.rings = []; tut.mark = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
+    // A real ASSEMBLE_CD outlives the step that taught it. Skip through
+    // "Assemble" (or just play it fast) and the button can still be cooling
+    // down several steps later — "Push a lane, take a tower" asks for the
+    // same press, presses it into a silent cooldown floater nobody is
+    // watching for, and the arrow is left pointing at a button that visibly
+    // does nothing. Every phase starts with it ready.
+    assembleCd = 0;
     if(tut.i >= TUT_PHASES.length){ tutFinish(); return; }
     const ph = TUT_PHASES[tut.i];
     tutHighlight(ph.hl ? ph.hl() : null);
