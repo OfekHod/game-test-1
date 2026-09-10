@@ -64,6 +64,41 @@ is solid, so all of it is tuning.
 | **`DECOR_TOWER_KEEP`** | **`TOWER_RANGE` + 120** | see below. This one is not cosmetic |
 | `DECOR_CAMP_KEEP` | 90 | beyond the camp ring, so a clearing you have to walk into stays walkable |
 
+### Chopping
+
+A tree can be felled by a melee swing, which in this build means the tank and
+nothing else. These are feel numbers, not measured ones — there is no outcome to
+measure them against yet, for the reason under the table.
+
+| constant | value | note |
+|---|---|---|
+| `TREE_CHOPS` | 3 | swings, not damage. A count that does not move with the axe's level is the same count in the first minute as in the last, which is what makes it a rule rather than a race |
+| `TREE_BAR_HOLD` | 6 | seconds the bar stays up after a chop. It appears on the FIRST chop: an untouched tree has nothing to report, and 32 trees each wearing a full bar is a forest of health bars |
+| `TREE_FALL_TIME` | 1.1 | the topple. The angle goes as the square of it, so the trunk hangs and then lets go; the sprite fades only over the last 18% |
+| `WOOD_PER_TREE` | 3 | logs |
+| `WOOD_DWELL` | 0.5 | seconds a log lies where it fell before the magnet takes it. A coin flies out of a kill and into your pocket in one motion; wood you went and chopped for should be seen to come out of the tree |
+| wood pop speed | 55–130 | against 90–220 for a coin. At coin speed a log could land outside `PICKUP_MAGNET_RADIUS`, and felling a tree you are standing next to left one log stranded a step away |
+| `WOOD_TTL` | `ORB_TTL`*2 (30s) | a coin is dropped mid-fight and taken in the same breath; wood is dropped by somebody who went somewhere to chop |
+
+**A tree is the LAST thing a swing looks at** — after enemy heroes, after creeps,
+after buildings — so a fight fought in a wood never spends a swing on the
+scenery. That ordering is also what keeps chopping out of the simulation
+entirely: an AI hero only ever swings because target acquisition handed it
+something, acquisition does not look at trees, so no AI hero ever fells one.
+Measured, not assumed — ten full games with a counter patched into `chopTree`
+report zero chops, and eight games run from one seed against the build before
+this one come out byte for byte the same:
+
+```
+node sim/run.js 40   before: 38/40, median 216s, deaths 0.65
+                     after:  34/40, median 245s, deaths 0.70
+```
+
+That spread is two different samples of forty, not a change: nothing in the
+chopping path allocates a random number unless a chop happens, so the same seed
+walks the same sequence and the same eight matches end on the same second with
+the same score. The numbers below still stand.
+
 All of it together costs nothing that shows in an outcome. 240 games each, this
 map against the same build with no scenery on it at all:
 

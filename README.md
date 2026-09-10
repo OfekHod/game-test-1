@@ -51,6 +51,23 @@ the dotted line all end there; switch away again and he holds that ground rather
 than resuming a march you had forgotten about. An assembled squad is the one
 order that survives a switch, because it re-forms on whoever you pick up.
 
+## Chopping
+
+Point the tank at a tree with nothing hostile in front of him and swing: three
+hits fell it. From the first hit the tree wears what is left of the three as a
+bar; on the third it goes over away from him and leaves a stump and three logs.
+Walk over the logs and the wood is banked.
+
+There is nothing to spend it on yet and nothing on screen that shows the count.
+The wood is kept so that there is something to build with when there is
+something to build.
+
+A swing looks at trees LAST — after enemy heroes, after creeps, after buildings
+— so a fight fought in a wood never spends a swing on the scenery. That is also
+why, in practice, only the hero you are driving ever fells one: an AI hero
+swings because target acquisition handed it something, and acquisition does not
+look at trees.
+
 ## Running the simulation
 
 ```bash

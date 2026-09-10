@@ -4021,6 +4021,22 @@ window.addEventListener('DOMContentLoaded', function(){
   let healWaves = [];
   let sparkles = [];
   let trees = [];
+  // Trees that have been felled and are still toppling. They come OUT of
+  // `trees` on the swing that fells them — the moment the axe lands the trunk
+  // stops blocking movement, shots and sight — and live here only as a picture
+  // falling over, which is why nothing but the draw pass ever reads this list.
+  let fellingTrees = [];
+  // What a felled tree leaves behind: a cut stump, drawn flat on the ground.
+  // It is not solid and it hides nothing. Its job is to cover the trunk shadow
+  // baked into the terrain, which does not know the tree above it has gone.
+  let stumps = [];
+  // Logs lying on the ground, on the same terms as the coins: they belong to
+  // whoever walks over them.
+  let woodDrops = [];
+  // The wood the player's side has banked. Counted and nothing else — there is
+  // no wood in the HUD yet, and nothing to spend it on until there is something
+  // to build.
+  let woodBanked = 0;
   // Every bush and every rock on the map, laid down by generateDecor. All of
   // them are solid and all of them are drawn live, sorted against the units.
   let props = [];
@@ -4046,6 +4062,18 @@ window.addEventListener('DOMContentLoaded', function(){
   const TREE_MIN_R = 26, TREE_MAX_R = 40;
   const TREE_BLOCK_FACTOR = 0.8;
   const TREE_COLLIDE_FACTOR = 0.62;
+  // ---- chopping ----
+  // A tree takes a fixed NUMBER OF SWINGS, not a pool of hit points. Three, at
+  // level one and at level eighteen, so the count a player learns in the first
+  // minute is still the count in the last one — a tree is scenery being cleared,
+  // not a health bar being raced. The bar it shows is that count, drawn out of
+  // three, which is why it appears only once the first chop has landed: an
+  // untouched tree has nothing to report.
+  const TREE_CHOPS = 3;
+  const TREE_BAR_HOLD = 6;        // seconds the bar stays up after the last chop
+  const TREE_SHAKE_TIME = 0.28;   // the wobble a chop puts through the canopy
+  const TREE_FALL_TIME = 1.1;     // topple, then the trunk fades out of the world
+  const WOOD_PER_TREE = 3;
   const HERO_VISION = 700, CREEP_VISION = 380, TOWER_VISION = 520;
 
   const HP_COLOR = '#E8453C';
@@ -4090,7 +4118,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // what a tree blocks is exactly what it blocked before it had a shape.
   function makeTree(x,y){
     const t = { x, y, r: rand(TREE_MIN_R,TREE_MAX_R), v: Math.floor(Math.random()*TREE_FRAMES.length),
-      flip: Math.random()<0.5 ? -1 : 1, rot: rand(-0.08,0.08), sc: rand(0.9,1.16) };
+      flip: Math.random()<0.5 ? -1 : 1, rot: rand(-0.08,0.08), sc: rand(0.9,1.16),
+      chops: 0, barT: 0, shakeT: 0 };
     sizeTree(t);
     return t;
   }
@@ -4354,6 +4383,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function layOutForest(){
     trees = []; camps = [];
+    fellingTrees = []; stumps = []; woodDrops = [];
     generateWater();
     if(tutMap){
       // A hedge you have to walk around rather than through: the gaps between
@@ -5900,6 +5930,26 @@ window.addEventListener('DOMContentLoaded', function(){
     const bush = t.bush !== undefined;
     const img = bush ? bushImg : treeImg, ready = bush ? bushImgReady : treeImgReady;
     gctx.save(); gctx.translate(t.x,t.y);
+    // A chopped tree pivots on its STUMP, not on the middle of the sprite —
+    // which is the whole difference between a tree going over and a tree
+    // spinning. The foot is where drawImage puts the bottom of the trunk.
+    const foot = t.r*TREE_SINK;
+    if(t.fallT !== undefined){
+      const p = Math.min(1, t.fallT/TREE_FALL_TIME);
+      // Squared, so it hangs for a moment and then goes all at once, the way a
+      // trunk actually lets go once the hinge gives.
+      gctx.translate(0, foot);
+      gctx.rotate(t.fallDir*(Math.PI*0.5)*(p*p));
+      gctx.translate(0, -foot);
+      // Down on the ground, and then out of the world. Fading any earlier reads
+      // as the tree evaporating rather than falling.
+      if(p > 0.82) gctx.globalAlpha = Math.max(0, (1-p)/0.18);
+    } else if(t.shakeT > 0){
+      const k = t.shakeT/TREE_SHAKE_TIME;
+      gctx.translate(0, foot);
+      gctx.rotate(Math.sin(t.shakeT*52)*0.055*k);
+      gctx.translate(0, -foot);
+    }
     // No shadow drawn here: a tree is in the sorted pass now, and a shadow that
     // moves with it would be drawn over whatever it is standing in front of.
     // It bakes into the ground with every other shadow instead.
@@ -5921,6 +5971,30 @@ window.addEventListener('DOMContentLoaded', function(){
       gctx.beginPath(); gctx.arc(0,-t.r*0.1,t.r,0,7); gctx.stroke();
     }
     gctx.restore();
+  }
+  // What a felled tree leaves. A stump is a mark on the ground, so it is drawn
+  // with the marks on the ground rather than in the sorted pass — there is
+  // nothing left to stand behind. It also has a job beyond looking right: the
+  // trunk's shadow is BAKED into the terrain, and the terrain does not know the
+  // tree above it has gone, so without something to sit in that shadow a felled
+  // tree leaves a dark smudge on bare grass.
+  function drawStumps(){
+    for(const s of stumps){
+      if(!onScreen(s.x, s.y, s.r)) continue;
+      const rr = s.r*0.52;
+      ctx.save();
+      ctx.translate(s.x, s.y + s.r*TREE_SINK);
+      // the side of the cut trunk, under the face
+      ctx.beginPath(); ctx.ellipse(0, rr*0.28, rr, rr*0.55, 0, 0, 7);
+      ctx.fillStyle = '#5a3f22'; ctx.fill();
+      // the cut face, ringed
+      ctx.beginPath(); ctx.ellipse(0, 0, rr, rr*0.55, 0, 0, 7);
+      ctx.fillStyle = '#c99a5f'; ctx.fill();
+      ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(60,40,18,.75)'; ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(rr*0.10, -rr*0.05, rr*0.56, rr*0.31, 0, 0, 7);
+      ctx.lineWidth = 1.1; ctx.strokeStyle = 'rgba(120,80,40,.6)'; ctx.stroke();
+      ctx.restore();
+    }
   }
   const HERO_STRIDE = 22;        // world distance travelled per walk frame
   const GHOST_GAP = 0.045, GHOST_LIFE = 0.24, GHOST_MAX = 3, GHOST_ALPHA = 0.2;
@@ -6325,6 +6399,40 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.save(); ctx.translate(x, y+hop);
     softShadow(ctx, 0, -hop+h*0.32, w*0.38, w*0.17, 0.9);
     ctx.drawImage(sheet, f*COIN_FRAME_W, 0, COIN_FRAME_W, COIN_FRAME_H, -w/2, -h/2, w, h);
+    ctx.restore();
+  }
+
+  // The log a chopped tree leaves on the ground, turning on the spot the way
+  // the coin does — same strip-of-frames trick, same clock. Drawn by
+  // tools/wood-sprite.js rather than checked in as art; see that file for the
+  // geometry. It is a fifth wider than a coin because a log read as a smear at
+  // coin size, and because wood is the one drop that is not currency.
+  const WOOD_FRAME_W = 44, WOOD_FRAME_H = 28, WOOD_FRAMES = 16;
+  const WOOD_FPS = 12, WOOD_DRAW = 42;
+  const woodImg = new Image();
+  let woodReady = false;
+  woodImg.onload = ()=>{ woodReady = true; };
+  woodImg.src = 'data:image/png;base64,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';
+  function drawWoodSprite(x, y, hop, bobT, size){
+    const w = size || WOOD_DRAW, h = w*(WOOD_FRAME_H/WOOD_FRAME_W);
+    ctx.save(); ctx.translate(x, y+hop);
+    softShadow(ctx, 0, -hop+h*0.42, w*0.34, w*0.13, 0.9);
+    if(woodReady){
+      const f = Math.floor(bobT*WOOD_FPS) % WOOD_FRAMES;
+      ctx.drawImage(woodImg, f*WOOD_FRAME_W, 0, WOOD_FRAME_W, WOOD_FRAME_H, -w/2, -h/2, w, h);
+    } else {
+      // The strip has not landed yet: a billet with a lit top and a cut end,
+      // squeezed by the same cosine the sprite turns on, so the fallback spins too.
+      const spin = Math.max(0.22, Math.abs(Math.cos(bobT*4)));
+      ctx.save(); ctx.scale(spin, 1);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-w*0.42, -h*0.3, w*0.84, h*0.6, h*0.3)
+                                     : ctx.rect(-w*0.42, -h*0.3, w*0.84, h*0.6);
+      const g = ctx.createLinearGradient(0, -h*0.3, 0, h*0.3);
+      g.addColorStop(0,'#3b2716'); g.addColorStop(0.42,'#8a6236'); g.addColorStop(1,'#33210f');
+      ctx.fillStyle = g; ctx.fill();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(40,25,12,.85)'; ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -7401,6 +7509,22 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const t of oppTowers){
         if(t.hp>0 && dist(h.x,h.y,t.x,t.y) <= reach + t.r){ applyTowerHit(t, dmg); return; }
       }
+      // Nothing to fight and no wall to break, so the swing is free and it goes
+      // into the nearest trunk in the cone. Last of everything deliberately: a
+      // fight fought in a wood never spends a swing on the scenery.
+      //
+      // This is also, in practice, what makes chopping a PLAYER'S move. An AI
+      // hero only ever swings because acquisition handed it a target, and
+      // acquisition does not look at trees — so the tank you are driving fells
+      // them and the two you are not never will.
+      let best = null, bd = Infinity;
+      for(const t of trees){
+        if(t.bush !== undefined) continue;              // a berry bush is not timber
+        if(!inArc(t.x, t.y, t.r*TREE_COLLIDE_FACTOR)) continue;
+        const d = dist(h.x, h.y, t.x, t.y);
+        if(d < bd){ bd = d; best = t; }
+      }
+      if(best) chopTree(best, h);
     }
   }
   function heroAttack(h, aimX, aimY, rateMult){
@@ -8103,7 +8227,10 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const h of enemyTeam){ if(h.alive){ const d=dist(x,y,h.x,h.y); if(d<bd){bd=d;best=h;} } }
     return best;
   }
-  function updatePickup(p, dt){
+  // `find` decides whose pickup this is. It defaults to nearestCollector —
+  // anybody, either side — which is what a coin and a mana orb are. Wood passes
+  // its own, because wood is not everybody's.
+  function updatePickup(p, dt, find){
     p.bobT += dt;
     if(p.mode==='pop'){
       p.x += p.vx*dt; p.y += p.vy*dt;
@@ -8111,7 +8238,7 @@ window.addEventListener('DOMContentLoaded', function(){
       p.vx *= decay; p.vy *= decay;
       if(Math.abs(p.vx)<4 && Math.abs(p.vy)<4){ p.mode='idle'; p.vx=0; p.vy=0; }
     }
-    const h = nearestCollector(p.x,p.y);
+    const h = (find || nearestCollector)(p.x,p.y);
     if(!h){ if(p.mode==='magnet') p.mode='idle'; return null; }
     p.mode='magnet';
     const dx=h.x-p.x, dy=h.y-p.y;
@@ -8185,6 +8312,126 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       const taker = updatePickup(m, dt);
       if(taker){ collectMana(m, taker); manaOrbs.splice(i,1); }
+    }
+  }
+
+  // ---------- chopping a tree down ----------
+  // Wood lies around for twice as long as a coin does. A coin is dropped in the
+  // middle of a fight and picked up in the same breath; wood is dropped by a
+  // player who WENT somewhere to chop, and who may well chop the next tree
+  // before walking back for the pile.
+  const WOOD_TTL = ORB_TTL*2;
+  // How long a log lies where it fell before the magnet takes it. A coin flies
+  // out of a kill and into your pocket in one motion, which is right for a coin;
+  // wood you went and chopped for should be seen to come out of the tree.
+  const WOOD_DWELL = 0.5;
+  const CHIP_COLORS = ['#C99A5F','#8A6236','#E0BB84','#5C401F'];
+  function woodChips(x, y, ang, n){
+    for(let i=0;i<n;i++){
+      const a = ang + rand(-0.95,0.95), sp = rand(70,210);
+      particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - rand(20,90),
+        life:0, maxLife:rand(0.3,0.62), color: CHIP_COLORS[i%CHIP_COLORS.length] });
+    }
+  }
+  // One swing, one chop, whatever the axe hits for. A tree is scenery being
+  // cleared rather than an enemy being fought, so it counts swings instead of
+  // subtracting damage — see TREE_CHOPS.
+  function chopTree(t, h){
+    t.chops = (t.chops||0) + 1;
+    t.barT = TREE_BAR_HOLD;
+    t.shakeT = TREE_SHAKE_TIME;
+    sfxImpact('chop', t.x, t.y);
+    // Chips fly back the way the axe came, off the foot of the trunk.
+    const away = Math.atan2(t.y - h.y, t.x - h.x);
+    woodChips(t.x - Math.cos(away)*t.r*0.35, t.y + t.r*TREE_SINK - Math.sin(away)*t.r*0.35,
+              away + Math.PI, 8);
+    if(t.chops >= TREE_CHOPS) fellTree(t, h);
+  }
+  function fellTree(t, h){
+    const i = trees.indexOf(t);
+    if(i >= 0) trees.splice(i, 1);
+    // Every tower caches the trees that can block its view, once, because trees
+    // do not move. One of them just stopped existing, so every one of those
+    // caches is now wrong — and a tower that keeps firing into a felled trunk
+    // is a bug nobody would ever think to look for.
+    for(const tw of playerTowers) tw._sightTrees = null;
+    for(const tw of enemyTowers) tw._sightTrees = null;
+    // Out of `trees` and into the falling list: from this frame on it blocks
+    // nothing, and what is left is a picture going over. Away from the chopper.
+    t.fallT = 0;
+    t.fallDir = (t.x - h.x) >= 0 ? 1 : -1;
+    t.thudded = false;
+    fellingTrees.push(t);
+    stumps.push({ x:t.x, y:t.y, r:t.r });
+    woodChips(t.x, t.y + t.r*TREE_SINK, t.fallDir > 0 ? 0 : Math.PI, 18);
+    addBurst(t.x, t.y - t.r*0.5, '#6bab5c', 16);
+    // The logs are NOT dropped here. They come off the trunk when the trunk
+    // lands — see updateTrees.
+    if(h.side === 'player') shake = Math.max(shake, 0.22);
+  }
+  function updateTrees(dt){
+    for(const t of trees){
+      if(t.barT > 0) t.barT = Math.max(0, t.barT - dt);
+      if(t.shakeT > 0) t.shakeT = Math.max(0, t.shakeT - dt);
+    }
+    for(let i=fellingTrees.length-1;i>=0;i--){
+      const t = fellingTrees[i];
+      t.fallT += dt;
+      // The trunk lands well before the sprite has finished fading, and the
+      // thud belongs to the landing, not to the disappearing.
+      if(!t.thudded && t.fallT > TREE_FALL_TIME*0.62){
+        t.thudded = true;
+        sfxImpact('timber', t.x, t.y);
+        // A tree that pays out while it is still going over reads as a vending
+        // machine. The wood comes off the trunk where the trunk hits the ground.
+        woodChips(t.x + t.fallDir*t.r*0.7, t.y + t.r*TREE_SINK, t.fallDir > 0 ? 0 : Math.PI, 12);
+        // At the stump, not out along the fallen trunk. A pile thrown to the far
+        // side of the tree is another 30 units away from whoever just chopped
+        // it, which is enough to leave a log sitting outside the magnet.
+        spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE);
+      }
+      if(t.fallT >= TREE_FALL_TIME) fellingTrees.splice(i, 1);
+    }
+  }
+  function spawnWood(x, y, n){
+    for(let i=0;i<n;i++){
+      // Slower out of the trunk than a coin is out of a kill. A log thrown as
+      // hard as a coin can land past the magnet's reach, and a tree you felled
+      // standing right next to it should not leave one log stranded a step away.
+      const a = rand(0, Math.PI*2), speed = rand(55,130);
+      woodDrops.push({ x, y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed,
+        mode:'pop', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL, dwell:WOOD_DWELL });
+    }
+  }
+  // Wood is the player's. The enemy team has no use for it and nothing to spend
+  // it on, so its heroes walk over a log rather than hoovering up something
+  // that would then leave the game entirely.
+  function nearestWoodCollector(x, y){
+    let best = null, bd = PICKUP_MAGNET_RADIUS;
+    for(const h of playerTeam){ if(h.alive){ const d = dist(x,y,h.x,h.y); if(d<bd){ bd=d; best=h; } } }
+    return best;
+  }
+  function collectWood(w, h){
+    woodBanked += 1;
+    sfxPickup('wood', w.x, w.y);
+    addBurst(w.x, w.y, '#D9AE79', 10);
+    addPing(h.x, h.y-h.r*0.35, '#E0BB84', 5, 30, 0.28);
+    // No HUD spark and no counter on screen: there is nowhere for it to fly to
+    // and nothing to spend it on yet. The number is kept, and that is all.
+  }
+  function updateWoodDrops(dt){
+    for(let i=woodDrops.length-1;i>=0;i--){
+      const w = woodDrops[i];
+      if(w.ttl !== undefined && !tut.on){
+        w.ttl -= dt;
+        if(w.ttl <= 0){ woodDrops.splice(i,1); continue; }
+      }
+      // Nothing is magnetic until it has landed and lain there a moment: the
+      // collector is simply not offered while the log is still in the air.
+      if(w.mode !== 'pop' && w.dwell > 0) w.dwell -= dt;
+      const held = w.mode === 'pop' || w.dwell > 0;
+      const taker = updatePickup(w, dt, held ? (()=>null) : nearestWoodCollector);
+      if(taker){ collectWood(w, taker); woodDrops.splice(i,1); }
     }
   }
 
@@ -8389,6 +8636,8 @@ window.addEventListener('DOMContentLoaded', function(){
     updateProjectiles(dt);
     updateXpOrbs(dt);
     updateManaOrbs(dt);
+    updateWoodDrops(dt);
+    updateTrees(dt);
     updateLevelFx(dt);
     updateHealWaves(dt);
     updatePings(dt);
@@ -10301,6 +10550,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Creeps, towers and the stun marks used to be drawn here, each in its own
     // fixed layer. They are in the y-sorted pass below now, which is the only
     // way a tree can be in front of one of them.
+    drawStumps();
     drawHealWaves();
     drawLevelFxBehind();
 
@@ -10322,6 +10572,11 @@ window.addEventListener('DOMContentLoaded', function(){
     ground.length = 0;
     for(const t of trees){
       if(onScreen(t.x, t.y, t.dw > t.dh ? t.dw : t.dh)) ground.push({ y:t.y, k:0, o:t });
+    }
+    // A tree on its way over is still sorted against everything else, so the
+    // hero who chopped it can be standing in front of it as it comes down.
+    for(const t of fellingTrees){
+      if(onScreen(t.x, t.y, (t.dw > t.dh ? t.dw : t.dh) + t.dh)) ground.push({ y:t.y, k:0, o:t });
     }
     for(const d of props){
       if(onScreen(d.x, d.y, d.w > d.h ? d.w : d.h)) ground.push({ y:d.y, k:1, o:d });
@@ -10388,8 +10643,33 @@ window.addEventListener('DOMContentLoaded', function(){
     drawLevelFxFront();
     drawFireBlasts();
 
+    // A tree that has been chopped wears what is left of it, over the canopy
+    // rather than over the trunk — a bar drawn at the stump is a bar in the
+    // leaves. It appears on the first chop and goes again a few seconds after
+    // the last one: an untouched tree has nothing to report.
+    for(const t of trees){
+      if(t.barT <= 0 || !onScreen(t.x, t.y, t.dh + 40)) continue;
+      const bw = Math.max(28, t.r*1.5);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, t.barT/0.9);
+      drawBar(t.x - bw/2, t.y + t.r*TREE_SINK - t.dh - 12, bw, 5,
+              1 - t.chops/TREE_CHOPS, undefined, HP_COLOR);
+      ctx.restore();
+    }
     for(const c of xpOrbs){ if(onScreen(c.x,c.y,30)) drawXpOrb(c); }
     for(const m of manaOrbs){ if(onScreen(m.x,m.y,30)) drawManaOrb(m); }
+    for(const w of woodDrops){
+      if(!onScreen(w.x,w.y,34)) continue;
+      const hop = w.mode==='idle' ? Math.abs(Math.sin(w.bobT*3))*4 : 0;
+      const fade = (w.ttl !== undefined && w.ttl < 2.5) ? Math.max(0, w.ttl/2.5) : 1;
+      if(fade < 1){
+        ctx.save(); ctx.globalAlpha = fade;
+        drawWoodSprite(w.x, w.y, hop, w.bobT, WOOD_DRAW*pickupScale(w));
+        ctx.restore();
+      } else {
+        drawWoodSprite(w.x, w.y, hop, w.bobT, WOOD_DRAW*pickupScale(w));
+      }
+    }
 
     // A tracer drawn back along the velocity vector, not a string of stale dots.
     // It is continuous at any speed and any frame rate, because the length comes
@@ -11500,6 +11780,7 @@ window.addEventListener('DOMContentLoaded', function(){
     score = { player:0, enemy:0 };
     squadTogether = false;
     allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
+    woodDrops=[]; fellingTrees=[]; woodBanked=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
     // "just been wiped", and started a 15s respawn. The forest was empty for
@@ -11918,6 +12199,13 @@ window.addEventListener('DOMContentLoaded', function(){
       crit:  { crack: [0.46, 3300, 1.5, 0.075], body: [430, 120, 0.34, 0.13], ring: true },
       hero:  { crack: [0.44, 1700, 0.9, 0.085], body: [230,  74, 0.44, 0.17] },
       hurt:  { crack: [0.38,  760, 0.7, 0.110], body: [165,  52, 0.52, 0.26], groan: true },
+      // Two that are not hits on anything living. An axe into a trunk is a
+      // narrow band — high Q is what makes noise sound like it came out of
+      // something hollow — over a short knock. The trunk landing is the same
+      // shape an octave and a half down and four times as long, which is the
+      // only honest way to say "that was big" without a sample of one.
+      chop:  { crack: [0.44, 1500, 3.2, 0.050], body: [210,  78, 0.32, 0.11] },
+      timber:{ crack: [0.34,  520, 0.9, 0.180], body: [120,  40, 0.50, 0.34] },
     };
 
     function impact(kind, p){
@@ -11983,7 +12271,18 @@ window.addEventListener('DOMContentLoaded', function(){
       const t = ctx.currentTime + 0.002;
       const dest = place(p);
       const rung = LADDER[Math.min(step, LADDER.length - 1)];
-      if(kind === 'mana'){
+      if(kind === 'wood'){
+        // Wood is not currency, so it does not chime like it. A pair of dull
+        // knocks a fourth apart, low, with the attack of something wooden being
+        // dropped on something wooden — the ladder still climbs under it, so a
+        // pile picked up in one walk still rises.
+        const f = mtof(57 + rung);
+        tone(dest, t, 'triangle', f*1.02, f*0.94, 0.26, 0.09, 0.002);
+        burst(dest, t, 0.22, 1100, 2.4, 0.045);
+        const t2 = t + 0.055, f2 = f*1.335;
+        tone(dest, t2, 'triangle', f2*1.02, f2*0.95, 0.22, 0.14, 0.002);
+        burst(dest, t2, 0.14, 1500, 2.6, 0.05);
+      } else if(kind === 'mana'){
         // Mana pools where gold clinks: one note gliding up a fourth, a fifth
         // lower than the coin sits, with a breath of high noise over it. No
         // attack transient at all — that is what makes it read as liquid.
@@ -12127,7 +12426,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // Consecutive pickups climb the ladder; a second without one and you are
   // back at the bottom. Gold and mana keep separate counts, so alternating
   // between them is two rising lines rather than one confused one.
-  const sfxStreak = { gold: { n: 0, t: -9 }, mana: { n: 0, t: -9 } };
+  const sfxStreak = { gold: { n: 0, t: -9 }, mana: { n: 0, t: -9 }, wood: { n: 0, t: -9 } };
   function sfxPickup(kind, wx, wy){
     if(!sfxReady()) return;
     const p = sfxPlace(wx, wy);
@@ -12416,6 +12715,10 @@ window.addEventListener('DOMContentLoaded', function(){
   const buildTagEl = document.getElementById('buildTag');
   if(buildTagEl) buildTagEl.textContent += ' · ready';
 
+  // There is no wood in the HUD yet, so this is how the count is read while
+  // nothing on screen shows it: from the console, and from the screenshot
+  // scripts that have to prove a log actually banked.
+  window.__laneWood = ()=>woodBanked;
   window.__laneLoaded = true;
 })();
 </script>
