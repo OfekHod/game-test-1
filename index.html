@@ -4921,26 +4921,39 @@ window.addEventListener('DOMContentLoaded', function(){
       const foot = t.y + t.r*TREE_SINK;          // last row of pixels it draws
       const cy = foot - t.dh*0.46;
       const cdr = Math.max(t.r, t.dw*0.5)*TREE_RELIT_R;
+      // Where the relight actually stops — a little ABOVE the foot, not on it.
+      // drawFog blurs the finished mask by FOG_EDGE_SOFT world units on the way
+      // out, and that ramp straddles whatever edge it is handed. Cut level with
+      // the foot and the lit half of the ramp falls on the grass BELOW the
+      // tree: a band a few units deep, too pale to read as shade and too dark
+      // to read as grass, sitting between the tree and the start of its own
+      // shadow. Small, and unmistakable once you have seen it.
+      //
+      // Starting the cut one softness higher puts that whole ramp on the last
+      // rows of the trunk instead. The shade is at full strength by the time
+      // the wood ends, so it laps the foot of the tree rather than beginning
+      // somewhere past it, and no zoom can open a gap between them.
+      const cut = Math.max(cy, foot - FOG_EDGE_SOFT);
       fctx.beginPath();
       // The canopy's own circle — cut a little tighter than the leaves for the
       // reason written above, so the wedge only ever comes out from behind
-      // them — and cut off flat at the foot. On a tree wider than it is tall
-      // that disc alone hangs well past the ground the tree stands on, which is
-      // where the gap came from; the chord is what stops it there.
-      const k = (foot - cy)/cdr;
+      // them — and closed off flat at the cut line. On a tree wider than it is
+      // tall that disc alone hangs well past the ground the tree stands on; the
+      // chord is what stops it.
+      const k = (cut - cy)/cdr;
       if(k >= 1){
         fctx.moveTo(t.x + cdr, cy);
         fctx.arc(t.x, cy, cdr, 0, 7);
       } else {
         const a = Math.asin(k);
         fctx.arc(t.x, cy, cdr, Math.PI - a, Math.PI*2 + a);
-        fctx.closePath();                        // the chord, along the foot
+        fctx.closePath();                        // the chord, along the cut
       }
       // And the trunk below the canopy, down to that same line. A tall tree's
       // disc stops well clear of the ground, and without this the wedge's apex
       // landed across the wood.
       const half = t.dw*0.15;                    // a shade wider than the wood
-      fctx.rect(t.x - half, cy, half*2, foot - cy);
+      fctx.rect(t.x - half, cy, half*2, cut - cy);
       fctx.fill();
       fctx.restore();
     }
