@@ -8998,9 +8998,10 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // `find` decides whose pickup this is. It defaults to nearestCollector —
   // anybody, either side — which is what a coin and a mana orb are. Wood passes
-  // its own, because wood is not everybody's, and `speedMult` with it, because
-  // wood is not drawn in at a coin's pace either.
-  function updatePickup(p, dt, find, speedMult){
+  // its own, because wood is not everybody's, and `pull` with it, because wood
+  // is not drawn in at a coin's pace either: a coin reads its speed off the
+  // distance it has left to go, a log builds a speed of its own. See WOOD_PULL.
+  function updatePickup(p, dt, find, pull){
     p.bobT += dt;
     if(p.mode==='pop'){
       p.x += p.vx*dt; p.y += p.vy*dt;
@@ -9009,23 +9010,44 @@ window.addEventListener('DOMContentLoaded', function(){
       if(Math.abs(p.vx)<4 && Math.abs(p.vy)<4){ p.mode='idle'; p.vx=0; p.vy=0; }
     }
     const h = (find || nearestCollector)(p.x,p.y);
-    if(!h){ if(p.mode==='magnet') p.mode='idle'; return null; }
+    // Losing the collector drops the speed built up as well as the mode: a log
+    // halfway up to full pull when its hero died should ease out of the ground
+    // again when somebody walks back for it, not resume mid-flight.
+    if(!h){ if(p.mode==='magnet'){ p.mode='idle'; p.pull = 0; p.pullT = 0; } return null; }
     p.mode='magnet';
     const dx=h.x-p.x, dy=h.y-p.y;
     const dd = Math.max(1, Math.sqrt(dx*dx+dy*dy));
-    const speed = (PICKUP_MAGNET_SPEED + (1-Math.min(1,dd/PICKUP_MAGNET_RADIUS))*PICKUP_MAGNET_EXTRA)
-                  * (speedMult || 1);
-    // A pickup drawn in faster than PICKUP_COLLECT_RADIUS is wide steps straight
-    // past its collector and out the far side, then back again — traced at 2.2x:
-    // 39, 41, 38, 42, and one log that went 49, 24, 63, 2 before a frame finally
-    // landed it inside 24 units. Clamping the step to the distance left makes it
-    // ARRIVE instead of overshooting, which is worth about a third of a second.
-    //
-    // Only the fast path clamps. A coin's own speed is slow enough that it does
-    // not need it, and leaving the coins' arithmetic untouched is what keeps the
-    // simulation identical to the build before this branch.
-    let step = speed*dt;
-    if(speedMult) step = Math.min(step, dd);
+    let step;
+    if(pull){
+      // An accelerating draw-in. `pullT` only exists to fade the pull itself in
+      // over the first fraction of a second — the log leaning towards the hero
+      // before it commits — and after that this is a constant acceleration up
+      // to a ceiling, carried in `pull` from frame to frame.
+      p.pullT = (p.pullT||0) + dt;
+      p.pull = Math.min(pull.max,
+                        (p.pull||0) + pull.accel * Math.min(1, p.pullT/pull.ease) * dt);
+      // A pickup drawn in faster than PICKUP_COLLECT_RADIUS is wide steps
+      // straight past its collector and out the far side, then back again —
+      // traced under the old flat 2.2x multiplier: 39, 41, 38, 42, and one log
+      // that went 49, 24, 63, 2 before a frame finally landed it inside 24
+      // units. Clamping the step to the distance left makes it ARRIVE instead
+      // of overshooting. The accelerating pull tops out well under what that
+      // curve reached, but a slow frame still moves a log 50-odd units, and it
+      // is the clamp rather than the speed that guarantees the arrival.
+      step = Math.min(p.pull*dt, dd);
+      // Tumbling harder the faster it goes. A log that slides in at the same
+      // lazy spin it had lying on the grass reads as being dragged; one that
+      // winds up as it accelerates reads as being pulled. The rise off the
+      // ground that goes with it is in woodLift, because the shadow has to
+      // know about it too.
+      p.bobT += dt * (p.pull/pull.max) * (pull.spin || 0);
+    } else {
+      // A coin's own arithmetic, untouched — speed read straight off the
+      // distance left, and slow enough never to need the clamp above. Leaving
+      // this exactly as it was is what keeps the simulation identical.
+      step = (PICKUP_MAGNET_SPEED
+              + (1-Math.min(1,dd/PICKUP_MAGNET_RADIUS))*PICKUP_MAGNET_EXTRA) * dt;
+    }
     p.x += dx/dd*step; p.y += dy/dd*step;
     p.near = dd;                                  // drives the shrink as it is drawn in
     p.trailT = (p.trailT||0) - dt;
@@ -9128,6 +9150,11 @@ window.addEventListener('DOMContentLoaded', function(){
   //   0.95s  the same beat, counted from the tree being GONE. Longer end to end
   //          and correct, which is the trade this constant is actually about.
   //
+  // The draw-in at the end of that tail has since been slowed on purpose — see
+  // WOOD_PULL — which adds a quarter of a second to the near logs. It is added
+  // where it can be watched rather than waited through, so the dwell in front
+  // of it is unchanged.
+  //
   // WOOD_DWELL is that beat, and it is counted from the moment the TREE IS GONE,
   // not from the moment the logs appear. Those are a whole topple apart: the
   // logs come out on the felling blow and tumble clear while the trunk goes over
@@ -9141,8 +9168,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // it — so its magnet does not have to be the careful little one the coins
   // share. A wider reach means all three logs are always in range of whoever
   // just felled the tree, wherever they scattered, instead of the far one
-  // crawling in at the shared magnet's slowest speed; the multiplier is what
-  // turns the rest of the tail into a flick.
+  // crawling in at the shared magnet's slowest speed.
   //
   // The reach also has to cover WOOD_THROW and the toss. Worst case is a log
   // thrown straight away from a tree felled at the very end of the tank's reach:
@@ -9152,7 +9178,43 @@ window.addEventListener('DOMContentLoaded', function(){
   // player walks back to it, and on a 30s TTL it would simply rot, so the margin
   // is the point rather than a rounding.
   const WOOD_MAGNET_RADIUS = 280;
-  const WOOD_MAGNET_MULT = 2.2;
+  // ---- the draw-in ----
+  // A coin's magnet reads its speed off the distance left: slowest out at the
+  // edge of the reach, fastest in the last few pixels. Wood used to borrow that
+  // curve with a flat 2.2x on top of it, which meant a log left the ground
+  // already doing 570 units a second and was past 2000 by the time it arrived.
+  // The whole trip took about a tenth of a second. Nothing that is over that
+  // fast reads as motion — the logs did not travel, they teleported, and the
+  // draw-in that is meant to be the payment for chopping was not on screen long
+  // enough to be seen at all.
+  //
+  // So the pull is an ACCELERATION rather than a speed, and the log carries what
+  // it has built from frame to frame. It starts still, the pull fades in over
+  // `ease` — that stretch is the log leaning towards the hero before it goes,
+  // and it is the whole difference between a draw-in and a snatch — and then it
+  // gathers speed for the rest of the trip and arrives fast. Both curves
+  // integrated at 60fps, in GAME seconds from a log becoming magnetic to it
+  // being banked, and the top speed each reaches on the way:
+  //
+  //            60 units   100 units   280 units (the far edge of the reach)
+  //     old     0.03s      0.07s       0.38s      peaking around 1600
+  //     new     0.23s      0.32s       0.60s      peaking at 640
+  //
+  // The far log barely changes — it always had a distance to cover. It is the
+  // near ones, the two that land more or less at the chopper's feet, that go
+  // from instant to a quarter of a second, and that is the whole difference:
+  // there is now a beat where three logs are visibly COMING, one arc each,
+  // rather than a pile that is already banked.
+  const WOOD_PULL = {
+    accel: 2200,   // units/s², once the pull is up to full
+    ease:  0.12,   // seconds the pull takes to fade in from nothing
+    max:   640,    // and it never travels faster than this
+    spin:  1.8,    // extra tumble at full speed, on top of the base rate
+  };
+  // How far a log rises off the grass on the way in. Small — it is a log being
+  // pulled, not a bird — but the shadow shrinking away underneath it is what
+  // separates being drawn IN from being dragged ALONG.
+  const WOOD_PULL_LIFT = 9;
   // How far past the trunk the logs are thrown, along the line the blow came in
   // on, so they land on the FAR side of the tree from whoever swung. They used
   // to drop on the stump, which is where the chopper is already standing, and a
@@ -9330,7 +9392,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // simply not offered until then.
       if(w.dwell > 0) w.dwell -= dt;
       const taker = updatePickup(w, dt, w.dwell > 0 ? (()=>null) : nearestWoodCollector,
-                                 WOOD_MAGNET_MULT);
+                                 WOOD_PULL);
       if(taker){ collectWood(w, taker); woodDrops.splice(i,1); }
     }
   }
@@ -11206,6 +11268,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // risen away from the mark it throws. One place, because the shade is laid
   // down in the ground pass and the sprite in the sorted one.
   function woodLift(w){
+    // Coming in, it flies. The rise follows the pull rather than the distance
+    // left, so it climbs as the log gathers speed and is at full height for the
+    // flight itself instead of popping up at the last moment.
+    if(w.mode === 'magnet')
+      return (w.z || 0) + Math.min(1, (w.pull||0)/WOOD_PULL.max) * WOOD_PULL_LIFT;
     return (w.z || 0) + (w.mode==='idle' ? Math.abs(Math.sin(w.bobT*3))*3 : 0);
   }
   // A thrown log's mark stays on the floor and softens as the log climbs away
@@ -13818,16 +13885,31 @@ window.addEventListener('DOMContentLoaded', function(){
       const dest = place(p);
       const rung = LADDER[Math.min(step, LADDER.length - 1)];
       if(kind === 'wood'){
-        // Wood is not currency, so it does not chime like it. A pair of dull
-        // knocks a fourth apart, low, with the attack of something wooden being
-        // dropped on something wooden — the ladder still climbs under it, so a
-        // pile picked up in one walk still rises.
-        const f = mtof(57 + rung);
-        tone(dest, t, 'triangle', f*1.02, f*0.94, 0.26, 0.09, 0.002);
-        burst(dest, t, 0.22, 1100, 2.4, 0.045);
+        // Wood is not currency, so it does not chime like it. A pair of knocks
+        // a fourth apart, with the attack of something wooden being dropped on
+        // something wooden — the ladder still climbs under it, so a pile picked
+        // up in one walk still rises.
+        //
+        // It used to sit at MIDI 57 and 0.26, two full octaves under the
+        // coin. Two knocks that low are a crate being shoved, not a thing being
+        // collected, and under the match track they simply went missing: the
+        // guitar lives in that register and the knocks disappeared into it. Up a
+        // major sixth and half again as loud they read as a struck block, and
+        // they are still a minor sixth below mana and an octave and a minor
+        // third below gold, so nothing here is going to be mistaken for a coin.
+        // Rendered offline against the build before this one: +4.3dB, and the
+        // loudest partial moves 291Hz -> 497Hz.
+        const f = mtof(66 + rung);
+        tone(dest, t, 'triangle', f*1.02, f*0.94, 0.36, 0.10, 0.002);
+        burst(dest, t, 0.30, 1700, 2.4, 0.045);
         const t2 = t + 0.055, f2 = f*1.335;
-        tone(dest, t2, 'triangle', f2*1.02, f2*0.95, 0.22, 0.14, 0.002);
-        burst(dest, t2, 0.14, 1500, 2.6, 0.05);
+        tone(dest, t2, 'triangle', f2*1.02, f2*0.95, 0.32, 0.16, 0.002);
+        burst(dest, t2, 0.19, 2200, 2.6, 0.05);
+        // A block that is struck rather than dropped rings an octave over the
+        // knock for a moment afterwards. Sine, and quiet enough that it is the
+        // tail of the second knock rather than a third sound — this is what
+        // carries the pickup over the music without having to be louder still.
+        tone(dest, t2, 'sine', f2*2, f2*2, 0.10, 0.20, 0.004);
       } else if(kind === 'mana'){
         // Mana pools where gold clinks: one note gliding up a fourth, a fifth
         // lower than the coin sits, with a breath of high noise over it. No
