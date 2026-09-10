@@ -2915,6 +2915,17 @@ window.addEventListener('DOMContentLoaded', function(){
   // Static geometry: the arena is the same shape every round, so build it once.
   // Each path runs plaza-outwards; mobs walk it backwards.
   const SURV_PATHS = [survLanePath(0), survLanePath(1)];
+  // The road's own length, walked once. The switchback's bends make this
+  // meaningfully longer than SURV_LANE_OUT-SURV_LANE_IN, the straight-line
+  // radius -- SURV_SPAWN_R (in survivalWave) has to be measured against this,
+  // not the radius, or a wave spawns partway down the road instead of at its
+  // far end. Both lanes are mirrors of each other, so either serves.
+  function survPathLen(p){
+    let d = 0;
+    for(let i=1;i<p.length;i++) d += dist(p[i-1].x,p[i-1].y,p[i].x,p[i].y);
+    return d;
+  }
+  const SURV_LANE_LEN = survPathLen(SURV_PATHS[0]);
   // The head of a mob's path, stepped sideways into its slot in the wave, so a
   // wave spawns in formation instead of stacked on the centre line.
   function survOffsetPoint(path, off){
@@ -3265,10 +3276,15 @@ window.addEventListener('DOMContentLoaded', function(){
   let survBreak = 0;           // seconds left of the lull before the next wave marches
   // How far along its lane a mob appears, measured ALONG THE ROAD rather than
   // as a radius: on a snaking lane those are very different numbers, and it is
-  // the walk that sets the pace. 1250 was the old straight-spoke walk; it now
-  // has to clear the far outpost as well, or a wave materialises on top of the
-  // building that is supposed to soften it.
-  const SURV_SPAWN_R = 1700;
+  // the walk that sets the pace. Pinned to SURV_LANE_LEN, the road's actual
+  // (bent) length, rather than a flat distance from the plaza: a flat 1700 was
+  // tuned back when this was a straight spoke, and against the switchback's
+  // longer road that same number lands barely past its midpoint -- a wave
+  // spawning in full view of the plaza instead of at the far end of the lane
+  // it is supposed to walk in from. The 900-unit margin leaves the widest
+  // wave's ranks (SURV_RANK_GAP apart) room to fan out behind the front rank
+  // without running off the end of the road.
+  const SURV_SPAWN_R = SURV_LANE_LEN - 900;
   // Waves are CLEARED, not timed. Nothing spawns while a single mob of the last
   // wave is still on the field, so the pace is set by how fast you kill rather
   // than by a stopwatch — which is what makes a growing wave a real question
