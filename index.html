@@ -15300,6 +15300,16 @@ window.addEventListener('DOMContentLoaded', function(){
     curtainEl.classList.remove('hidden', 'part');
     curtainEl.classList.add('hold');
     loadScreen.classList.remove('hidden');
+    // Safari/WebKit — the only engine an iPhone has, whichever browser it is
+    // named after — can fail to restart an `animation: X infinite` the second
+    // time its container comes back from display:none, leaving the spinner
+    // and the progress bar sitting on their very first frame instead of
+    // running: the panel LOOKS frozen even though loading is proceeding fine
+    // behind it. First load is unaffected because it is the first time the
+    // element has ever been shown. Reading a layout property forces a reflow
+    // in between the display change and the animation being expected to run,
+    // which is the standard fix for that class of bug.
+    void loadScreen.offsetWidth;
     // The match theme starts HERE, on the click, and not where it used to —
     // inside startRound, on the far side of buildMap. The panel is three
     // seconds of sky with a progress bar on it, and the whole of it used to be
