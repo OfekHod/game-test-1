@@ -27,6 +27,30 @@ docs/
   TUTORIAL.md      proposed in-game tutorial: phases and how it is built
 ```
 
+## Orders
+
+You drive one hero; the other two act on the last order you gave them. There are
+four, and each shows as four letters under the hero's portrait:
+
+| | |
+|---|---|
+| `PUSH` | walking his lane and hitting what stands in it — the opening order |
+| `MOVE` | walking to a spot you dragged him to, then holding it |
+| `FLLW` | escorting one team-mate: drag a hero onto another hero, or onto that hero's portrait |
+| `ASSM` | travelling as a squad behind whoever you are driving (Assemble, `0`) |
+| `HOLD` | no order: standing where he was left, fighting what comes to him |
+| `YOU` | the hero you are driving |
+
+Orders are given by dragging a hero — from his body on the field or from his
+portrait — with the right mouse button, or with a finger on touch. Where he
+lands decides which order it is: a half of the minimap is a lane, a team-mate is
+an escort, open ground is a posting.
+
+**Taking a hero over cancels his order.** Focus him and the walk, the lane and
+the dotted line all end there; switch away again and he holds that ground rather
+than resuming a march you had forgotten about. An assembled squad is the one
+order that survives a switch, because it re-forms on whoever you pick up.
+
 ## Running the simulation
 
 ```bash
@@ -44,9 +68,18 @@ detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
 ## Why the harness reads index.html
 
 There is deliberately no second copy of the game source. `harness.js` extracts
-the script from the shipped HTML and patches counters into it, so a tuning
-experiment and the playable build can never disagree. If a hook stops matching
-after an edit, the harness throws rather than quietly reporting zeros.
+the game's script from the shipped HTML and patches counters into it, so a
+tuning experiment and the playable build can never disagree. If a hook stops
+matching after an edit, the harness throws rather than quietly reporting zeros.
+
+`index.html` holds three inline scripts: a guard that reports a truncated file,
+the music synthesiser, and the game. The synthesiser comes first and on its own
+so that it can play while the megabyte below it is still arriving — a browser
+runs no part of an inline script until it has parsed all of it, so music kept
+in the game's script cannot sound until the whole file has landed. The harness
+takes the LAST script, which is the game, so nothing under Node ever sees the
+synthesiser: the game reaches it through `window.LaneMusic` and copes with it
+being absent.
 
 ## Known state
 

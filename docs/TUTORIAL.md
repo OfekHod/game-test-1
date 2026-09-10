@@ -348,10 +348,9 @@ are all fixes to things that were broken in every mode:
   re-anchors the formation on each switch.
 - **Dragging the hero you are DRIVING onto a minimap half now actually sends
   him down that lane.** `laneOrder` set `mode='lane'` and then called `focusHero`
-  to hand him over, and `focusHero` deliberately cancels a lane order on the hero
-  you are leaving — "he holds where you left him instead of quietly resuming a
-  lane you never told him to push" — so it wiped the order that had just been
-  given. The floater said TOP LANE, the old step 14 ticked, and the hero stood
+  to hand him over, and `focusHero` deliberately cancels the standing order of
+  whichever hero you take over — "you are driving him now, so the old order is
+  finished" — so it wiped the order that had just been given. The floater said TOP LANE, the old step 14 ticked, and the hero stood
   exactly where he was. Dragging one of the *other* two always worked, which is
   why it hid for so long. The fix is to hand him over first and write the order
   second. The siege step is what found it: it is the first thing in the game that
