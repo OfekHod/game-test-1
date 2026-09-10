@@ -5855,7 +5855,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const img = rock ? rockImg : bushImg, ready = rock ? rockImgReady : bushImgReady;
     g.save(); g.translate(d.x, d.y);
     if(d.flip) g.scale(-1,1);
-    if(ready) g.drawImage(img, d.f[0], d.f[1], d.f[2], d.f[3], -d.w/2, d.h*0.16-d.h, d.w, d.h);
+    if(ready) g.drawImage(img, d.f[0], d.f[1], d.f[2], d.f[3], -d.w/2, d.h*DECOR_FOOT-d.h, d.w, d.h);
     else (rock ? drawRockBlob : drawBushBlob)(g, d.w, d.h);
     g.restore();
   }
@@ -5890,6 +5890,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // drawn standing on the spot it occupies rather than centred on it, so the
   // canopy hangs above the thing you bump into the way it does on the sheet.
   const TREE_SINK = 0.30;
+  // A bush or a rock is drawn this far below the line it stands on, in units of
+  // its own height. Same idea as TREE_SINK and TOWER_FOOT: the art is a
+  // three-quarter view, so its foot laps over the ground line a little.
+  const DECOR_FOOT = 0.16;
   // A shadow is a mark on the ground, so it is baked into the ground with
   // everything else that never moves — which also keeps it out of the sorted
   // pass, where it would have cost a path per tree per frame for something that
@@ -6170,6 +6174,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // 1.5x the old 88x93, re-rendered from the 1024px source rather than upscaled,
   // so the extra drawn size costs nothing in sharpness.
   const MOB_FRAME_W = 132, MOB_FRAME_H = 140, MOB_FRAMES = 15;
+  const MOB_FOOT = 0.9;              // where a creep's boots sit, in units of c.r
   const MOB_SPRITE_SCALE = 4.875;  // drawn width, in units of c.r (was 3.25)
   const MOB_STRIDE = 2.67;   // 15 frames x 2.67 = the same 40 units per cycle as 5 x 8
   const mobImg = new Image();
@@ -9797,11 +9802,11 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.translate(0, -c.r*0.9);
       }
       if((c.face||1) < 0) ctx.scale(-1,1);
-      ctx.drawImage(sheet, f*MOB_FRAME_W, 0, MOB_FRAME_W, MOB_FRAME_H, -sw/2, c.r*0.9-sh, sw, sh);
+      ctx.drawImage(sheet, f*MOB_FRAME_W, 0, MOB_FRAME_W, MOB_FRAME_H, -sw/2, c.r*MOB_FOOT-sh, sw, sh);
       const flashSheet = swinging ? mobAtkFlash : mobFlash;
       if(c.flash>0 && flashSheet){
         ctx.globalAlpha = Math.min(1, c.flash*5);
-        ctx.drawImage(flashSheet, f*MOB_FRAME_W, 0, MOB_FRAME_W, MOB_FRAME_H, -sw/2, c.r*0.9-sh, sw, sh);
+        ctx.drawImage(flashSheet, f*MOB_FRAME_W, 0, MOB_FRAME_W, MOB_FRAME_H, -sw/2, c.r*MOB_FOOT-sh, sw, sh);
         ctx.globalAlpha = 1;
       }
       ctx.restore();
@@ -10291,6 +10296,23 @@ window.addEventListener('DOMContentLoaded', function(){
   // one sixty times a second.
   const ground = [];
   function byGroundY(a,b){ return a.y - b.y; }
+  // Everything here is a three-quarter view, so every sprite laps a little way
+  // BELOW the y its owner stands on: TREE_SINK for a trunk, DECOR_FOOT for a
+  // bush or a rock, TOWER_FOOT for an outpost, MOB_FOOT for a creep's boots,
+  // the sheet's own foot for a hero, and half its height for a coin, which is
+  // drawn centred. The pass sorts on that lapped edge and not on the standing
+  // y, because the edge is the line that decides who paints over whom: sorting
+  // on the standing y let a coin lying just in front of a creep — inside the
+  // fifteen to twenty-six units its boots hang down — be drawn over the legs.
+  // The laps are all within about fifteen units of each other, so re-anchoring
+  // moves almost nothing else; what it removes is the one pair that was out by
+  // a whole body, because a coin only laps twelve and a big creep laps twice
+  // that.
+  function heroFootY(h){
+    const def = heroSheets[h.type];
+    return h.y + h.r*((def && def.foot) || 0.95);
+  }
+  const ORB_FOOT = COIN_DRAW*(COIN_FRAME_H/COIN_FRAME_W)/2;
   function render(){
     ctx.clearRect(0,0,W,H);
     rebuildVision();
@@ -10358,31 +10380,31 @@ window.addEventListener('DOMContentLoaded', function(){
 
     ground.length = 0;
     for(const t of trees){
-      if(onScreen(t.x, t.y, t.dw > t.dh ? t.dw : t.dh)) ground.push({ y:t.y, k:0, o:t });
+      if(onScreen(t.x, t.y, t.dw > t.dh ? t.dw : t.dh)) ground.push({ y:t.y + t.r*TREE_SINK, k:0, o:t });
     }
     for(const d of props){
-      if(onScreen(d.x, d.y, d.w > d.h ? d.w : d.h)) ground.push({ y:d.y, k:1, o:d });
+      if(onScreen(d.x, d.y, d.w > d.h ? d.w : d.h)) ground.push({ y:d.y + d.h*DECOR_FOOT, k:1, o:d });
     }
-    for(const t of playerTowers) ground.push({ y:t.y, k:2, o:t, a:'#C68958', b:'#FFE7B8' });
-    for(const t of enemyTowers)  ground.push({ y:t.y, k:2, o:t, a:'#B5482D', b:'#3a1010' });
+    for(const t of playerTowers) ground.push({ y:t.y + t.r*TOWER_FOOT, k:2, o:t, a:'#C68958', b:'#FFE7B8' });
+    for(const t of enemyTowers)  ground.push({ y:t.y + t.r*TOWER_FOOT, k:2, o:t, a:'#B5482D', b:'#3a1010' });
     for(const c of allyCreeps){
       if(!onScreen(c.x,c.y,c.r+30)) continue;
-      ground.push({ y:c.y, k:3, o:c, a:'#7FC4EE', b:'ally' });
+      ground.push({ y:c.y + c.r*MOB_FOOT, k:3, o:c, a:'#7FC4EE', b:'ally' });
     }
     for(const c of enemyCreeps){
       if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
-      ground.push({ y:c.y, k:3, o:c, a:'#F5A08F', b:'enemy' });
+      ground.push({ y:c.y + c.r*MOB_FOOT, k:3, o:c, a:'#F5A08F', b:'enemy' });
     }
     for(const c of neutralCreeps){
       if(!onScreen(c.x,c.y,c.r+30) || !isVisible(c.x,c.y,c.r)) continue;
-      ground.push({ y:c.y, k:3, o:c, a:'#A6D98A', b:'neutral' });
+      ground.push({ y:c.y + c.r*MOB_FOOT, k:3, o:c, a:'#A6D98A', b:'neutral' });
     }
     for(const h of playerTeam){
       if(!h.alive) continue;
       const isActive = h===playerTeam[activePlayerIdx];
       h.lookX = (isActive && aimLive) ? worldMouseX : h.x + Math.cos(h.facing)*200;
       h.lookY = (isActive && aimLive) ? worldMouseY : h.y + Math.sin(h.facing)*200;
-      ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorPlayer, b:false });
+      ground.push({ y:heroFootY(h), k:4, o:h, a:HERO_STATS[h.type].colorPlayer, b:false });
     }
     for(const h of enemyTeam){
       if(!h.alive) continue;
@@ -10390,14 +10412,12 @@ window.addEventListener('DOMContentLoaded', function(){
       const isCarryAI = h===enemyTeam[0];
       h.lookX = isCarryAI&&enemyLookTarget ? enemyLookTarget.x : h.x-200;
       h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : h.y;
-      ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
+      ground.push({ y:heroFootY(h), k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
     }
-    // Loot hides the way a hero does, and for the same two reasons. The foliage
-    // has to actually BE in front of it: a coin lands at the foot of its own
-    // sprite like everything else on the field, so it sorts by y with the
-    // trees, the bushes and the rocks and goes behind the leaves it is behind.
-    // And what your side has no eyes on is not drawn at all — a coin sitting in
-    // the fog, or on the far side of a trunk, is not readable off the screen.
+    // Loot hides the way a hero does. What your side has no eyes on is not
+    // drawn at all — a coin in the fog, or on the far side of a trunk, is not
+    // readable off the screen — and what IS in front of a coin is drawn in
+    // front of it, because loot is in the sorted pass with everything else.
     // The orb is still there either way: it rots on the same clock and is still
     // yours the moment you walk into it. Finding it is the part that is now
     // scouting. The tutorial needs no exception — its arena is already fenced
@@ -10405,11 +10425,11 @@ window.addEventListener('DOMContentLoaded', function(){
     // there can cut the fog across the step that counts your pickups.
     for(const c of xpOrbs){
       if(!onScreen(c.x,c.y,30) || !isVisible(c.x,c.y,ORB_SIGHT_R)) continue;
-      ground.push({ y:c.y, k:5, o:c, b:false });
+      ground.push({ y:c.y + ORB_FOOT, k:5, o:c, b:false });
     }
     for(const m of manaOrbs){
       if(!onScreen(m.x,m.y,30) || !isVisible(m.x,m.y,ORB_SIGHT_R)) continue;
-      ground.push({ y:m.y, k:5, o:m, b:true });
+      ground.push({ y:m.y + ORB_FOOT, k:5, o:m, b:true });
     }
     ground.sort(byGroundY);
     for(const e of ground){
