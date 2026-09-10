@@ -83,14 +83,19 @@ being absent.
 
 ## Known state
 
-Measured over 40 matches with the player idle (never moving):
+Measured over 80 matches with the player idle (never moving):
 
 | | |
 |---|---|
-| enemy destroys your base | 38/40 (95%) |
-| median win | 231s of a 600s match |
-| enemy deaths per game | 0.97 |
-| end levels | carry 11, tank 13, support 8 |
+| enemy destroys your base | 79/80 (99%) |
+| median win | 214s of a 600s match |
+| enemy deaths per game | 0.65 |
+| end levels | carry 11, tank 13, support 7 |
+
+The push got faster when the tank's rocket did: the same 80 matches against
+the previous rocket (90 radius, 3s stun, no vulnerability window) finish
+75/80 with a median of 252s. Both teams own a tank, and only one of them is
+being driven by a player who never moves.
 
 The support is the weakest part of the design: it heals rather than last-hits,
 so it collects far fewer experience orbs and finishes several levels behind.
