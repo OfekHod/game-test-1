@@ -10364,6 +10364,25 @@ window.addEventListener('DOMContentLoaded', function(){
       h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : h.y;
       ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
     }
+    // Loot hides the way a hero does, and for the same two reasons. The foliage
+    // has to actually BE in front of it: a coin lands at the foot of its own
+    // sprite like everything else on the field, so it sorts by y with the
+    // trees, the bushes and the rocks and goes behind the leaves it is behind.
+    // And what your side has no eyes on is not drawn at all — a coin sitting in
+    // the fog, or on the far side of a trunk, is not readable off the screen.
+    // The orb is still there either way: it rots on the same clock and is still
+    // yours the moment you walk into it. Finding it is the part that is now
+    // scouting. The tutorial needs no exception — its arena is already fenced
+    // against trees by over half a hero's vision (docs/TUTORIAL.md), so nothing
+    // there can cut the fog across the step that counts your pickups.
+    for(const c of xpOrbs){
+      if(!onScreen(c.x,c.y,30) || !isVisible(c.x,c.y,ORB_SIGHT_R)) continue;
+      ground.push({ y:c.y, k:5, o:c, b:false });
+    }
+    for(const m of manaOrbs){
+      if(!onScreen(m.x,m.y,30) || !isVisible(m.x,m.y,ORB_SIGHT_R)) continue;
+      ground.push({ y:m.y, k:5, o:m, b:true });
+    }
     ground.sort(byGroundY);
     for(const e of ground){
       const o = e.o;
@@ -10371,6 +10390,7 @@ window.addEventListener('DOMContentLoaded', function(){
       else if(e.k===1) drawDecor(ctx, o);
       else if(e.k===2) drawTower(o, e.a, e.b);
       else if(e.k===3) drawCreep(o, e.a, e.b);
+      else if(e.k===5){ if(e.b) drawManaOrb(o); else drawXpOrb(o); }
       else {
         drawHeroGhosts(o);
         drawHeroBody(o, e.a, e.b);
@@ -10396,16 +10416,6 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawLevelFxFront();
     drawFireBlasts();
-
-    // Loot hides the way a hero does. A coin behind a bush, a rock or a trunk,
-    // or one lying in ground nobody on your side is looking at, is not drawn —
-    // it is still there and still yours if you walk into it, but finding it is
-    // scouting rather than reading it off the screen through the fog.
-    // The tutorial needs no exception. Its arena is already fenced against
-    // trees with over half a hero's vision of padding — docs/TUTORIAL.md — so
-    // nothing there can cut the fog across a step that counts your pickups.
-    for(const c of xpOrbs){ if(onScreen(c.x,c.y,30) && isVisible(c.x,c.y,ORB_SIGHT_R)) drawXpOrb(c); }
-    for(const m of manaOrbs){ if(onScreen(m.x,m.y,30) && isVisible(m.x,m.y,ORB_SIGHT_R)) drawManaOrb(m); }
 
     // A tracer drawn back along the velocity vector, not a string of stale dots.
     // It is continuous at any speed and any frame rate, because the length comes
