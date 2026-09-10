@@ -13,9 +13,19 @@ them — and then almost nothing else.
 | The Match map has | The tutorial map has |
 |---|---|
 | five neutral camps in the corridor, each ringed with trees | one camp, where the forest step needs it |
-| ~48 loose trees scattered across the world | nine, in one hedge, where the walking step needs it |
+| ~48 loose trees scattered across the world | nine, in one hedge, where the walking step needs it — and a treeline outside the practice box, which no step can reach |
 | a river down the length of the corridor, and two lakes | one river, across the practice ground, ending short of both lanes |
 | two outposts per lane per side — eight buildings | one per lane per side — four |
+
+Grass is the only exception: it is on the tutorial map exactly as densely as it
+is on the other two, practice box included, because it is a texture rather than
+a thing.
+
+Every bush and every rock stops you and hides whatever stands behind it, which
+makes each of them the same kind of thing as a tree as far as a lesson is
+concerned — a step aims at where you are standing, and it has no business
+putting a boulder between you and its target. So they are fenced out of the
+practice box on exactly the same rule the trees are.
 
 ### The practice box
 
@@ -38,6 +48,14 @@ only ever targets the other side's *creeps* — it ignores a forest mob standing
 underneath it — so this rule protects the player, not the practice targets.
 Checking every building instead fenced the tutorial out of the open ground
 beside its own base for no reason, which broke the pack step outright.
+
+The box is also what the treeline is cut against. A tutorial tree may only
+stand where `x > TUT_ARENA_X + TUT_ARENA_PAD` or `|y - BASE_Y| > TUT_ARENA_Y +
+TUT_ARENA_PAD`, and never within `TUT_LANE_KEEP` of a lane. Keeping trees off
+the *route* would not do: a step aims at where you are standing, not at the
+route, so the fence has to be the same box the steps are placed in. The 420 of
+padding on top is over half a hero's vision, which is what stops a trunk from
+cutting the fog while you are still inside a lesson.
 
 Three things are held back on top of that — wave spawning, the enemy team
 (parked dead, the trick Survival already uses) and the clock — and each is
