@@ -6486,7 +6486,7 @@ window.addEventListener('DOMContentLoaded', function(){
     carry:   { w:128, h:118, walk:20, atk:0, scale:4.834, foot:0.95, dirs:2, stride:16,
                bob:2.5, bobSteps:4, enemyWash:'#FF9A88',
                idle:12, idleFps:3.6,
-               breath:{ from:8, rise:44, hip:88, lift:3.2, sway:0.9 } },
+               breath:{ from:2, rise:44, hip:88, lift:3.2, sway:0.9 } },
     // The tank is a horned Viking behind a round shield: five drawings of a
     // run, five of an axe swing, five of him standing there breathing, in that
     // order across one row of the sheet.
@@ -6563,13 +6563,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // so colour is the only thing telling them apart.
   // An idle for a sheet that shipped without one, baked out of its own walk.
   //
-  // `from` is the walk frame that becomes the stand, and choosing it takes more
-  // than counting how far apart his boots are. Four of the twenty put his feet
-  // together, but on two of those the near leg is still mid-swing: the knee is
-  // thrown forward of the boot and the shin cuts back behind it, which reads as
-  // a man about to take a step and not as a man standing. Frame 8 is the one
-  // where both knees hang at the same height over boots that are underneath
-  // them. Standing is not standing still, though, so the stand is breathed.
+  // `from` is the walk frame that becomes the stand, and no frame of a walk
+  // actually is one. A cycle puts both boots on the ground only at full stride,
+  // and every frame where the feet come together has one of them in the air --
+  // that is what walking IS. So the two obvious picks are both wrong, and
+  // wrong in opposite directions: the widest frame is the splayed stride he was
+  // stuck in to begin with, and the narrowest are passing poses, standing him
+  // on one leg with the other knee thrown forward of its own boot.
+  //
+  // The stand is the narrowest frame he still has both feet DOWN on. Frame 2 is
+  // it: one boot a boot's length ahead of the other, the back one two source
+  // pixels off the floor -- under a screen pixel at the size he is drawn -- and
+  // both knees hanging over a foot that is under them.
+  // Standing is not standing still, though, so the stand is breathed.
   //
   // A breath is NOT a bob. Lifting the whole sprite slides his boots over the
   // ground he is standing on; what a chest does is rise while the feet stay put.
