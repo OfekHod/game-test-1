@@ -200,6 +200,10 @@
   /* A point smaller than the chip's own type, because the word it carries is
      ASSEMBLE and it has to read across a button narrower than a card. */
   .asmLabel{display:block;font-size:11px;font-weight:800;letter-spacing:.4px;white-space:nowrap;}
+  /* The key to press. It rode the top right corner of every card once — 1, 2, 3
+     against the level badge on the left — and now only the ASSEMBLE button
+     carries one. The keys themselves are unchanged: 1/2/3 still take a hero
+     over, and the HUD hint line and the tutorial still say so. */
   .pkey{position:absolute;top:-10px;right:-8px;font-size:13px;font-weight:800;background:var(--panel-border);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;}
 
   /* The dock reaches the bottom edge and pads itself off it, so the strip the
@@ -853,9 +857,9 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
     </div>
     <div class="party hidden" id="party">
-      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">1</span></div>
-      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">2</span></div>
-      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">3</span></div>
+      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ASSEMBLE</span><span class="pkey">0</span></button>
     </div>
 
