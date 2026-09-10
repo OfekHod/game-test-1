@@ -516,11 +516,17 @@
      picture instead of against the window and land in the same place
      whatever shape the window is.
 
-     The board's inside was measured off the art by pixel — the largest
-     rectangle of board-coloured pixels, found past the parchment's own
-     texture noise — rather than guessed at, which is why these are odd
-     numbers. It is the conservative reading of the board, so there is frame
-     to spare on every side.
+     The board's inside was measured off the art by pixel: the full extent of
+     the parchment, wood frame to wood frame, found by flood fill from its
+     centre — not the largest noise-free rectangle inside that, which was
+     tried first and came out wrong. The parchment's own shading past the
+     tan-ish threshold, plus the knight's hair crossing into its top-right
+     corner, made that search flinch away from the right side and hand back a
+     box sitting well left of centre. None of that noise is anything a solid
+     button will not sit on top of just fine, so the fix is to measure the
+     frame itself — which the top and bottom crossbars show is a true
+     rectangle, centred in the art — and trust it, rather than a search that
+     mistook the knight's hair for the edge of the board.
 
      Sizes are min(1vw, 0.5582vh) — 1% of the stage's own width, since the
      stage is min(100vw, 100vh*R) — and not a fixed vmin, because R isn't 1
@@ -531,7 +537,7 @@
     padding:var(--sat) var(--sar) var(--sab) var(--sal);}
   .menuStage{position:relative;margin:auto;width:100%;max-width:min(100vw,calc(100vh * 1438 / 2576));}
   .menuShot{display:block;width:100%;height:auto;}
-  .menuBoard{position:absolute;left:25%;right:29.5%;top:25.9%;bottom:41.4%;
+  .menuBoard{position:absolute;left:21.8%;right:21.8%;top:24.9%;bottom:37.4%;
     display:flex;flex-direction:column;align-items:stretch;justify-content:center;
     gap:calc(2.2 * min(1vw,0.5582vh));}
   /* Crimson, taken off the knight's cape. The cyan these started as was the one
@@ -583,6 +589,38 @@
   .introStage{position:relative;margin:auto;display:flex;flex-direction:column;
     width:100%;max-width:min(100vw,calc(100vh * 1438 / 2576));}
   .introShot{display:block;width:100%;height:auto;}
+  /* Dismissing the front door turns it like the cover of a book rather than
+     cutting straight to the menu — which costs nothing extra to stage,
+     because the menu is already sitting right under it (see the note above).
+     Two animations, kept in step by sharing one duration (introDismiss's
+     INTRO_TURN_MS):
+
+       - .introStage rotates around its own left edge — a right-hand page
+         turning the ordinary way — with perspective() as the transform's
+         own first function, so the 3D is local to the page and nothing about
+         the stage underneath has to change to host it.
+       - #introScreen itself (the dark veil behind the page) holds until the
+         page is most of the way through its turn, then fades quickly, so the
+         veil does not go transparent while there is still a page arcing
+         across it.
+
+     pointer-events:none the instant the turn starts: a second tap mid-turn
+     must not re-enter introDismiss, and Playwright's own click() already
+     retries past an obscuring element, so this does not race the tooling
+     either — see tools/shoot.js. */
+  #introScreen.turning{pointer-events:none;animation:introVeilOut .56s ease-in forwards;}
+  @keyframes introVeilOut{0%,65%{opacity:1}100%{opacity:0}}
+  #introScreen.turning .introStage{transform-origin:left center;
+    box-shadow:0 0 min(8vw,60px) rgba(0,0,0,.5);
+    animation:introTurn .56s cubic-bezier(.5,0,.75,0) forwards;}
+  @keyframes introTurn{
+    0%{transform:perspective(1800px) rotateY(0deg);}
+    100%{transform:perspective(1800px) rotateY(-100deg);}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #introScreen.turning{animation:cFadeOut .3s ease-out forwards;}
+    #introScreen.turning .introStage{animation:none;box-shadow:none;}
+  }
   /* The parchment under the group was left blank for exactly this, so the card
      sits straight on it — no floating panel needed. Insets measured off the
      art the same way the menu's board was: the largest rectangle of
@@ -14589,7 +14627,26 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
-    return { impact, shot, pickup, teleport, master, kinds: Object.keys(IMPACT) };
+    /* ------------------------------------------------------------ page turn */
+
+    // The one UI sound in the file rather than a world event, so it has no
+    // place to be placed — it goes straight to master, centred, full width.
+    // A page has no impact at the end of it, only paper: the same "band
+    // walked down the spectrum is a swish" trick the crack of every impact
+    // above uses, but alone, with nothing to give it weight. Three more,
+    // narrower and staggered under the swish, are the individual crinkles a
+    // single sheet makes as it arcs over — the texture that turns a swoosh
+    // into paper rather than wind.
+    function pageTurn(){
+      const t = ctx.currentTime + 0.002;
+      const j = 0.96 + Math.random() * 0.08;
+      burst(master, t, 0.30, 4400 * j, 1.3, 0.24, 'bandpass', 1000 * j);
+      burst(master, t + 0.03, 0.15, 6200 * j, 3.2, 0.05);
+      burst(master, t + 0.08, 0.13, 5100 * j, 3.0, 0.05);
+      burst(master, t + 0.13, 0.10, 6600 * j, 3.0, 0.045);
+    }
+
+    return { impact, shot, pickup, teleport, pageTurn, master, kinds: Object.keys(IMPACT) };
   }
   /* sfx:engine end */
 
@@ -14683,6 +14740,14 @@ window.addEventListener('DOMContentLoaded', function(){
     s.n = (now - s.t > 1.0) ? 0 : s.n + 1;
     s.t = now;
     sfxRig.pickup(kind, s.n, p);
+  }
+
+  // Unpositioned and ungated: it fires once, off the same click that unlocks
+  // the audio context in the first place (see introDismiss), so there is
+  // nothing to place it against and nothing it could possibly overlap.
+  function sfxPageTurn(){
+    if(!sfxReady()) return;
+    sfxRig.pageTurn();
   }
   // The end screen is a menu too: after a match the player is sitting on an
   // overlay deciding whether to go again, and the match track under a
@@ -14943,9 +15008,21 @@ window.addEventListener('DOMContentLoaded', function(){
   introArt.src = INTRO_ART;
   menuArt.src = MENU_ART;
 
+  // Turns like a book cover rather than cutting straight to the menu: see
+  // .introScreen.turning and its keyframes. The menu is already sitting under
+  // it (the comment by #introScreen explains why), so everything here has to
+  // do is get the page on top out of the way. INTRO_TURN_MS must match the
+  // animation's own duration — CSS drives what it looks like, this only
+  // drives when it is safe to stop pretending the page is still there.
+  const INTRO_TURN_MS = 560;
   function introDismiss(){
-    if(introScreen.classList.contains('hidden')) return;
-    introScreen.classList.add('hidden');
+    if(introScreen.classList.contains('hidden') || introScreen.classList.contains('turning')) return;
+    introScreen.classList.add('turning');
+    sfxPageTurn();
+    setTimeout(()=>{
+      introScreen.classList.add('hidden');
+      introScreen.classList.remove('turning');
+    }, INTRO_TURN_MS);
   }
   // Bound to the overlay, not to the window: the click has to be spent on the
   // door itself. A window-level handler would dismiss the overlay and let the
