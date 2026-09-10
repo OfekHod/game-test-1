@@ -658,16 +658,14 @@
      each having to repeat the insets. */
   .skillBtn{position:absolute;right:5%;bottom:15%;margin:0 var(--sar) var(--sab) 0;
     width:78px;height:78px;border-radius:20px;border:3px solid var(--panel-border);
-    display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:8;}
+    display:none;align-items:center;justify-content:center;overflow:hidden;pointer-events:auto;z-index:8;}
   .skillBtn .skillIcon{width:72px;height:72px;border-radius:17px;}
-  /* A conic-gradient sweep reads as a clock hand no matter what it is clipped
-     to, which is exactly wrong on a square button. Masked down to a frame —
-     the ring traces the button's own border instead of wiping across the
-     icon — the same sweep reads as a square timer instead. */
-  .skillBtn .cdRing{position:absolute;inset:0;padding:4px;border-radius:20px;
-    background:conic-gradient(#FFD54F calc(var(--cd,0)*360deg), transparent 0);
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor; mask-composite:exclude;}
+  /* A conic-gradient sweep reads as a clock hand and, angle-mapped onto a
+     square, does not even land on time — the corners eat more of the sweep
+     than the edges. A plain curtain that recedes with the cooldown itself,
+     the same trick the desktop dock already uses, is both square and exact:
+     full dark right after the cast, gone the instant it is off cooldown. */
+  .skillBtn .cd{position:absolute;left:0;right:0;bottom:0;background:rgba(60,40,10,.55);height:0%;}
   .mobileHint{position:absolute;left:0;right:0;bottom:calc(6px + var(--sab));text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
   /* Survival's wave call. It is the only thing on screen that announces itself,
@@ -878,7 +876,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="touchLayer" id="touchLayer">
       <div class="joystick move" id="moveJoystick"><div class="knob"></div></div>
     </div>
-    <div class="skillBtn" id="skillBtn"><div class="cdRing" id="skillBtnCd"></div><div class="skillIcon skill-dash" id="skillBtnIcon"></div></div>
+    <div class="skillBtn" id="skillBtn"><div class="skillIcon skill-dash" id="skillBtnIcon"></div><div class="cd" id="skillBtnCd"></div></div>
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · square: skill</div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
@@ -12878,7 +12876,7 @@ window.addEventListener('DOMContentLoaded', function(){
       xpTextEl.textContent = Math.round(activeH.xp)+'/'+Math.round(activeH.xpToNext);
       hudLevelEl.textContent = 'Lv.'+activeH.level;
       dashCdFillEl.style.height = (activeH.skillCd/s.skillCd*100)+'%';
-      skillBtnCdEl.style.setProperty('--cd', String(Math.max(0,Math.min(1, activeH.skillCd/s.skillCd))));
+      skillBtnCdEl.style.height = (activeH.skillCd/s.skillCd*100)+'%';
       // A shell in the air turns the skill into a detonator for as long as it is
       // up. The button glows, because a second press that does something new is
       // worth more than a cooldown ring nobody is watching.
