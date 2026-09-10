@@ -7287,7 +7287,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.ghostT -= dt;
     if(h.moving>0 && h.ghostT<=0 && def && def.ready){
       h.ghostT = GHOST_GAP;
-      h.ghosts.push({ x:h.x, y:h.y, facing:h.facing, f:heroFrame(h,def), row:heroDirRow(h,def), life:0 });
+      h.ghosts.push({ x:h.x, y:h.y, facing:heroFacingAngle(h), f:heroFrame(h,def), row:heroDirRow(h,def), life:0 });
       if(h.ghosts.length > GHOST_MAX) h.ghosts.shift();
     }
     for(let i=h.ghosts.length-1;i>=0;i--){
@@ -7392,13 +7392,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // up and down right, which is why it looked almost correct — but it had left
   // and right the wrong way round.
   const SIDE_FLIP = 0.02;   // how much sideways travel it takes to turn him
+  // h.facing follows the MOUSE (or, for an AI hero, whatever it is aiming
+  // at), which is right for aiming and wrong for the body: a sprite would
+  // spin to face a target while walking the other way -- including a hero
+  // in follow mode, who has nothing else ever pointing him at his anchor.
+  // Use the direction actually travelled, and only fall back to the aim
+  // when standing still. Shared by the row picker below and by the
+  // left/right mirror on sprites with no directional rows at all.
+  function heroFacingAngle(h){
+    return (h.moving > 0 && h.moveDir !== undefined) ? h.moveDir : h.facing;
+  }
   function heroDirRow(h, def){
     if(!def.dirs) return 0;
-    // h.facing follows the MOUSE, which is right for aiming and wrong for the
-    // body: an 8-direction sprite would spin to the cursor while walking the
-    // other way. Use the direction actually travelled, and only fall back to
-    // the aim when standing still.
-    const ang = (h.moving > 0 && h.moveDir !== undefined) ? h.moveDir : h.facing;
+    const ang = heroFacingAngle(h);
     // A two-row sheet is drawn from the side only and has NO drawing for
     // straight up or down, so the angle cannot pick the row -- only its sign
     // can. Walking dead north through the round formula lands on the row for
@@ -11969,7 +11975,7 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.scale(1 + hq*0.15, 1 - hq*0.12);
         ctx.translate(0, -h.r*0.95);
       }
-      if(!sdef.dirs && Math.cos(h.facing) < 0) ctx.scale(-1,1);
+      if(!sdef.dirs && Math.cos(heroFacingAngle(h)) < 0) ctx.scale(-1,1);
       uprightSheet(sdef, h.r*sdef.foot);
       const top = h.r*sdef.foot - sh - heroBob(h, sdef);
       ctx.drawImage(sheet, f*sdef.w, row*sdef.h, sdef.w, sdef.h, -sw/2, top, sw, sh);
