@@ -3051,7 +3051,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // Points are the second way to win. If neither base falls, the clock decides
   // it on score, so killing things is never wasted effort even when a push
   // stalls — and a team that is ahead has something to protect.
-  const PTS = { forest:1, creep:2, bigCreep:3, hero:30, tower:200 };
+  // apex sits between a big creep and a hero kill -- enough that it is worth
+  // breaking off to go find one, not so much that it outweighs the game itself.
+  const PTS = { forest:1, creep:2, bigCreep:3, apex:50, hero:30, tower:200 };
   let score = { player:0, enemy:0 };
   // The number counts up to its new value rather than snapping, and swells
   // while it does. A jump of 1 is over almost immediately; a 200-point tower
@@ -11950,8 +11952,9 @@ window.addEventListener('DOMContentLoaded', function(){
     if(side==='player' && attackerHero) lastHits+=1;
     if(tut.on) tutNote('kill', attackerHero, tut.dashWindow);
     // `side` is the killer's side. Forest mobs pay either team; lane creeps pay
-    // whoever killed them, and a big one is worth more.
-    addScore(side, creep.neutral ? PTS.forest : (creep.big ? PTS.bigCreep : PTS.creep), creep.x, creep.y);
+    // whoever killed them, and a big one is worth more. The apex outbids the
+    // whole forest bracket it's otherwise part of.
+    addScore(side, creep.huge ? PTS.apex : (creep.neutral ? PTS.forest : (creep.big ? PTS.bigCreep : PTS.creep)), creep.x, creep.y);
     if(attackerHero && attackerHero===playerTeam[activePlayerIdx]) shake = Math.max(shake, creep.huge?0.6:(creep.big?0.45:0.3));
     // the multiplier is the mana-orb count, so a big creep pays double there
     // too, and the apex -- a whole camp's worth of xp in one kill -- pays 4x
