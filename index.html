@@ -12862,10 +12862,14 @@ window.addEventListener('DOMContentLoaded', function(){
   function syncThemeColor(){
     if(!themeColorEl) return;
     const vis = el => el && !el.classList.contains('hidden');
-    // Topmost screen wins, in the same order they stack.
+    // Topmost screen wins, in the same order they stack. The menu is checked
+    // before the loading sky rather than after: guardedStart puts the sky up
+    // WHILE the menu is still turning away on top of it (see .overlay.turning
+    // z-index), so for that stretch both are technically vis() at once, and
+    // it is the menu still on screen, not the sky waiting underneath it.
     const want = vis(introScreen) ? THEME_INTRO
-               : (vis(curtainEl) || vis(loadScreen)) ? THEME_SKY
                : vis(startScreen) ? THEME_MENU
+               : (vis(curtainEl) || vis(loadScreen)) ? THEME_SKY
                : vis(endScreen) ? THEME_END
                : THEME_FIELD;
     if(want === themeColorNow) return;
@@ -14107,7 +14111,13 @@ window.addEventListener('DOMContentLoaded', function(){
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0 };
     xpCountEl.textContent='0';
     timerEl.textContent = gameMode==='survival' ? 'Wave 1' : fmtTime(ROUND_TIME);
-    startScreen.classList.add('hidden');
+    // Not startScreen: guardedStart owns exactly when that gets hidden —
+    // immediately for a path with no page to turn, or on a delay for one
+    // that does — and startRound runs inside beginRoundLoad's RAF chain,
+    // which now fires WHILE the menu may still be mid-turn. Hiding it here
+    // too used to be harmless because guardedStart always hid it first; now
+    // it would cut the turn's CSS animation off early by yanking display
+    // out from under it before the animation has actually finished.
     endScreen.classList.add('hidden');
     bottomDock.classList.remove('hidden');
     partyEl.classList.remove('hidden');
@@ -14212,12 +14222,19 @@ window.addEventListener('DOMContentLoaded', function(){
     if(loadingRound) return;
     loadingRound = true;
     if(!startScreen.classList.contains('hidden')){
+      // The loading panel is not waited for — it goes up behind the menu in
+      // this same tick, exactly the way the menu itself sat waiting behind
+      // the front door. The turn then plays on top of it already there, so
+      // turning the menu away REVEALS the panel rather than cutting to it:
+      // .overlay.turning's raised z-index is what keeps it underneath while
+      // the page is still on top of it. Only hiding the menu itself waits
+      // for the turn to finish — nothing else in beginRoundLoad needs to.
       startScreen.classList.add('turning');
       sfxPageTurn();
+      beginRoundLoad(mode);
       setTimeout(()=>{
         startScreen.classList.add('hidden');
         startScreen.classList.remove('turning');
-        beginRoundLoad(mode);
       }, INTRO_TURN_MS);
     } else {
       startScreen.classList.add('hidden');
@@ -14814,8 +14831,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // The end screen is a menu too: after a match the player is sitting on an
   // overlay deciding whether to go again, and the match track under a
   // scoreboard would be the wrong piece.
+  //
+  // A menu mid-turn does not count: guardedStart calls musicSync the instant
+  // the turn starts, while the menu is still visually on screen turning away,
+  // specifically so the match theme is already climbing its fade by the time
+  // the page finishes leaving rather than starting from there.
   function menuShowing(){
-    return !startScreen.classList.contains('hidden')
+    return (!startScreen.classList.contains('hidden') && !startScreen.classList.contains('turning'))
         || !endScreen.classList.contains('hidden');
   }
 
