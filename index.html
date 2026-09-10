@@ -5841,7 +5841,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // Neither the line nor the motes last — they fade together over a third
   // of a second, easing out rather than cutting off.
   const DASH_FX_DUR = 0.38;
-  const DASH_FX_TRAIL_FRAC = 0.4;   // fraction of the full dash the trail covers, measured back from the landing spot
+  const DASH_FX_TRAIL_FRAC = 0.9;   // fraction of the full dash the trail covers, measured back from the landing spot
   function triggerDashFx(fromX,fromY,x1,y1){
     const x0 = x1 - (x1-fromX)*DASH_FX_TRAIL_FRAC, y0 = y1 - (y1-fromY)*DASH_FX_TRAIL_FRAC;
     const dx=x1-x0, dy=y1-y0;
