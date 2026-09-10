@@ -66,6 +66,98 @@ is solid, so all of it is tuning.
 | **`DECOR_TOWER_KEEP`** | **`TOWER_RANGE` + 120** | see below. This one is not cosmetic |
 | `DECOR_CAMP_KEEP` | 90 | beyond the camp ring, so a clearing you have to walk into stays walkable |
 
+### Chopping
+
+A tree can be felled by a melee swing, which in this build means the tank and
+nothing else. These are feel numbers, not measured ones — there is no outcome to
+measure them against yet, for the reason under the table.
+
+| constant | value | note |
+|---|---|---|
+| `TREE_CHOPS` | 3 | swings, not damage. A count that does not move with the axe's level is the same count in the first minute as in the last, which is what makes it a rule rather than a race |
+| `TREE_BAR_HOLD` | 6 | seconds the bar stays up after a chop. It appears on the FIRST chop: an untouched tree has nothing to report, and 32 trees each wearing a full bar is a forest of health bars |
+| `TREE_FALL_TIME` | 1.1 | the topple. The angle goes as the square of it, so the trunk hangs and then lets go; the sprite fades only over the last 18% |
+| `WOOD_PER_TREE` | 3 | logs |
+| `WOOD_DWELL` | 0.4 | seconds a log is left alone before the magnet takes it, counted from **the tree being gone**, not from the moment the logs appear. Those are a whole topple apart: the logs come out on the felling blow and tumble clear while the trunk goes over behind them (`woodDrops` is drawn after the sorted pass, so they stay on top of it the whole way down), and the sprite is still fading for the rest of `TREE_FALL_TIME`. Timed from the drop, the entire tail expired inside that fade and the logs were never once seen on their own. `spawnWood` is handed the fall as dead time in front of the dwell, so this stays the *clear* time if the topple is ever retuned |
+| `WOOD_THROW` | 42 | how far past the trunk the logs are thrown, along the line the blow came in on, so they land on the FAR side of the tree from whoever swung. They used to drop on the stump — which is where the chopper is already standing, and a pickup that lands at your feet is not a pickup, it is a number going up. Measured over three fells, the furthest log ends up 120–156 units out and visibly travels back |
+| `WOOD_MAGNET_RADIUS` | 260 | against 130 for the coins. Nobody competes for wood — no enemy hero can take it and no ally wants it — so all three logs can be in range of whoever felled the tree wherever they scattered, instead of the far one crawling in at the shared magnet's slowest speed. It also has to cover `WOOD_THROW`: worst case is a tree felled at the very end of the tank's reach, which puts him ~145 out, plus 42 of throw plus 35 the pop can carry = 222. A log outside this is not collected at all until the player walks back to it, and on a 30s TTL it would rot |
+| `WOOD_MAGNET_MULT` | 2.2 | on the shared magnet speed. Safe only because of the overshoot clamp below |
+| `WOOD_GRAVITY` / `WOOD_TOSS_UP` | 2200 / 500–620 | the toss. Height is its own axis, drawn as an offset up the screen with the shadow left on the ground — the only way a top-down view can say a thing is in the air at all. A log peaks about 95 units up, better than two of its own lengths, and is down in 0.55s. Heavy gravity with a hard launch rather than the other way round: a floaty arc of the same height reads as a balloon, not as a log |
+| `WOOD_START_Z` | 18–34 | it leaves the cut part way up the trunk, not off the floor |
+| `WOOD_BOUNCE` / `WOOD_BOUNCE_STOP` | 0.42 / 60 | two more hops of about 15 units, then it lies still. The whole toss is done by 0.9s, inside the `TREE_FALL_TIME` it has to wait out anyway, so it is settled before the clear 0.4s starts |
+| `WOOD_SKID` | 0.02 per second | horizontal decay, and ONLY while it is touching the ground. There is no drag in the air, which is what makes the slowdown after the landing read as a skid rather than as the air braking it |
+| wood ground speed | 30–75, within 70° of the blow | against 90–220 in every direction for a coin. Thrown OUTWARD: a uniform angle sent half of them back over the chopper's head, which lands them nearer than they started. Slower than a coin because the height is doing the work and there is no air drag to eat the rest — at the old 55–130 the far ones landed outside even a 260 magnet |
+| `WOOD_TTL` | `ORB_TTL`*2 (30s) | a coin is dropped mid-fight and taken in the same breath; wood is dropped by somebody who went somewhere to chop |
+
+**How long the tail is, and why it was three times that.** Measured from the
+logs landing to the last of the three banked, in GAME seconds — what a player at
+60fps waits, which is not what a headless browser at 12fps reports as wall time.
+
+| build | logs appear → banked |
+|---|---|
+| as first written | 1.70s |
+| one dwell timer instead of two stacked delays | 0.70s |
+| overshoot clamped, dwell cut to a beat | 0.35s |
+| dwell counted from the tree being gone | 0.95s |
+| logs dropped on the felling blow instead of at the thud | **1.40s** |
+
+The last two rows are longer than the 0.35s above them on purpose, and neither
+is a regression. End to end is the wrong thing to measure here — what matters is
+how much of it the wood is actually visible for, and at 0.35s the answer was
+none of it: the logs dropped while the trunk was still lying across them and the
+whole tail expired before the sprite had finished fading. The useful breakdown:
+
+| | felling blow → logs out | logs out → trunk gone | trunk gone → banked |
+|---|---|---|---|
+| dwell from the drop | 0.68s | 0.40s | 0.0s — already collected |
+| dwell from the tree gone | 0.68s | 0.40s | 0.50s |
+| logs on the felling blow | **0.00s** | **0.90s** | **0.50s** |
+
+The logs are on screen for all of the middle column as well as the right one —
+held only means not yet magnetic, not invisible. Confirmed off a per-frame
+canvas capture: the first frame of the topple already has three logs in it, and
+they are still there twenty-one frames later when the trunk finishes fading.
+
+Neither of the first two numbers could have been read off the code. The first
+was two delays stacking — a log was not offered a collector while its mode was
+still `pop`, *and* its dwell only started counting once the pop had ended, and
+the pop decays exponentially towards a fixed speed threshold, so it takes most
+of a second on its own. The second only gave itself up to a frame-by-frame
+trace: the logs were **overshooting the hero and bouncing**.
+
+```
+343ms  magnet dd=39  49  36
+424ms  magnet dd=41  24  44     <- past the hero and out the far side
+509ms  magnet dd=38  63  32     <- flung back out to 63
+591ms  magnet dd=42   2  51
+```
+
+A pickup drawn in faster than `PICKUP_COLLECT_RADIUS` is wide steps straight
+past its collector, so it only lands when a frame happens to put it inside 24
+units. `updatePickup` now clamps the step to the distance remaining — but **only
+on the fast path**, the one wood passes a multiplier on. The coins' arithmetic
+is untouched, deliberately: they are slow enough not to need it, and leaving
+them alone is what keeps the seeded simulation below byte-identical.
+
+**A tree is the LAST thing a swing looks at** — after enemy heroes, after creeps,
+after buildings — so a fight fought in a wood never spends a swing on the
+scenery. That ordering is also what keeps chopping out of the simulation
+entirely: an AI hero only ever swings because target acquisition handed it
+something, acquisition does not look at trees, so no AI hero ever fells one.
+Measured, not assumed — ten full games with a counter patched into `chopTree`
+report zero chops, and eight games run from one seed against the build before
+this one come out byte for byte the same:
+
+```
+node sim/run.js 40   before: 38/40, median 216s, deaths 0.65
+                     after:  34/40, median 245s, deaths 0.70
+```
+
+That spread is two different samples of forty, not a change: nothing in the
+chopping path allocates a random number unless a chop happens, so the same seed
+walks the same sequence and the same eight matches end on the same second with
+the same score. The numbers below still stand.
+
 All of it together costs nothing that shows in an outcome. 240 games each, this
 map against the same build with no scenery on it at all:
 
