@@ -89,6 +89,7 @@
   .scoreHud.hidden{display:none;}
   .scoreBox{min-width:84px;padding:6px 12px 5px;border-radius:11px;text-align:center;overflow:hidden;
     background:rgba(24,26,32,.80);border:2px solid transparent;}
+  .scoreBox.hidden{display:none;}
   .scoreBox b{display:block;text-align:center;font-size:27px;font-weight:800;
     --rowH:1.18em; --colW:0.62em;
     transform-origin:50% 60%;will-change:transform;font-variant-numeric:tabular-nums;}
@@ -127,6 +128,12 @@
   .scoreBox.lead{border-color:currentColor;}
   .scoreBox.you.lead{border-color:#8FD6FF;}
   .scoreBox.foe.lead{border-color:#FF9A8B;}
+  /* Survival has no other side to be blue or red against, just a count that
+     climbs — the same gold the WAVE banner already uses for its own number,
+     so the two read as the same stat. */
+  .scoreBox.wave b{color:#FFD54F;}
+  .scoreBox.wave b.bump{animation:waveBoxBump .35s ease;}
+  @keyframes waveBoxBump{ 0%{transform:scale(1.4);} 100%{transform:scale(1);} }
   @media (max-width:520px){
     .scoreBox{min-width:72px;padding:5px 9px 4px;}
     .scoreBox b{font-size:21px;} .scoreBox > span{font-size:9px;letter-spacing:.02em;}
@@ -946,6 +953,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="scoreHud hidden" id="scoreHud">
       <div class="scoreBox you" id="scoreBoxYou"><b id="scoreYou">0</b><span>BLUE TEAM</span></div>
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
+      <div class="scoreBox wave hidden" id="scoreBoxWave"><b id="scoreWave">1</b><span>WAVE</span></div>
     </div>
     <div class="party hidden" id="party">
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
@@ -2575,6 +2583,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const waveBannerEl = document.getElementById('waveBanner');
   const waveBannerNumEl = document.getElementById('waveBannerNum');
   const waveBannerSubEl = document.getElementById('waveBannerSub');
+  const scoreBoxWaveEl = document.getElementById('scoreBoxWave');
+  const scoreWaveEl = document.getElementById('scoreWave');
   const dashCdFillEl = document.getElementById('dashCdFill');
   const skillIconEl = document.getElementById('skillIcon');
   const hpFillEl = document.getElementById('hpFill');
@@ -9570,6 +9580,12 @@ window.addEventListener('DOMContentLoaded', function(){
     waveBannerSubEl.textContent = sub || '';
     waveBannerSubEl.classList.toggle('on', !!sub);
     waveBannerEl.classList.add('show');
+    // The banner itself fades after a few seconds; this is the same count
+    // held on screen for the rest of the wave, in the same top-right slot a
+    // Match's score sits in when there is one.
+    scoreWaveEl.textContent = w;
+    scoreWaveEl.classList.remove('bump'); void scoreWaveEl.offsetWidth;
+    scoreWaveEl.classList.add('bump');
     clearTimeout(waveBannerTimer);
     // Both classes come off together. Leaving the subtitle's on it while the
     // banner itself is invisible is a lie about what is on the screen, and the
@@ -15095,7 +15111,14 @@ window.addEventListener('DOMContentLoaded', function(){
     bottomDock.classList.remove('hidden');
     partyEl.classList.remove('hidden');
     const hud = document.getElementById('scoreHud');
-    if(hud) hud.classList.toggle('hidden', gameMode === 'survival');
+    if(hud) hud.classList.remove('hidden');
+    // Same top-right slot either way -- a Match's blue/red score boxes, or
+    // Survival's own gold one, never both at once.
+    const scoreBoxYouEl = document.getElementById('scoreBoxYou'), scoreBoxFoeEl = document.getElementById('scoreBoxFoe');
+    if(scoreBoxYouEl) scoreBoxYouEl.classList.toggle('hidden', gameMode === 'survival');
+    if(scoreBoxFoeEl) scoreBoxFoeEl.classList.toggle('hidden', gameMode === 'survival');
+    if(scoreBoxWaveEl) scoreBoxWaveEl.classList.toggle('hidden', gameMode !== 'survival');
+    if(gameMode === 'survival') scoreWaveEl.textContent = '1';
     resetScoreHud();
     if(isTouchDevice){
       skillBtnEl.style.display='flex';
