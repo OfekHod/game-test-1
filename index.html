@@ -2817,7 +2817,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // there, fighting exactly like a camp mob (aggro, chase, leash, regen)
   // whenever a hero or a lane creep gets close.
   const APEX_R = 60;                        // 3.5x CREEP_R (17) drawn size
-  const APEX_HP = 2200, APEX_DMG = 26;
+  const APEX_HP = BIG_CREEP_HP * 2;         // twice the previous biggest creep
+  const APEX_DMG = 100;
   const APEX_SPEED = 64;
   const APEX_AGGRO = 300, APEX_LEASH = 420;
   const APEX_ATK_INTERVAL = 1.3;
