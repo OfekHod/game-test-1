@@ -2653,6 +2653,11 @@ window.addEventListener('DOMContentLoaded', function(){
   const HEAL_VARIANCE = 0.15;
   const HEAL_RANGE_MANUAL = 340;
   const HEAL_WAVE_DUR = 0.55;   // time for the front to travel out to full range
+  // The front is gone in half a second. What is left is a wash of green lying
+  // in the grass over the whole range it covered, and that is the part you
+  // actually feel, so it leaves twice as slowly as it arrived.
+  const HEAL_GROUND_FADE = 1.45;
+  const HEAL_MOTES = 34;        // specks lifting off the grass behind the front
   const IDLE_HEAL_RANGE = 280;
 
   const AUTO_FIRE_RATE = 0.25;  // player's auto-assist: deliberately slow, it only fills gaps
@@ -5276,25 +5281,28 @@ window.addEventListener('DOMContentLoaded', function(){
     if(h===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.6);
   }
   // Heals reuse the level-up choreography: same beats, green palette, smaller.
-  function triggerHealFX(t, weight){
-    // Same choreography for anything that can be healed, sized off the target so
-    // a 17-radius creep doesn't get a burst tuned for a hero twice its size, and
-    // off how much of its bar the heal actually filled.
-    // Even a unit already at full health lights up — it just gets the quieter
-    // end of the range, so a real save still reads bigger than a top-up.
-    const w = (weight===undefined) ? 1 : weight;
-    const sc = 0.62 * Math.max(0.75, Math.min(1.25, (t.r||20)/22))
-                    * (0.7 + 0.3*Math.min(1, w*2.5));
+  function triggerHealFX(t){
+    // The same burst for everything the wave sweeps over, sized off the target
+    // so a 17-radius creep doesn't get one tuned for a hero twice its size —
+    // and off nothing else. A hero standing in the light on a full bar gets
+    // exactly what the one that needed it gets, because what the burst says is
+    // "the heal reached you", not "you were nearly dead".
+    const sc = 0.62 * Math.max(0.75, Math.min(1.25, (t.r||20)/22));
     levelFx.push({ h:t, life:0, maxLife:HEAL_FX_TIME, seed:Math.random()*Math.PI*2, pal:FX_PAL.heal, sc, big:false });
     t.levelGlow = Math.max(t.levelGlow||0, 0.85);
     t.glowCol = FX_PAL.heal.glow;
   }
+  // Everything the wave passes over lights up, whether or not it had anything
+  // to gain: a heal at zero is still a heal that reached you, and a squad on
+  // full bars standing in the light should look like a squad standing in the
+  // light. The number is the one part that is conditional — a column of "+0"
+  // over a healthy group is noise, and the bars say the rest.
   function healUnit(u, amt){
     const before = u.hp;
     u.hp = Math.min(u.maxHp, u.hp + amt);
     const healed = Math.round(u.hp - before);
     if(healed >= 1) addFloater(u.x, u.y-u.r-30, '+'+healed, '#7CD98C', true);
-    triggerHealFX(u, healed/u.maxHp);
+    triggerHealFX(u);
   }
   function healNeeded(h, range){
     const team = h.side==='player' ? playerTeam : enemyTeam;
@@ -5307,7 +5315,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // the front sweeps over it, so the group lights up in order of distance rather
   // than all at once.
   function spawnHealWave(h, range){
-    healWaves.push({ x:h.x, y:h.y, r:0, maxR:range, life:0,
+    healWaves.push({ x:h.x, y:h.y, r:0, maxR:range, life:0, mote:0,
       side:h.side, amt:rollHeal(h), hit:new Set() });
     h.levelGlow = Math.max(h.levelGlow||0, 1.1);
     h.glowCol = FX_PAL.heal.glow;
@@ -5319,37 +5327,84 @@ window.addEventListener('DOMContentLoaded', function(){
       w.life += dt;
       const t = Math.min(1, w.life/HEAL_WAVE_DUR);
       w.r = w.maxR * (1 - Math.pow(1-t, 2));   // quick off the caster, easing into the rim
-      const team = w.side==='player' ? playerTeam : enemyTeam;
-      const own  = w.side==='player' ? allyCreeps : enemyCreeps;
-      for(const u of team){
-        if(!u.alive || w.hit.has(u)) continue;
-        if(dist(w.x,w.y,u.x,u.y) <= w.r){ w.hit.add(u); healUnit(u, w.amt); }
+      // The front does the healing, and it is finished when it lands. The wash
+      // it leaves in the grass hangs about for a second longer, so the window
+      // that heals is kept to what it always was: somebody who walks into the
+      // afterglow is walking into light, not into a heal.
+      if(w.life <= HEAL_WAVE_DUR + 0.3){
+        const team = w.side==='player' ? playerTeam : enemyTeam;
+        const own  = w.side==='player' ? allyCreeps : enemyCreeps;
+        for(const u of team){
+          if(!u.alive || w.hit.has(u)) continue;
+          if(dist(w.x,w.y,u.x,u.y) <= w.r){ w.hit.add(u); healUnit(u, w.amt); }
+        }
+        for(const u of own){
+          if(w.hit.has(u)) continue;
+          if(dist(w.x,w.y,u.x,u.y) <= w.r){ w.hit.add(u); healUnit(u, w.amt); }
+        }
       }
-      for(const u of own){
-        if(w.hit.has(u)) continue;
-        if(dist(w.x,w.y,u.x,u.y) <= w.r){ w.hit.add(u); healUnit(u, w.amt); }
+      // Specks lifting off the ground behind the front, a few per frame as it
+      // travels, so the grass looks like it answered rather than being lit from
+      // above. They are spread over the disc, not the rim, or the middle of the
+      // ring would be the one part of it nothing happens in.
+      const want = Math.round(HEAL_MOTES * t);
+      while(w.mote < want){
+        w.mote++;
+        const a = rand(0, Math.PI*2), rr = Math.sqrt(rand(0.04, 1)) * w.r;
+        spawnSparkles(w.x + Math.cos(a)*rr, w.y + Math.sin(a)*rr, 1, FX_PAL.heal.spark, 0.65);
       }
-      if(w.life >= HEAL_WAVE_DUR + 0.3) healWaves.splice(i,1);
+      if(w.life >= HEAL_WAVE_DUR + HEAL_GROUND_FADE) healWaves.splice(i,1);
     }
   }
+  // Three passes, all of them on the ground under the units: the wash that
+  // floods the range and drains out of it, the bright band riding the front,
+  // and the two thin rings that were always the wave's outline. Nothing here
+  // draws a hard edge except those rings, and they are gone by the time the
+  // wash is doing the work.
   function drawHealWaves(){
     for(const w of healWaves){
-      const t = Math.min(1, w.life/(HEAL_WAVE_DUR+0.3));
-      const fade = 1-t;
+      const sweep = Math.min(1, w.life/HEAL_WAVE_DUR);
+      const after = (w.life - HEAL_WAVE_DUR)/HEAL_GROUND_FADE;
+      // Floods in with the front, then eases out — slowly at first, so it sits
+      // in the grass for a beat before it goes.
+      const glow = after <= 0 ? sweep : Math.pow(1 - Math.min(1, after), 1.7);
+      const rr = Math.max(2, w.r);
       ctx.save();
-      const g = ctx.createRadialGradient(w.x,w.y,Math.max(1,w.r*0.5),w.x,w.y,Math.max(2,w.r));
-      g.addColorStop(0,'rgba(124,217,140,0)');
-      g.addColorStop(0.8,'rgba(124,217,140,'+(0.13*fade).toFixed(3)+')');
-      g.addColorStop(1,'rgba(200,248,208,'+(0.30*fade).toFixed(3)+')');
+      // Light lying on the grass rather than paint on top of it, which is what
+      // 'lighter' buys: the blades and the dirt still read through it.
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,rr);
+      g.addColorStop(0,    'rgba(96,196,116,'  + (0.38*glow).toFixed(3) + ')');
+      g.addColorStop(0.55, 'rgba(88,184,108,'  + (0.24*glow).toFixed(3) + ')');
+      g.addColorStop(0.88, 'rgba(150,230,168,' + (0.13*glow).toFixed(3) + ')');
+      g.addColorStop(1,    'rgba(150,230,168,0)');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(w.x,w.y,Math.max(2,w.r),0,7); ctx.fill();
-      ctx.globalAlpha = fade*0.95;
-      ctx.strokeStyle = '#CFF8D6'; ctx.lineWidth = 6*fade+2;
-      ctx.beginPath(); ctx.arc(w.x,w.y,Math.max(2,w.r),0,7); ctx.stroke();
-      ctx.globalAlpha = fade*0.5;
-      ctx.strokeStyle = '#7CD98C'; ctx.lineWidth = 3*fade+1;
-      ctx.beginPath(); ctx.arc(w.x,w.y,Math.max(2,w.r*0.82),0,7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(w.x,w.y,rr,0,7); ctx.fill();
+      // The band riding the front. A fifth of the radius thick and soft on both
+      // sides, so what travels out is a swell of light and never a line.
+      if(w.life < HEAL_WAVE_DUR + 0.35){
+        const edge = 1 - Math.max(0, (w.life - HEAL_WAVE_DUR)/0.35);
+        const band = Math.max(20, rr*0.24);
+        const b = ctx.createRadialGradient(w.x,w.y,Math.max(1,rr-band),w.x,w.y,rr+band*0.4);
+        b.addColorStop(0,    'rgba(150,230,168,0)');
+        b.addColorStop(0.7,  'rgba(176,240,192,' + (0.26*edge).toFixed(3) + ')');
+        b.addColorStop(0.9,  'rgba(224,252,232,' + (0.50*edge).toFixed(3) + ')');
+        b.addColorStop(1,    'rgba(224,252,232,0)');
+        ctx.fillStyle = b;
+        ctx.beginPath(); ctx.arc(w.x,w.y,rr+band*0.4,0,7); ctx.fill();
+      }
       ctx.restore();
+      if(w.life < HEAL_WAVE_DUR + 0.3){
+        const fade = 1 - Math.min(1, w.life/(HEAL_WAVE_DUR+0.3));
+        ctx.save();
+        ctx.globalAlpha = fade*0.95;
+        ctx.strokeStyle = '#CFF8D6'; ctx.lineWidth = 6*fade+2;
+        ctx.beginPath(); ctx.arc(w.x,w.y,rr,0,7); ctx.stroke();
+        ctx.globalAlpha = fade*0.5;
+        ctx.strokeStyle = '#7CD98C'; ctx.lineWidth = 3*fade+1;
+        ctx.beginPath(); ctx.arc(w.x,w.y,rr*0.82,0,7); ctx.stroke();
+        ctx.restore();
+      }
     }
   }
   function updateLevelFx(dt){
@@ -8560,21 +8615,13 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function castHeal(h, range){
     const s = HERO_STATS.support;
-    h.skillCd = s.skillCd; // cooldown applies even if nothing to heal
-    const team = h.side==='player' ? playerTeam : enemyTeam;
-    const ownCreeps = h.side==='player' ? allyCreeps : enemyCreeps;
-    let best=null, bd=range;
-    for(const ally of team){
-      if(!ally.alive || ally.hp>=ally.maxHp) continue;
-      const d=dist(h.x,h.y,ally.x,ally.y);
-      if(d<bd){ bd=d; best=ally; }
-    }
-    for(const c of ownCreeps){
-      if(c.hp>=c.maxHp) continue;
-      const d=dist(h.x,h.y,c.x,c.y);
-      if(d<bd){ bd=d; best=c; }
-    }
-    if(!healNeeded(h, range)) return;   // don't burn mana on a group already topped up
+    // No "is anybody hurt" test on the button. Press it and the ring goes out,
+    // over a hurt group or a healthy one, and everything it reaches lights up.
+    // It costs the mana either way: what you are paying for is the cast, and a
+    // press that decides for you whether it happened is a press you cannot
+    // read. The AI still checks before it spends (see updateIdleAI) — it is
+    // not the one watching.
+    h.skillCd = s.skillCd;
     h.mana -= s.skillManaCost;
     spawnHealWave(h, range);
   }
