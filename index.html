@@ -4307,7 +4307,14 @@ window.addEventListener('DOMContentLoaded', function(){
       // both lanes so no wave ever has to ford it. Step one walks you through
       // it on purpose: shallow water is a thing you should meet while nothing
       // is chasing you.
-      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 55);
+      // Wobble kept under the half-width on purpose, which the match map's river
+      // does not do. This is the water you learn the current on, and at 55 the
+      // channel snaked by 110 inside 130 of room: walk dead downstream and the
+      // river slid out from under you halfway along, which teaches that the
+      // current is unreliable rather than that it is directional. At 30 the
+      // whole meander fits inside the banks, so holding one key down the middle
+      // rides the whole run — and it still visibly bends.
+      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 30);
       // The practice ground is the match map, so it gets the match map's lakes:
       // both sit in the jungle beyond the lanes, clear of the corridor the
       // tutorial keeps you in, so they are terrain you can see and learn the
@@ -11032,6 +11039,13 @@ window.addEventListener('DOMContentLoaded', function(){
     const p = TUT_ROUTE[i];
     return { x:p.x, y:p.y, r:72, hit:false };
   }
+  // Where the two rings on the way to the camp sit, as fractions of the river's
+  // length: one above where the walking step had you cross it, one level with
+  // the camp. About nine hundred units of downstream in between — long enough to
+  // feel the push, short enough that the detour does not outstay its lesson.
+  // Two is enough because the tutorial's river keeps its meander inside its own
+  // banks; a river that snaked further than that would need one per bend.
+  const TUT_CAMP_RUN = [0.14, 0.88];
 
   // A forest mob, not a lane creep. 70 health against a lane creep's 320, so a
   // blink — 150 at level one — kills one outright, which is the thing step 3 is
@@ -11269,8 +11283,24 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'The forest',
-    text:()=>'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. Follow the line.',
-    goal:()=>'Clear the marked camp',
+    // Three legs, and the card changes with each one. The camp is east of the
+    // river and near the bottom of it, so the way there can be routed up the
+    // bank, into the water, and down the whole length of the run before it turns
+    // east — which is the only way a player finds out that water has a direction
+    // without being told to go and stand in some for no reason. It is a detour,
+    // not a shortcut, and the copy says so.
+    text(){
+      const leg = tut.p.leg || 0;
+      if(leg === 1) return 'Water runs one way, and this river runs <b>south</b> &mdash; the specks drifting on the surface are going where it is going. Go <b>with</b> it, down to the next ring, and it carries you at <b>half again</b> your speed. Fight it or cut across it and you are wading at two thirds, which is what you did on the way in. Follow the bend round as it turns: the push is only there while you are pointed the way the water is.';
+      if(leg >= 2) return 'Out of the water and <b>east</b>. The camp is in the trees: <b>neutral</b>, soft, worth experience, and ringed thickly enough that you will not see it until you are in it.';
+      return 'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. The line goes by way of the river, which is the long way round and worth walking once.';
+    },
+    goal(){
+      const leg = tut.p.leg || 0;
+      if(leg === 0) return 'Wade into the river';
+      if(leg < TUT_CAMP_RUN.length) return 'Ride the current downstream';
+      return 'Clear the marked camp';
+    },
     enter(){
       // The jungle has been empty until now on purpose. This is the step that
       // stocks it, so the first forest mob you meet is one you were sent to.
@@ -11283,6 +11313,37 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const c of camps){ const d = dist(h.x,h.y,c.x,c.y); if(c.alive>0 && d<bd){ bd = d; best = c; } }
       tut.p.camp = best;
       if(best) tut.mark = { x:best.x, y:best.y, r:110, col:'#8CE39B', label:'CAMP', mini:true };
+      tut.p.leg = 0;
+      // Placed off the river's own centreline rather than at a guessed x, so
+      // they sit in the channel wherever the wobble has put it, and a hero who
+      // walks into one is standing in the water by construction.
+      tut.rings = [];
+      const rv = rivers[0];
+      // The flow tangent rides along with each ring, so the tick below can tell
+      // when the current has carried you past one rather than only when you
+      // have walked into the middle of it.
+      if(rv) for(const t of TUT_CAMP_RUN){
+        const q = riverAt(rv, t);
+        tut.rings.push({ x:q.x, y:q.y, r:70, hit:false, tx:q.tx, ty:q.ty });
+      }
+    },
+    tick(){
+      const h = tutHero(), r = tut.rings[0];
+      if(!h || !r) return;
+      // Either walk into it, or be in the water and let the current carry you
+      // past it. You come at the first ring from the bank, so you clip its edge
+      // rather than its middle, and then ride the channel a half-width off the
+      // line the rings sit on — doing exactly what was asked while missing the
+      // next circle down one side. A waypoint that punishes that teaches the
+      // player to distrust the line.
+      const past = r.tx !== undefined && inRiver(h.x, h.y) &&
+                   (h.x - r.x)*r.tx + (h.y - r.y)*r.ty > 0;
+      if(past || dist(h.x,h.y,r.x,r.y) < r.r){
+        addPing(r.x, r.y, '#8CE39B', 20, 84, 0.5);
+        tut.rings.shift();
+        tut.p.leg = (tut.p.leg||0) + 1;
+        tutPaint();                      // the card says something new each leg
+      }
     },
     done(){
       const c = tut.p.camp;
