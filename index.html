@@ -8334,12 +8334,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // player who WENT somewhere to chop, and who may well chop the next tree
   // before walking back for the pile.
   const WOOD_TTL = ORB_TTL*2;
-  // Chopping should not stall to be paid. Measured from the logs landing to the
-  // last of the three banked, in GAME seconds — which is what a player at 60fps
-  // waits, and is not the same as wall time under a headless browser at 12fps.
-  // It came down in three steps and every number here was measured, not reasoned
-  // about; the first two were both wrong for reasons no amount of reading the
-  // code would have shown:
+  // Chopping should not stall to be paid, and the wood has to be SEEN. Those are
+  // different requirements and the first one was cut down three times before it
+  // became clear the second was the one failing. Every number is measured, in
+  // GAME seconds — what a player at 60fps waits, which is not wall time under a
+  // headless browser at 12fps — from the logs landing to the last of the three
+  // banked:
   //
   //   1.70s  a log was not offered a collector while its mode was still 'pop',
   //          AND its dwell only started counting once the pop had ended. The pop
@@ -8348,13 +8348,21 @@ window.addEventListener('DOMContentLoaded', function(){
   //   0.70s  one timer, from the drop, with the pop no longer a gate. Still slow,
   //          and a frame-by-frame trace said why: the logs were OVERSHOOTING the
   //          hero and bouncing — see the clamp in updatePickup.
-  //   0.35s  the overshoot fixed, and the timer cut to a beat.
+  //   0.35s  the overshoot fixed, and the timer cut to a beat. Fast, and wrong:
+  //          the wood was never once on screen by itself. The whole tail fitted
+  //          inside the trunk's own fade.
+  //   0.95s  the same beat, counted from the tree being GONE. Longer end to end
+  //          and correct, which is the trade this constant is actually about.
   //
-  // WOOD_DWELL is that beat: the log is inert for this long where it landed, and
-  // is drawn spinning for every frame of it. Below about a tenth of a second the
-  // magnet takes a log that is still visibly flying out of the trunk, which is
-  // the one thing on the other side of this trade.
-  const WOOD_DWELL = 0.22;
+  // WOOD_DWELL is that beat, and it is counted from the moment the TREE IS GONE,
+  // not from the moment the logs land. Those are not the same instant: the wood
+  // comes off the trunk as it hits the ground, which is 62% of the way through
+  // the topple, and the sprite is still lying there fading for the rest of it.
+  // Timed from the drop, the whole tail expired while the trunk was still on
+  // screen and the logs were never once seen on their own. So spawnWood is
+  // handed the fall it still has to wait out, and this is the clear time after
+  // it — 0.4s of three logs on bare grass with nothing else in the frame.
+  const WOOD_DWELL = 0.4;
   // Wood is not fought over — no enemy hero can take it and no ally competes for
   // it — so its magnet does not have to be the careful little one the coins
   // share. A wider reach means all three logs are always in range of whoever
@@ -8426,19 +8434,26 @@ window.addEventListener('DOMContentLoaded', function(){
         // At the stump, not out along the fallen trunk. A pile thrown to the far
         // side of the tree is another 30 units away from whoever just chopped
         // it, which is enough to leave a log sitting outside the magnet.
-        spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE);
+        // Read off the fall rather than typed: whatever is left of TREE_FALL_TIME
+        // is exactly how long the trunk still has to fade, so the logs' clear
+        // time starts when it goes and follows it if the topple is ever retuned.
+        spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE, TREE_FALL_TIME - t.fallT);
       }
       if(t.fallT >= TREE_FALL_TIME) fellingTrees.splice(i, 1);
     }
   }
-  function spawnWood(x, y, n){
+  // `hold` is dead time added in front of every log's dwell: whatever is left of
+  // the tree's topple, so the clear 0.4s starts when the trunk finishes fading
+  // rather than while it is still lying across them.
+  function spawnWood(x, y, n, hold){
     for(let i=0;i<n;i++){
       // Slower out of the trunk than a coin is out of a kill. A log thrown as
       // hard as a coin can land past the magnet's reach, and a tree you felled
       // standing right next to it should not leave one log stranded a step away.
       const a = rand(0, Math.PI*2), speed = rand(55,130);
       woodDrops.push({ x, y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed,
-        mode:'pop', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL, dwell:WOOD_DWELL });
+        mode:'pop', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL,
+        dwell:WOOD_DWELL + (hold || 0) });
     }
   }
   // Wood is the player's. The enemy team has no use for it and nothing to spend
