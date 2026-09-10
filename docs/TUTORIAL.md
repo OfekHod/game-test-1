@@ -145,6 +145,36 @@ the heading it is given rather than sweeping once around the clock, so a blocked
 direction yields the nearest clear one instead of something most of the way
 around.
 
+It also has to be somewhere you can **see**, which is not the same test as
+somewhere clear of a trunk. Checking only "is the spot inside a tree" put a mob
+84 units from a hedge trunk and called it placed, and a tree hides things from
+much further off than that, two ways:
+
+- **The canopy is drawn above the trunk.** A tree's sprite is about 250 wide and
+  265 tall against a collision radius of 40, and the field is sorted by `y`, so
+  anything standing *north* of a trunk is painted over by leaves it never went
+  near.
+- **The trunk carves the fog.** Vision rays stop at the near face, so a trunk on
+  the line between you and the mob puts the mob in the wedge behind it — where
+  it is not drawn at all.
+
+The walking step ends at the hedge, and the hedge is *inside* the practice box
+because that step needs it there. So every step after it measured its spread
+from a hero standing next to nine of the tallest trees on the map: the pack step
+would spawn five mobs behind them and ask you to clear five mobs you could not
+see. `tutHiddenByTree` is both tests — the sprite's own rectangle, and the line
+of sight from the hero you are driving, not from the centre of the spread — and
+`tutOpenSpot` walks its ring at three distances (0.78, 1 and 1.24 of the asked
+radius) so a heading blocked by a canopy steps in or out rather than swinging
+the target round to the far side of the hero. Bushes and rocks get the sprite
+test only: they are drawn over things but they do not cut the fog.
+
+Two fallbacks sit behind it, in this order: somewhere visible but outside the
+box, then somewhere inside the box but hidden. Visible wins, because the box
+only decides where the practice ground *sits*, and the one rule it carries that
+can actually hurt you — a wide berth from their towers — is checked on its own
+and holds in every branch.
+
 **3 · The blink.** The "teleport" is the carry's existing `Dash` — a blink
 forward that damages what it passes through, grants i-frames, and refunds its own
 cooldown on a kill. The step insists on the blink for the kill: shoot the creep
