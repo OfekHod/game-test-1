@@ -6760,6 +6760,18 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     ctx.restore();
   }
+  // The droplets a footstep in water throws up. Drawn here, with the ripples
+  // and under the y-sorted units, rather than in the shared particle pass
+  // that goes over everything — a splash thrown at the feet used to land in
+  // front of them, burying the boots that made it every step.
+  function drawSplashes(){
+    for(const pt of particles){
+      if(!pt.water) continue;
+      const a=1-pt.life/pt.maxLife;
+      ctx.beginPath(); ctx.arc(pt.x,pt.y,(pt.pr||4)*a,0,7);
+      ctx.fillStyle=pt.color; ctx.globalAlpha=a; ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
   // A step in water: a ring on the surface plus a few droplets thrown up. The
   // droplets go UP and OUT in a fan no wider than 60 degrees off vertical —
   // thrown around a full circle, half of them set off sideways along the
@@ -6775,7 +6787,7 @@ window.addEventListener('DOMContentLoaded', function(){
       particles.push({ x:x+rand(-6,6), y:y+rand(-2,2),
         vx:Math.sin(a)*sp, vy:-Math.cos(a)*sp - rand(14,34)*power,
         life:0, maxLife:rand(0.40,0.66), pr:rand(5,8),
-        color:i%3 ? '#CFEFFF' : '#FFFFFF', grav:260 });
+        color:i%3 ? '#CFEFFF' : '#FFFFFF', grav:260, water:true });
     }
   }
   const HERO_ATK_ANIM = 0.42;    // how long an attack animation plays
@@ -12496,6 +12508,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawBurns();            // scorched ground, under everything that walks on it
     drawRipples();          // on the surface, so units stand in them
+    drawSplashes();         // droplets thrown at the feet, under the boots that threw them
     drawHeroTrails(playerTeam, TRAIL_RGB.player);   // ground level: everything walks over them
     drawHeroTrails(enemyTeam,  TRAIL_RGB.enemy);
     // The wake of every shot, under everything that walks: gunsmoke drawn over
@@ -12741,6 +12754,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawEmbers();
     for(const pt of particles){
+      if(pt.water) continue;   // drawn earlier, under the units, with the ripples
       if(pt.loot && !isVisible(pt.x,pt.y,4)) continue;   // a hidden coin's trail
       const a=1-pt.life/pt.maxLife;
       // pr for anything that wants to be smaller than a scuff of dust — a
