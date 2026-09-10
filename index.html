@@ -6413,10 +6413,14 @@ window.addEventListener('DOMContentLoaded', function(){
   let woodReady = false;
   woodImg.onload = ()=>{ woodReady = true; };
   woodImg.src = 'data:image/png;base64,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';
-  function drawWoodSprite(x, y, hop, bobT, size){
+  // `z` is height above the ground, positive up. The sprite is lifted by it and
+  // the shadow is NOT — it stays on the grass and shrinks, which is the whole
+  // trick: without it a log in the air is just a log drawn slightly higher up.
+  function drawWoodSprite(x, y, z, bobT, size){
     const w = size || WOOD_DRAW, h = w*(WOOD_FRAME_H/WOOD_FRAME_W);
-    ctx.save(); ctx.translate(x, y+hop);
-    softShadow(ctx, 0, -hop+h*0.42, w*0.34, w*0.13, 0.9);
+    ctx.save(); ctx.translate(x, y - z);
+    const k = 1/(1 + z/70);
+    softShadow(ctx, 0, z + h*0.42, w*0.34*k, w*0.13*k, 0.9*k);
     if(woodReady){
       const f = Math.floor(bobT*WOOD_FPS) % WOOD_FRAMES;
       ctx.drawImage(woodImg, f*WOOD_FRAME_W, 0, WOOD_FRAME_W, WOOD_FRAME_H, -w/2, -h/2, w, h);
@@ -8370,13 +8374,14 @@ window.addEventListener('DOMContentLoaded', function(){
   // crawling in at the shared magnet's slowest speed; the multiplier is what
   // turns the rest of the tail into a flick.
   //
-  // The reach also has to cover WOOD_THROW. Worst case is a tree felled at the
-  // very end of the tank's reach: 123 of reach plus the trunk's own radius puts
-  // him about 145 out, the throw adds 42 more and the pop can carry a log 35
-  // further still — 222, so 260 leaves a margin. A log that lands outside this
-  // is not collected at all until the player walks back to it, and with a 30s
-  // TTL it would simply rot.
-  const WOOD_MAGNET_RADIUS = 260;
+  // The reach also has to cover WOOD_THROW and the toss. Worst case is a log
+  // thrown straight away from a tree felled at the very end of the tank's reach:
+  // 123 of reach plus the trunk's radius puts him ~148 out, the throw adds 42,
+  // 0.57s of flight at the top launch speed adds 43, and the skid after it adds
+  // 19 — 252. A log that lands outside this is not collected at all until the
+  // player walks back to it, and on a 30s TTL it would simply rot, so the margin
+  // is the point rather than a rounding.
+  const WOOD_MAGNET_RADIUS = 280;
   const WOOD_MAGNET_MULT = 2.2;
   // How far past the trunk the logs are thrown, along the line the blow came in
   // on, so they land on the FAR side of the tree from whoever swung. They used
@@ -8384,6 +8389,26 @@ window.addEventListener('DOMContentLoaded', function(){
   // pickup that lands at your feet is not a pickup — it is a number going up.
   // Given somewhere to travel from, the draw-in reads as collecting them.
   const WOOD_THROW = 42;
+  // ---- the toss ----
+  // A log leaves the trunk with height on it and falls, rather than arriving on
+  // the grass already lying flat. Height is its own axis, drawn as an offset up
+  // the screen with the shadow left behind on the ground — which is the only way
+  // a top-down view can say that a thing is in the air at all.
+  //
+  // Off the cut at 500-620 against gravity of 2200, from a start 18-34 up, the
+  // log peaks about 95 units above the ground — better than two of its own
+  // lengths — and is down in 0.55s; two smaller bounces put it to rest around
+  // 0.9s. The whole of that fits inside the fall it has to wait out anyway
+  // (TREE_FALL_TIME), so it is settled and still by the time the clear 0.4s
+  // starts. Heavy gravity with a hard launch rather than the other way round: a
+  // floaty arc of the same height reads as a balloon, not as a log.
+  const WOOD_GRAVITY = 2200;
+  const WOOD_TOSS_UP = [500, 620];
+  const WOOD_START_Z = [18, 34];
+  const WOOD_BOUNCE = 0.42;      // of the speed it landed with
+  const WOOD_BOUNCE_STOP = 60;   // below this it stays down instead of hopping again
+  const WOOD_SKID = 0.02;        // horizontal decay per second, and ONLY while it is touching
+  const WOOD_AIR_SPIN = 1.4;     // extra turn while it is off the ground, on top of the base
   const CHIP_COLORS = ['#C99A5F','#8A6236','#E0BB84','#5C401F'];
   function woodChips(x, y, ang, n){
     for(let i=0;i<n;i++){
@@ -8435,7 +8460,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const al = Math.max(1, dist(h.x, h.y, t.x, t.y));
     const ax = (t.x - h.x)/al, ay = (t.y - h.y)/al;
     spawnWood(t.x + ax*WOOD_THROW, t.y + t.r*TREE_SINK + ay*WOOD_THROW,
-              WOOD_PER_TREE, TREE_FALL_TIME);
+              WOOD_PER_TREE, TREE_FALL_TIME, Math.atan2(ay, ax));
     if(h.side === 'player') shake = Math.max(shake, 0.22);
   }
   function updateTrees(dt){
@@ -8461,16 +8486,50 @@ window.addEventListener('DOMContentLoaded', function(){
   // `hold` is dead time added in front of every log's dwell: the tree's whole
   // topple, so the clear 0.4s starts when the trunk finishes fading rather than
   // while it is still coming down across them. The logs are on screen and
-  // tumbling for all of it — held only means not yet magnetic.
-  function spawnWood(x, y, n, hold){
+  // tumbling for all of it — held only means not yet magnetic. `away` is the
+  // heading the blow came in on, which the toss throws them along.
+  function spawnWood(x, y, n, hold, away){
     for(let i=0;i<n;i++){
       // Slower out of the trunk than a coin is out of a kill. A log thrown as
       // hard as a coin can land past the magnet's reach, and a tree you felled
       // standing right next to it should not leave one log stranded a step away.
-      const a = rand(0, Math.PI*2), speed = rand(55,130);
+      // Slower across the ground than it used to be, because the height is doing
+      // the work now and there is no drag in the air to eat the rest: at the old
+      // 55-130 a log stayed at launch speed for the whole 0.57s of flight and
+      // then skidded, and the far ones landed outside even a 260 magnet.
+      // Thrown OUTWARD, not scattered: within 70 degrees of the line the blow
+      // came in on. A uniform angle sent half of them back over the chopper's
+      // head, which lands them nearer than they started and reads as the tree
+      // dribbling rather than throwing.
+      const a = (away === undefined ? rand(0, Math.PI*2) : away + rand(-1.2, 1.2));
+      const speed = rand(30,75);
+      // 'toss' rather than 'pop': the shared pop is a flat slide with an
+      // exponential brake on it, which is right for a coin skittering along the
+      // ground and wrong for something thrown off a trunk. updatePickup leaves
+      // this mode alone and updateWoodToss flies it instead.
       woodDrops.push({ x, y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed,
-        mode:'pop', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL,
+        z: rand(WOOD_START_Z[0], WOOD_START_Z[1]),
+        vz: rand(WOOD_TOSS_UP[0], WOOD_TOSS_UP[1]),
+        mode:'toss', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL,
         dwell:WOOD_DWELL + (hold || 0) });
+    }
+  }
+  // Ballistics, and nothing else: no drag in the air, because a log this size
+  // thrown this far does not have any worth drawing. Speed comes off it only
+  // when it is touching the ground, which is what makes the skid after the
+  // landing read as a skid rather than as the air braking it.
+  function updateWoodToss(w, dt){
+    w.x += w.vx*dt; w.y += w.vy*dt;
+    w.vz -= WOOD_GRAVITY*dt;
+    w.z += w.vz*dt;
+    if(w.z > 0){ w.bobT += dt*WOOD_AIR_SPIN; return; }   // tumbling faster while it flies
+    w.z = 0;
+    // Bounce, until the hop left in it is too small to see, and then lie still.
+    w.vz = w.vz < -WOOD_BOUNCE_STOP ? -w.vz*WOOD_BOUNCE : 0;
+    const decay = Math.pow(WOOD_SKID, dt);
+    w.vx *= decay; w.vy *= decay;
+    if(w.vz === 0 && Math.abs(w.vx) < 5 && Math.abs(w.vy) < 5){
+      w.vx = 0; w.vy = 0; w.mode = 'idle';
     }
   }
   // Wood is the player's. The enemy team has no use for it and nothing to spend
@@ -8496,6 +8555,7 @@ window.addEventListener('DOMContentLoaded', function(){
         w.ttl -= dt;
         if(w.ttl <= 0){ woodDrops.splice(i,1); continue; }
       }
+      if(w.mode === 'toss') updateWoodToss(w, dt);
       // Nothing is magnetic for its first WOOD_DWELL seconds: the collector is
       // simply not offered until then.
       if(w.dwell > 0) w.dwell -= dt;
@@ -10730,14 +10790,15 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const m of manaOrbs){ if(onScreen(m.x,m.y,30)) drawManaOrb(m); }
     for(const w of woodDrops){
       if(!onScreen(w.x,w.y,34)) continue;
-      const hop = w.mode==='idle' ? Math.abs(Math.sin(w.bobT*3))*4 : 0;
+      // Its own height off the ground, plus the small breath a settled log keeps.
+      const z = (w.z || 0) + (w.mode==='idle' ? Math.abs(Math.sin(w.bobT*3))*3 : 0);
       const fade = (w.ttl !== undefined && w.ttl < 2.5) ? Math.max(0, w.ttl/2.5) : 1;
       if(fade < 1){
         ctx.save(); ctx.globalAlpha = fade;
-        drawWoodSprite(w.x, w.y, hop, w.bobT, WOOD_DRAW*pickupScale(w));
+        drawWoodSprite(w.x, w.y, z, w.bobT, WOOD_DRAW*pickupScale(w));
         ctx.restore();
       } else {
-        drawWoodSprite(w.x, w.y, hop, w.bobT, WOOD_DRAW*pickupScale(w));
+        drawWoodSprite(w.x, w.y, z, w.bobT, WOOD_DRAW*pickupScale(w));
       }
     }
 
