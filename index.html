@@ -3256,6 +3256,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // What the camera actually did last frame, in view units per second. Measured
   // rather than read off the curve, so a rocket the camera is chasing counts too.
   let camVX = 0, camVY = 0, camSpeed = 0;
+  // The world point the camera is easing toward while a team-mate's order drag
+  // has pushed the pointer past the edge of the screen. Null whenever no drag
+  // has reached an edge; set once and held until the drag ends. See updateCamera.
+  let dragPanCam = null;
   let gameMode = 'regular';       // 'regular' | 'survival'
   let survWave = 0;            // waves started this round; also the wave you are fighting
   let survBreak = 0;           // seconds left of the lull before the next wave marches
@@ -8756,6 +8760,13 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   let orderDrag = null;   // {hero, x, y, moved, id?}
   let lastDragMoved = 0;  // distance of the drag that just ended, for the click after it
+  // True once a press on a team-mate is a real drag and not still a click
+  // deciding what it is — a left press only counts after it clears LEFT_DRAG_SLOP
+  // and gets armed; every other kind (right-click, chip, touch) is a drag from
+  // the moment it starts. Used to gate the edge-pan in updateCamera.
+  function dragOrderEngaged(){
+    return !!orderDrag && (!orderDrag.fromLeft || orderDrag.armed);
+  }
 
   // ---------- touch controls (virtual joysticks) ----------
   const touchLayer = document.getElementById('touchLayer');
@@ -10568,6 +10579,12 @@ window.addEventListener('DOMContentLoaded', function(){
   const CAM_GLIDE_MIN = 0.38;     // seconds for a slide of no distance at all
   const CAM_GLIDE_MAX = 0.82;     // ...and for one the width of CAM_GLIDE_SPAN
   const CAM_GLIDE_SPAN = 2600;
+  // Edge-pan while dragging a team-mate's order marker: the margin is a share of
+  // the shorter screen dimension, so it reads the same on a tall phone as on a
+  // wide desktop window, and the pan speed is likewise a share of that dimension
+  // per second rather than a fixed world distance.
+  const EDGE_PAN_MARGIN_FRAC = 0.12;
+  const EDGE_PAN_SPEED_FRAC = 0.9;
   // Arm a glide. The point it is going to is NOT known here — callers set the
   // new subject around this call, and focusHero sets it afterwards — so the
   // shape is worked out on the next frame, by armGlide, once updateCamera has
@@ -10637,10 +10654,38 @@ window.addEventListener('DOMContentLoaded', function(){
       if(rocketCamHold === 0){ rocketCamTail = null; glideCam(0.85); }   // slide home to the tank
     }
     const ride = rocketCam || rocketCamTail;
+    // Dragging a team-mate's order marker out to the rim of the screen pans the
+    // camera after it, the same as holding the minimap does, so the drag can
+    // reach further than the one screenful it started on. It only engages once
+    // the pointer actually reaches the margin — a drag that never nears an edge
+    // leaves the camera on its usual subject — and once engaged it holds the
+    // panned view (rather than snapping back the instant the pointer drifts back
+    // toward the middle) until the drag ends, below.
+    if(dragOrderEngaged()){
+      const margin = Math.min(W,H) * EDGE_PAN_MARGIN_FRAC;
+      // The bottom dock (stat strip + HP/MP/ability bar) sits over the canvas
+      // rather than shrinking it, so the world is already hidden well above the
+      // literal bottom edge whenever it is showing. Reaching its top counts as
+      // reaching the screen edge, the same as the rim does everywhere else.
+      const dockPx = bottomDock.classList.contains('hidden') ? 0 : bottomDock.offsetHeight;
+      const bottomMargin = Math.max(margin, dockPx * (H / Math.max(1, layoutH)));
+      const edgeAxis = (pos, size, near, far) => pos < near ? -(near-pos)/near
+                        : pos > size-far ? (pos-(size-far))/far : 0;
+      const vx = edgeAxis(orderDrag.sx, W, margin, margin), vy = edgeAxis(orderDrag.sy, H, margin, bottomMargin);
+      if(vx || vy){
+        if(!dragPanCam) dragPanCam = { x: h?h.x:camera.x+W/2, y: h?h.y:camera.y+H/2 };
+        const panSpeed = Math.min(W,H) * EDGE_PAN_SPEED_FRAC;
+        dragPanCam.x = Math.min(WORLD_W, Math.max(0, dragPanCam.x + vx*panSpeed*dt));
+        dragPanCam.y = Math.min(WORLD_H, Math.max(0, dragPanCam.y + vy*panSpeed*dt));
+      }
+    } else if(dragPanCam){
+      dragPanCam = null;
+      glideCam(0.8);      // let go out at the edge: slide back to your own hero
+    }
     // Scouting still wins: a finger on the minimap is you asking for the view,
     // and letting go snaps back to the shell if it is somehow still flying.
-    const fx = scout ? scout.x : (ride ? ride.x : (h?h.x:0));
-    const fy = scout ? scout.y : (ride ? ride.y : (h?h.y:0));
+    const fx = scout ? scout.x : (dragPanCam ? dragPanCam.x : (ride ? ride.x : (h?h.x:0)));
+    const fy = scout ? scout.y : (dragPanCam ? dragPanCam.y : (ride ? ride.y : (h?h.y:0)));
     const desiredX = Math.min(WORLD_W-W, Math.max(0, fx - W/2));
     const desiredY = Math.min(WORLD_H-H, Math.max(0, fy - H/2));
     const px = camera.x, py = camera.y;
@@ -10673,6 +10718,16 @@ window.addEventListener('DOMContentLoaded', function(){
       // Lightly smoothed: at a low frame rate the per-frame delta is noisy
       // enough to make the smear it feeds flicker.
       camSpeed += (raw-camSpeed)*Math.min(1, dt*20);
+    }
+    // The drag's world target is otherwise only refreshed when the pointer
+    // itself moves, so a finger held still at the edge while the camera keeps
+    // panning under it would leave the order aimed at stale ground. sx/sy are
+    // the screen-fixed canvas coords recorded on the last real pointer move;
+    // re-deriving x/y from them against the camera we just moved keeps the
+    // order aimed at whatever is now actually under the pointer.
+    if(dragOrderEngaged()){
+      orderDrag.x = orderDrag.sx + camera.x;
+      orderDrag.y = orderDrag.sy + camera.y;
     }
   }
 
