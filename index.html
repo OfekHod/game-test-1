@@ -14750,7 +14750,11 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!p.metCreeps) return '2 · Get to the ' + p.laneName + ' lane';
       const t = p.tower;
       const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
-      return '3 · Destroy their outpost — ' + left + '% left';
+      // This line doubles as the label that floats over your own head — the
+      // one thing visible to someone who never looks down at the card — so
+      // "stay behind them" has to ride along with "destroy it", not just
+      // live in the card text below.
+      return '3 · Follow your creeps to destroy the outpost — ' + left + '% left';
     },
     hl:()=>partyEl,
     enter(){
