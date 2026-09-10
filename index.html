@@ -5621,6 +5621,39 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOREST_BUSH_K = 1.02;                // drawn width, in units of r
   const treeImg = new Image(), bushImg = new Image(), rockImg = new Image();
   let treeImgReady = false, bushImgReady = false, rockImgReady = false;
+  // Seven of the frames above are packed tight enough that their rectangle
+  // clips a few pixels off the sprite NEXT to them on the sheet. Each stray
+  // sits hard against one edge of the frame with clear space between it and the
+  // sprite the frame is actually for — tree 12's is four rows tall with thirteen
+  // empty rows under it — so it does not read as part of the art. It reads as a
+  // small dark speck floating beside the tree. On grass it hides in the
+  // undergrowth; over a river, where there is nothing for a dark speck to hide
+  // in, it reads as a bug on the screen, because it is one.
+  //
+  // Trimming the frames would also fix it, but a frame's rectangle is what sets
+  // the sprite's drawn size and where it hangs over its own trunk, so trimming
+  // moves the art. Wiping the strays out of the sheets instead costs three
+  // canvases once at load and leaves every sprite exactly where it was: the
+  // boxes below were measured by walking every frame for opaque blobs that touch
+  // its edge and are not joined to the sprite's body, and each is checked to
+  // clear the stray whole while staying off the sprite.
+  const SHEET_BLEED = {
+    tree: [[165,21,4,8], [169,73,6,12], [285,56,6,15],
+           [473,189,5,7], [0,336,5,18], [6,395,8,6]],
+    bush: [],                 // checked and clean, listed so it reads as checked
+    rock: [[231,61,8,5]]
+  };
+  // Drawn from these from here on, not from the Image. A canvas is as good a
+  // source as an image to drawImage, and it is the only way to edit one.
+  let treeSheet = null, bushSheet = null, rockSheet = null;
+  function scrubSheet(img, rects){
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    if(rects) for(const b of rects) g.clearRect(b[0], b[1], b[2], b[3]);
+    return c;
+  }
   // The whole world canvas is baked once, so a decoded atlas means re-baking
   // it. Three atlases would mean three bakes of a 4000x4000 canvas at load, so
   // wait for the last one instead — and count a failure as arrived, or one
@@ -5628,9 +5661,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // procedural stand-ins.
   let decorPending = 3;
   function decorArrived(){ if(--decorPending === 0) drawBackground(); }
-  treeImg.onload = ()=>{ treeImgReady = true; decorArrived(); };
-  bushImg.onload = ()=>{ bushImgReady = true; decorArrived(); };
-  rockImg.onload = ()=>{ rockImgReady = true; decorArrived(); };
+  treeImg.onload = ()=>{ treeSheet = scrubSheet(treeImg, SHEET_BLEED.tree); treeImgReady = true; decorArrived(); };
+  bushImg.onload = ()=>{ bushSheet = scrubSheet(bushImg, SHEET_BLEED.bush); bushImgReady = true; decorArrived(); };
+  rockImg.onload = ()=>{ rockSheet = scrubSheet(rockImg, SHEET_BLEED.rock); rockImgReady = true; decorArrived(); };
   treeImg.onerror = bushImg.onerror = rockImg.onerror = decorArrived;
   // Deterministic per map so the ground looks identical every time you replay it.
   function mulberry(a){
@@ -5848,7 +5881,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function drawDecor(g, d){
     const rock = d.kind === 'rock';
-    const img = rock ? rockImg : bushImg, ready = rock ? rockImgReady : bushImgReady;
+    const img = rock ? rockSheet : bushSheet, ready = rock ? rockImgReady : bushImgReady;
     g.save(); g.translate(d.x, d.y);
     if(d.flip) g.scale(-1,1);
     if(ready) g.drawImage(img, d.f[0], d.f[1], d.f[2], d.f[3], -d.w/2, d.h*0.16-d.h, d.w, d.h);
@@ -5898,7 +5931,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function drawTree(gctx, t){
     const bush = t.bush !== undefined;
-    const img = bush ? bushImg : treeImg, ready = bush ? bushImgReady : treeImgReady;
+    const img = bush ? bushSheet : treeSheet, ready = bush ? bushImgReady : treeImgReady;
     gctx.save(); gctx.translate(t.x,t.y);
     // No shadow drawn here: a tree is in the sorted pass now, and a shadow that
     // moves with it would be drawn over whatever it is standing in front of.
@@ -6693,8 +6726,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // scratch. The river is cut into stretches and the specks shared out between
   // them, so a long river carries the cue along its whole length rather than
   // only where one loop happens to be.
-  const FLOW_N = 52;          // specks per river
-  const FLOW_STRETCH = 4;     // stretches they are shared out between
+  const FLOW_N = 104;         // specks per river
+  const FLOW_STRETCH = 8;     // stretches they are shared out between
   const FLOW_SPEED = 64;      // units a second, mid-stream
   function hash1(n){ const s = Math.sin(n*127.1)*43758.5453; return s - Math.floor(s); }
   function drawFlow(rv, now){
