@@ -274,7 +274,7 @@
      sentence under them repeating the same controls. The icon art below
      already reads as "this is your skill" on sight, so the slot holds only
      that square now. */
-  .ability{position:relative;width:56px;height:56px;border-radius:14px;border:2px solid transparent;
+  .ability{position:relative;width:56px;height:56px;border-radius:14px;border:2px solid var(--panel-border);
     display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;}
   .ability .cd{position:absolute;left:0;right:0;bottom:0;background:rgba(60,40,10,.55);height:0%;}
   /* While the tank's shell is in the air the skill is a detonator, so the button
@@ -657,10 +657,17 @@
      this button, and a margin steps all of them off the rounded corner without
      each having to repeat the insets. */
   .skillBtn{position:absolute;right:5%;bottom:15%;margin:0 var(--sar) var(--sab) 0;
-    width:78px;height:78px;border-radius:20px;border:3px solid transparent;
+    width:78px;height:78px;border-radius:20px;border:3px solid var(--panel-border);
     display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:8;}
   .skillBtn .skillIcon{width:66px;height:66px;border-radius:14px;}
-  .skillBtn .cdRing{position:absolute;inset:0;border-radius:20px;background:conic-gradient(rgba(60,40,10,.6) calc(var(--cd,0)*360deg), transparent 0);}
+  /* A conic-gradient sweep reads as a clock hand no matter what it is clipped
+     to, which is exactly wrong on a square button. Masked down to a frame —
+     the ring traces the button's own border instead of wiping across the
+     icon — the same sweep reads as a square timer instead. */
+  .skillBtn .cdRing{position:absolute;inset:0;padding:5px;border-radius:20px;
+    background:conic-gradient(rgba(60,40,10,.85) calc(var(--cd,0)*360deg), transparent 0);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;}
   .mobileHint{position:absolute;left:0;right:0;bottom:calc(6px + var(--sab));text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
   /* Survival's wave call. It is the only thing on screen that announces itself,
