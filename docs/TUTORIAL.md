@@ -73,9 +73,9 @@ Authoring the ground is what finally made the opening quiet.
 ## The steps
 
 Each step is one card, one thing to learn, one condition that clears it. The
-card never blocks play — it is transparent to input except its own buttons, so a
-tap that lands on it still shoots. Every step has **Skip step**, and **Exit**
-drops you back to the menu.
+card **folds**: what is on screen while you play is a title, one line of about
+twenty words, and the task. Tapping it unfolds the rest of the copy and the two
+controls — **Skip step**, and **Exit**, which drops you back to the menu.
 
 | # | Step | What comes on | Cleared by |
 |---|---|---|---|
@@ -84,8 +84,8 @@ drops you back to the menu.
 | 3 | **The blink** | One forest mob, 470 units out, auto-assist off | Killing it *with the blink* |
 | 4 | **Experience and mana** | A pack of five mobs, drops switched on, assist back on | Clearing them and picking up the drops |
 | 5 | **Levels and stats** | Stat strip pulses; a level granted if you lack one | Spending a point |
-| 6 | **Your squad** | Tank and support walk out of the base | Taking control of each |
-| 7 | **Rocket and heal** | A mob each for them | Casting both skills |
+| 6 | **Your squad** | Tank and support walk out of the base; two mobs for the blast | Taking the tank over, *then* firing his rocket |
+| 7 | **Your support** | — | Taking the support over, *then* casting his heal |
 | 8 | **Orders** | A marked spot on the ground | Posting a hero on it |
 | 9 | **Assemble** | The ASSEMBLE button pulses | Calling the squad back |
 | 10 | **The forest** | The camp is stocked and ringed, and two rings route you there down the river | Clearing it |
@@ -95,6 +95,13 @@ drops you back to the menu.
 | 14 | **The enemy** | Their carry walks over and spars | Landing a hit on him yourself |
 | 15 | **Push a lane, take a tower** | Wave spawning, both sides; their whole team sent home | Assembling, sending the squad down a lane, and destroying an enemy outpost |
 | 16 | **How a round is won** | Scoreboard appears | **Play a Match** |
+
+**Every card was cut down**, without dropping a fact any of them stated. The
+cuts are the usual ones — a clause that restates the clause before it, a
+qualifier the ground already teaches, "your hero" where "you" does the job —
+and the longest card in the tutorial went from 76 words to 40. The rule is that
+the bottom line survives: if a card told you the current gives you half again
+your speed, it still does.
 
 ### Notes on particular steps
 
@@ -145,6 +152,36 @@ the heading it is given rather than sweeping once around the clock, so a blocked
 direction yields the nearest clear one instead of something most of the way
 around.
 
+It also has to be somewhere you can **see**, which is not the same test as
+somewhere clear of a trunk. Checking only "is the spot inside a tree" put a mob
+84 units from a hedge trunk and called it placed, and a tree hides things from
+much further off than that, two ways:
+
+- **The canopy is drawn above the trunk.** A tree's sprite is about 250 wide and
+  265 tall against a collision radius of 40, and the field is sorted by `y`, so
+  anything standing *north* of a trunk is painted over by leaves it never went
+  near.
+- **The trunk carves the fog.** Vision rays stop at the near face, so a trunk on
+  the line between you and the mob puts the mob in the wedge behind it — where
+  it is not drawn at all.
+
+The walking step ends at the hedge, and the hedge is *inside* the practice box
+because that step needs it there. So every step after it measured its spread
+from a hero standing next to nine of the tallest trees on the map: the pack step
+would spawn five mobs behind them and ask you to clear five mobs you could not
+see. `tutHiddenByTree` is both tests — the sprite's own rectangle, and the line
+of sight from the hero you are driving, not from the centre of the spread — and
+`tutOpenSpot` walks its ring at three distances (0.78, 1 and 1.24 of the asked
+radius) so a heading blocked by a canopy steps in or out rather than swinging
+the target round to the far side of the hero. Bushes and rocks get the sprite
+test only: they are drawn over things but they do not cut the fog.
+
+Two fallbacks sit behind it, in this order: somewhere visible but outside the
+box, then somewhere inside the box but hidden. Visible wins, because the box
+only decides where the practice ground *sits*, and the one rule it carries that
+can actually hurt you — a wide berth from their towers — is checked on its own
+and holds in every branch.
+
 **3 · The blink.** The "teleport" is the carry's existing `Dash` — a blink
 forward that damages what it passes through, grants i-frames, and refunds its own
 cooldown on a kill. The step insists on the blink for the kill: shoot the creep
@@ -154,9 +191,24 @@ the next one."* rather than a refusal.
 **5 · Levels and stats.** A level buys three points. If the first four steps did
 not produce a level-up, the step grants one, so it is always reachable.
 
-**6 · Your squad.** They walk out of the base rather than appearing beside you,
-and they arrive at your level — switching to a level-1 tank halfway through a
-tutorial reads as a punishment for switching.
+**6–7 · Your squad, and your support.** They walk out of the base rather than
+appearing beside you, and they arrive at your level — switching to a level-1
+tank halfway through a tutorial reads as a punishment for switching.
+
+Each of these two phases is **one hero and one skill, asked for in that order**:
+take the tank over, then fire his rocket; take the support over, then cast his
+heal. The card, the goal line and the pointer all change at the halfway mark,
+the way the walking phase's do. The earlier split — one phase for both switches,
+then one phase for both skills — put four things in the air at once, gave the
+skills phase a seventy-six-word card describing two skills for heroes you were
+not driving, and left the pointer nothing more specific to aim at than the whole
+party bar.
+
+The order enforces itself: only the tank can fire a rocket, so `cast.tank`
+cannot be set before `seen.tank`. `tutDriving(type)` is what reads the stage,
+and it accepts *either* the `switch` note or the hero you happen to be driving
+already — a player who is still on the tank when phase 7 opens fires no
+`focusHero` and would otherwise never leave stage one.
 
 **8–9 · Orders and Assemble.** The drag gesture is taught here on open ground;
 step 13 points the same gesture at the minimap, and step 15 asks for both at once.
@@ -320,9 +372,68 @@ in world space over your hero's head — high enough to clear two rows of damage
 numbers, which stack upward from the same point. Your eyes are on your hero, not
 on the bottom of the screen.
 
+**And the control it wants is pointed at.** `tutHighlight(el)` puts a pulsing
+ring on a HUD element; it now also parks a bobbing arrow against that element's
+edge, so "take the tank over" aims at the tank's own portrait rather than at the
+party bar, and "fire his rocket" aims at the button that fires it. Three things
+the arrow has to get right:
+
+- **The tip rests *on* the control**, not clear of it. The dock stacks the stat
+  strip a few pixels above the skill button, so an arrow with air under it
+  points at the row above the one it means — it read as pointing at **HPR**.
+  The downward arrow also bobs *into* its target rather than away from it, for
+  the same reason.
+- **Which side it sits on** comes from where the control is: above the middle of
+  the stage and the arrow goes underneath pointing up (the party chips), below
+  it and the arrow goes on top pointing down (the dock, and the phone's skill
+  button).
+- **"The skill button" is two different elements.** The round one only exists on
+  touch; on a desktop the same skill is the **SPACE** slot in the dock, so
+  `tutSkillEl()` picks between them.
+
+It is re-aimed every frame while a phase holds one, because the party bar and
+the dock are laid out in percentages of a stage that resizes.
+
 **The card** is a DOM panel above the bottom dock — the dock's height is measured
 in JS, because the HUD is a percentage of a stage whose height nothing in CSS
-knows. World-space marks are drawn after the fog, on purpose: a mark is what you
+knows.
+
+**And it folds.** A card is a lead of about twenty words, and a tap unfolds the
+rest of it along with Skip step and Exit. On a phone that takes the tallest card
+from 26% of the screen to 12%, and the shortest from 21% to 15%; on a desktop
+from 202px to 75–94px. Four things it has to get right:
+
+- **The cut is made on parsed nodes, not on the string.** Cards carry markup, so
+  a substring lands inside a `<b>` as often as not. An inline run — `<b>double
+  damage</b>`, a `<k>W A S D</k>` — is taken whole rather than split, which
+  overshoots by a word or two and reads better for it.
+- **A full stop at or before the twenty-word mark wins.** Twenty words into the
+  Orders card ends the lead on "He holds", which reads as a bug rather than as a
+  fold. `tutLeadBudget` takes the last sentence ending at or before twenty words
+  (and at least nine in, or it is not a lead), and counts to twenty only when
+  there is none. Half the cards now end their lead on a full stop.
+- **Both passes have to count words the same way**, or they cut in different
+  places: the budget counts on the decoded text, where `orbs.` is one token,
+  while the split counts node by node, where the `.` after a `</b>` is a token
+  of its own. `TUT_WORD` is the shared rule — a token is a word if it holds a
+  letter or a digit, so a stray `.` and an `&mdash;` are neither.
+- **A card a few words over budget does not fold at all.** Hiding "shooting at
+  it." behind a tap buys no height and costs the reader the end of a sentence.
+
+What it cost: the card **used to be transparent to input**, so a tap that landed
+on it still shot. It has to swallow the tap now to be the thing you tap, and it
+stops the touch from also raising the movement stick underneath. Folded it is a
+third of the height it was, so it takes far less of the screen than it did — but
+a tap on it is a tap spent on the card. The step counter moved onto the title's
+line for the same reason: two lines of chrome over a two-line card is most of
+the card.
+
+Desktop aim had to be moved for it. `mouse.x/y` was set only by the canvas's own
+`mousemove`, so it froze wherever a panel swallowed the event — over the party
+chips and the dock already, and now over the card. The window-level `mousemove`
+sets it too, so aim follows the cursor everywhere.
+
+World-space marks are drawn after the fog, on purpose: a mark is what you
 are being sent to find, so it must not be hidden by the fact that you have not
 found it yet. They are sized in world units to match the damage numbers, the only
 other text out there that reads at a glance.
@@ -393,6 +504,11 @@ are all fixes to things that were broken in every mode:
   cares whether the hero actually walks.
 - **The arrow keys move your hero**, in every mode.
 - **The stun freezes**, in every mode — see above.
+- **Aim no longer freezes under a panel**, in every mode. `mouse.x/y` was set
+  only by the canvas's own `mousemove`, so the hero kept pointing where he was
+  pointing whenever the cursor crossed the party chips or the dock. The
+  window-level handler sets it too now. The folding card is what forced it: the
+  card sits bottom-centre and swallows its own events.
 - **A few short lines of trees stand in the Match map's corridor.** Three or four
   trunks with gaps narrower than a hero, so a chase or a retreat through the
   middle is a choice of side rather than a straight line. They are kept off the

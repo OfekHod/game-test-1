@@ -62,34 +62,67 @@ in the repo: `README.md` promises no dependencies and `package.json` has none.
 ```bash
 cd "$SCRATCH" && npm init -y
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i playwright
-ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome     # pass this as executablePath
 ```
+
+**Use `tools/shoot.js` rather than writing the boot sequence again.** It knows
+all of the below — the executable path, the flags, the consent click, the clock
+polling — and takes a picture at the end:
+
+```bash
+export NODE_PATH="$SCRATCH/node_modules"
+node tools/shoot.js --shot title.png                              # the title screen
+node tools/shoot.js --start match --at 45 --speed 8 --shot a.png  # 45s into a match
+node tools/shoot.js --start tutorial --phone --shot tut.png       # touch layout
+```
+
+Reach for raw Playwright only when a change needs input the driver cannot give
+it — a drag, a key, a click on a particular hero. The notes below still apply
+when you do.
 
 `chromium.executablePath()` reports a version that may not be the one on disk,
 so read the path off the filesystem rather than asking the library for it.
 
-```js
-await page.goto('file:///…/index.html');
-await page.waitForFunction(() => window.__laneLoaded === true);
-```
-
 - `window.__laneLoaded` is the last line the game runs. Wait on it, not on a
   fixed sleep.
+- **`goto(url, { waitUntil: 'domcontentloaded' })`.** The default waits for the
+  `load` event, which the webfont request still gates even now that the `<link>`
+  is non-blocking — that alone sat for eleven seconds after the game was
+  playable.
+- **Abort the font request**: `page.route('**fonts.googleapis.com**', r => r.abort())`.
+  It cannot succeed offline, so let it fail at once instead of timing out.
 - Listen for `pageerror` and console errors and report what they say. The
-  webfont cannot load offline, so `net::ERR_*` is noise; nothing else is.
-- The frame loop caps `dt` at 0.05s, so headless (~8fps) advances game time at
-  a fraction of real time — a nine-second fade can need twenty-odd seconds of
-  waiting. Poll for the state you want; never compute the delay.
+  webfont cannot load offline, so `net::ERR_*` from **that host** is the one
+  thing you may ignore. Ignore nothing else — and if a `net::ERR_*` is costing
+  seconds rather than just printing, that is a bug to fix, not noise to skip.
+  A twelve-second stall hid behind this line for a long time.
+- **Launch with `--disable-frame-rate-limit --disable-gpu-vsync`** (~8 → ~10fps).
+  Do **not** add `--use-angle=swiftshader`: it software-renders the canvas and
+  measured 0.4fps against 10.
+- The frame loop caps `dt` at 0.05s, so headless (~10fps) advances game time at
+  about 0.5x real. Poll for the state you want; never compute the delay.
+- **`?speed=N` fast-forwards** (`file://` only — it is dead in the published
+  build, and there is a test below that proves it). It steps `update()` N times
+  per rendered frame: 45s of match clock costs 124s at `speed=1` and 20s at
+  `speed=8`. Use it to REACH a state. **Never use it to photograph a
+  transition** — a fade, a camera ease, a particle burst — because those are
+  paced by the render cadence and resolve differently. Shoot those at `speed=1`.
+  Do not judge difficulty or feel at speed either: the AI runs N times faster
+  and a human does not.
 - Anything on a cooldown or a dwell needs a generous wait before you conclude
   it did not happen. A step that looks broken is usually a wait that was 200ms
   short.
-- `devices['iPhone 13']` for the touch layout. The copy and the controls really
-  do differ, and it is where the layout bugs are.
+- `--phone` (`devices['iPhone 13']`) for the touch layout. The copy and the
+  controls really do differ, and it is where the layout bugs are.
 
 ## Before pushing
 
 - `node sim/run.js 3` must exit on its own and print the headline table.
   A hang means a timer is keeping Node alive; see `sim/stub.js`.
-- For anything that touches balance, run `node sim/run.js 40` and compare
+  This gate is worth more than it looks: it evaluates the game under Node,
+  where there is no `location` and no DOM, so it catches a browser global used
+  without a `typeof` guard before that reaches anyone.
+- For anything that touches balance, run `node sim/parallel.js 40` and compare
   with the "Known state" table in `README.md`; `docs/SIM.md` explains why
-  smaller samples are only indicative.
+  smaller samples are only indicative. `parallel.js` is the same report over
+  every core — prefer it. `run.js 40` is the single-process equivalent, for
+  when you want one deterministic process or are debugging the harness itself.

@@ -66,3 +66,102 @@ Two corrections that mattered:
 A chase is abandoned 5 seconds after the last exchange of blows, counted as wall
 clock from when the chase began — accumulating only on frames where the hero
 happened to be hunting ran at half speed and a 5-second limit fired at ten.
+
+## The arena's enemy players
+
+Survival runs a **different** brain, not a smaller one. `survHeroAI` replaces the
+macro layer, `updateEnemyCarryAI` and the enemy half of `updateIdleAI` outright:
+the macro brain exists to pick which of two lanes to commit to and which of its
+own buildings to defend, and in the arena there is one road per hero and nothing
+of theirs to defend.
+
+What is left is the push and only the push. No camps, no orbs, no crossing the
+map to a team-mate's fight, no truce and no endgame. Targets come from
+`laneSeekTarget` with `h.lpath` set to the road the hero walked in on, so "in my
+lane" means "on the road" — a player who steps into the trees is not something
+the arena follows.
+
+### Arriving
+
+One joins every `SURV_HERO_EVERY` waves from `SURV_HERO_FROM`, in the order
+tank, carry, healer, and each attaches to the one before it. They walk in on the
+road, at that wave's level, built by the same `AI_BUILD` weights a match hero is
+built by — `survSetHeroLevel` runs grantXP's own loop with the experience left
+out. A hero still standing from the last wave is levelled where it is rather
+than re-spawned, and it keeps its road: newcomers join *its* road, or the carry
+walks in on the north lane while the tank it shelters behind came from the
+south.
+
+There is no respawn timer, and `survTick` will not start the next wave while one
+is alive — a wave is its mobs *and* its players. Gating on the mobs alone let
+the next wave march over the last one's tank, so the heroes stacked up wave on
+wave and clearing the pack bought nothing.
+
+That gate is also why `survDeployHeroes`'s "already alive" branch and its road
+inheritance are now fallbacks rather than the usual path: by the time a wave
+spawns, all three are dead and the whole roster walks in together.
+
+### All in
+
+Everything an arena hero does around a tower is written in terms of the wave
+shielding it — hold outside the reach, back out when the shield goes, take the
+building once the mobs are closer to it than you are. With the mobs dead all
+three say *wait*, and under the gate above a hero waiting for a wave that no
+longer exists is a round that never continues: it would stand off an outpost
+until the player came out to find it, which is a search, not a fight.
+
+So `survAllIn` — the last enemy player of a cleared wave — turns those three
+rules off at once. It walks in, takes the shells, and either finishes the
+building or dies to it. Either way the wave ends. It is one predicate read by
+`towerShieldedAt`, `survWantsBack` and `laneSeekTarget` rather than a flag
+threaded through each; every caller of `towerShieldedAt` is really asking "may I
+stand in this tower's reach?", and for that hero the answer is yes — not because
+anything is soaking the shells, but because there is nothing left to wait for.
+
+Measured over a full idle round, the longest the field ever sat with no mobs and
+a live enemy hero on it was **15.5 seconds**.
+
+### A lane's guns come down in order
+
+`pushTowers` narrows what an arena hero may *attack*: while an outpost on the
+road it walked in on still stands, your base is not on its list. Without it the
+carry walked past both outposts behind its wave and deleted a 500hp base in one
+mana bar — two full play-throughs that spent their stat points, used their
+skills and fought at their own towers were both overrun on wave 8, which would
+have made the healer at wave 10 and the column at wave 13 content nobody ever
+saw.
+
+It only narrows the CHOICE of target. Tower danger, the keep-out in `walkLane`
+and every shielding test still read every tower on the map, because a building
+a hero may not attack can still kill it.
+
+### Pacing
+
+Three rules, all applied after the move and all written in distance from the
+plaza, which is monotonic along both roads. Each says how deep this hero may
+stand; only forward progress is ever undone.
+
+- **Lead the pack, do not leave it.** A hero walks half again as fast as a mob,
+  so with no cap the tank arrives half a minute ahead of the wave it came in
+  with and dies alone. It may lead the front mob of its own road by
+  `SURV_LEAD_AHEAD` and no more, and only while that road still has mobs on it.
+  It is a CAP, not a station: a hero that stops to fight gets walked past by its
+  own pack and then closes the gap again, which is what it should do.
+- **Shelter.** The carry holds `CARRY_SHELTER` behind the tank and the healer
+  `SUPPORT_SHELTER` behind the carry — the same numbers a Match uses.
+- **The column**, from stage four: nobody is more than `SURV_GROUP_LEAD` ahead
+  of the rearmost, so the three of them arrive together rather than in order.
+
+### Backing off
+
+`wantsRetreat` is a latch that holds until the hero is back to 60% health,
+because in a Match it can walk to a base that mends it three times as fast. The
+arena gives an enemy player no base and no ring, so the latch means natural
+regeneration: measured, a hurt carry stood at the mouth of its road for **eighty
+seconds** while the wave it walked in with died without it, and twice in ten
+waves the whole enemy side was two heroes standing still.
+
+So the arena asks a fresh question every frame (`survWantsBack`) and the answer
+moves the hero back down its own road rather than off the map. A step behind the
+front rank is cover, and the pack walking past puts it back in the push without
+it having to decide anything. `SURV_BACK_HOLD` is the only stickiness it gets.

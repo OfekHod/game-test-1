@@ -122,14 +122,15 @@ Time ran out with both bases standing and the scoreboard settled it: 1169 to
 
 ## Survival
 
-No enemy heroes, no enemy base: just our tower in the middle of the arena and
-mobs arriving in growing numbers.
+No enemy base: just our tower in the middle of the arena, mobs arriving in
+growing numbers, and — from wave 4 — the enemy team walking in behind them.
 
 ### How a wave works
 
 The round is counted in **waves**, not seconds. A wave marches, its number goes
 up in the middle of the screen for a couple of seconds, and **nothing else
-spawns until every mob of that wave is dead** — the HUD's right-hand slot reads
+spawns until every mob of that wave is dead — and, from wave 4, every enemy
+player in it too** — the HUD's right-hand slot reads
 `Wave 7` where a Match reads a clock. So the pace is yours: meet a wave out on
 the road and the next one is along in a moment; let the outposts grind it down
 and you get a long breather to farm the camps with.
@@ -139,6 +140,41 @@ after, up to forty — and from wave 3 there is a big one in front, one more eve
 second wave. Past the size cap a wave stops getting wider and keeps getting
 heavier: the big count goes on climbing under it. The whole wave shows on the
 minimap, because a wave you have to clear is a wave you have to be able to find.
+
+### The enemy team
+
+The first three waves are mobs and mobs only. From wave 4 an enemy player joins
+every third wave, and the banner says so under the number when one does:
+
+| from wave | who | how they travel |
+|---|---|---|
+| 4 | the **tank** | with a mob pack, capped at a stride ahead of it — so it fights at the front of the wave instead of arriving alone |
+| 7 | the **carry** | on the same road, sheltering behind the tank |
+| 10 | the **healer** | shadowing the carry, and topping up whoever is hurt |
+| 13 | all three | as one column, nobody outrunning the rearmost |
+
+They arrive at that wave's level and gain as the waves do — a wave-4 tank is
+about a level-4 player tank, and by wave 36 they are capped at 26. They push,
+and only push: they walk their road to your tower and hit what stands on it,
+they never farm a camp or chase you into the trees, and they hold outside an
+outpost until their own wave is closer to it than they are.
+
+**A lane's guns come down in order**, so the two outposts on a road are what
+stands between an enemy player and your base: while one of them is up, your base
+is not something that hero will attack at all. Mobs still walk past and chip it;
+heroes do not. Hold your outposts and the thing being pushed is the outpost.
+
+There is no respawn timer on them, and **the next wave will not march until
+they are dead**: clearing the pack is only half of clearing a wave now, so a
+hero you leave standing is a hero you are not being given a breather from. Kill
+one and it is gone until the next wave brings it back, at that wave's level and
+with full bars.
+
+The last of them left alive goes **all in**. With its wave dead there is nothing
+to shelter behind and nothing to wait for, so it stops holding outside your
+outposts and walks into them — a wave always ends, and never by making you go
+out and hunt a hero that has decided to wait in the trees. They are on the
+minimap the whole time, drawn a size up from the mobs.
 
 The end card reports the waves you held, with the clock and the loot under it.
 
