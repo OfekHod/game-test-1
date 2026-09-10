@@ -14428,8 +14428,13 @@ window.addEventListener('DOMContentLoaded', function(){
         for(let g=0; g<MAX_LEVEL && a.level < h.level; g++) grantXP(a, a.xpToNext - a.xp + 1);
       }
       // Something for the rocket to land on. Two of them, close enough together
-      // that the blast takes both, which is what the blast is for.
-      const a = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE+0.22);
+      // that the blast takes both, which is what the blast is for. Anchored on
+      // the TANK, not on whoever you're driving now — he spawns back at base and
+      // walks over on his own clock, so if the creeps sat by the carry instead,
+      // switching to him the moment he's yours could show nothing but empty
+      // ground until he finished the walk.
+      const tankH = playerTeam.find(a => a.type === 'tank') || h;
+      const a = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE+0.22);
       tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
       tut.p.stage = 0;
     },
