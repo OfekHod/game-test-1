@@ -3257,7 +3257,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const SURV_RANK = 6, SURV_RANK_GAP = 110;   // mobs per rank, and how far back the next one starts
   const SURV_BIG_FROM = 3;       // first wave with a big mob in it
   const SURV_BIG_EVERY = 2;      // one more big mob every this many waves after that
-  const SURV_CAMPS = 4;
+  const SURV_CAMPS = 8;
   // Both measured along the road. The first sits at the mouth of the lane, the
   // second out at the first corner, so a wave meets a building at the one place
   // it has to slow down and turn.
@@ -4816,6 +4816,11 @@ window.addEventListener('DOMContentLoaded', function(){
           if(nearAnyTower(x,y,340)) continue;
           if(onRoadway(x,y,CAMP_RING_R+30)) continue;
           if(nearWater(x,y,CAMP_RING_R+40)) continue;
+          // Eight slots means the ±0.7rad jitter overlaps its neighbours' wedges,
+          // so without this a camp can land right on top of one already placed.
+          let tooClose = false;
+          for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R*2+60){ tooClose = true; break; } }
+          if(tooClose) continue;
           placed = { x, y, alive:0, timer:0 };
         }
         if(placed) camps.push(placed);
