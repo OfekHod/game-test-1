@@ -200,34 +200,6 @@
   .pchip[data-stat="FLLW"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="ASSM"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="DEAD"] .pstat{color:#FF8E7C;}
-  /* The chips grew a row, and the party is a stretch row, so centre the ASSEMBLE
-     button's own contents rather than leaving them stranded at the top. */
-  /* Narrower than a player chip since the cards arrived: it is a button, not a
-     hero, and at a card's width it read as a fourth card with the picture
-     missing. It still stretches to their height — the row is one block — and
-     centres what it holds in that. The word sets the width — width:auto plus a
-     gutter either side — rather than a number measured against the fallback
-     font: Baloo 2 arrives over the network and is wider than what a machine
-     with no network renders ASSEMBLE in, and a width picked from the second one
-     clips the first. min-width is only a floor for a shorter word. */
-  .asmBtn{width:auto;min-width:76px;padding:0 12px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
-          display:flex;flex-direction:column;justify-content:center;align-items:center;}
-  .asmBtn:active{transform:translateY(1px);}
-  .asmBtn.cooling{opacity:.55;}
-  .asmBtn.cooling:active{transform:none;}
-  .asmCd{position:absolute;left:0;right:0;bottom:0;height:0%;background:rgba(60,40,10,.45);pointer-events:none;}
-  .asmIcon,.asmLabel{position:relative;}
-  .asmIcon{position:relative;width:24px;height:24px;margin:3px auto 6px;border-radius:50%;border:3px solid var(--text-strong);opacity:.8;}
-  .asmIcon::before{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:var(--text-strong);transform:translate(-50%,-50%);}
-  /* A point smaller than the chip's own type, because the word it carries is
-     ASSEMBLE and it has to read across a button narrower than a card. */
-  .asmLabel{display:block;font-size:11px;font-weight:800;letter-spacing:.4px;white-space:nowrap;}
-  /* The key to press. It rode the top right corner of every card once — 1, 2, 3
-     against the level badge on the left — and now only the ASSEMBLE button
-     carries one. The keys themselves are unchanged: 1/2/3 still take a hero
-     over, and the HUD hint line and the tutorial still say so. */
-  .pkey{position:absolute;top:-10px;right:-8px;font-size:13px;font-weight:800;background:var(--panel-border);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;}
-
   /* The dock reaches the bottom edge and pads itself off it, so the strip the
      home indicator sits on is the dock's own cream rather than a gap. It keeps
      its own background for that strip; dockH is measured from offsetHeight, so
@@ -876,24 +848,14 @@
        Only the chip's WIDTH carries those — .pcard is
        246/364 of whatever it is given, so the picture grows by a tenth in both
        directions and keeps its shape, while the nameplate under it stays the
-       height it was and simply takes up less of the chip.
-       The ASSEMBLE button stays a bar underneath rather than a fourth column,
-       which is a better target for a thumb and is what let the cards have the
-       width in the first place — the row shares the top of the screen with the
-       scoreboard, and a 390px phone leaves it about 200 pixels. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;padding-bottom:32px;}
+       height it was and simply takes up less of the chip. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;}
     .pchip{width:56px;border-width:1.5px;border-radius:7px;}
     .plevel{top:-6px;left:-5px;font-size:8px;width:14px;height:14px;line-height:14px;}
-    .pkey{top:-6px;right:-5px;font-size:8px;width:13px;height:13px;line-height:13px;}
     .pcard{border-radius:5.5px 5.5px 0 0;}
     .pmeter{padding:4px 4px 4px;border-radius:0 0 5.5px 5.5px;}
     .pbar{height:3px;border-radius:1.5px;margin-top:1.5px;}
     .pstat{font-size:8px;letter-spacing:.2px;margin-top:2.5px;}
-    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;height:28px;
-      flex-direction:row;gap:6px;border-radius:7px;}
-    .asmIcon{width:12px;height:12px;margin:0;border-width:1.5px;}
-    .asmIcon::before{width:4px;height:4px;}
-    .asmLabel{font-size:9px;letter-spacing:.35px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -918,12 +880,7 @@
     .ability .skillIcon{width:28px;height:28px;border-radius:6px;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
-    /* A phone on its side has width to spare and no height at all, so the ASSEMBLE
-       button climbs back into the row rather than costing the party another
-       forty pixels down a 390px-tall screen. */
-    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));padding-bottom:0;}
-    .asmBtn{position:static;width:auto;height:auto;flex-direction:column;gap:0;}
-    .asmIcon{margin:0 auto 5px;}
+    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
     .waveBanner b{font-size:52px;}
@@ -994,7 +951,6 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ASSEMBLE</span><span class="pkey">0</span></button>
     </div>
 
     <div class="bottomDock hidden" id="bottomDock">
@@ -3548,13 +3504,15 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     assembleCd = ASSEMBLE_CD;
+    const mates = [];
     for(const h of playerTeam){
       h.moveTarget = null; h.standX = null; h.standY = null;
       if(h===anchor){ h.mode='idle'; h.followTarget=null; }
-      else { h.mode='follow'; h.followTarget=anchor; }
+      else { h.mode='follow'; h.followTarget=anchor; mates.push(h); }
     }
     squadTogether = true;
     addFloater(anchor.x, anchor.y-anchor.r-52, 'ASSEMBLE', '#5AC8E8', true);
+    triggerAssembleFX(anchor, mates);
     if(tut.on) tutNote('assemble');
   }
   function setLanePath(h){
@@ -4360,6 +4318,7 @@ window.addEventListener('DOMContentLoaded', function(){
   let manaOrbs = [];
   let levelFx = [];
   let healWaves = [];
+  let assembleFx = [];   // light streaks travelling each called hero's real position -> the anchor
   let sparkles = [];
   let trees = [];
   // Trees that have been felled and are still toppling. They come OUT of
@@ -5521,7 +5480,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // green at two thirds the size instead of a second effect to maintain.
   const FX_PAL = {
     level: { core:'#FFFDF0', mid:'#FFD54F', ray:'#FFE9A6', r1:'#FFD54F', r2:'#FFF3C4', spark:'#FFF3C4', glow:'255,213,79' },
-    heal:  { core:'#F2FFF4', mid:'#7CD98C', ray:'#B6F0C0', r1:'#7CD98C', r2:'#DFF7E2', spark:'#DFF7E2', glow:'124,217,140' }
+    heal:  { core:'#F2FFF4', mid:'#7CD98C', ray:'#B6F0C0', r1:'#7CD98C', r2:'#DFF7E2', spark:'#DFF7E2', glow:'124,217,140' },
+    assemble: { core:'#F5FCFF', mid:'#8FE1FF', ray:'#CDEFFF', r1:'#5AC8E8', r2:'#EAFBFF', spark:'#CDEFFF', glow:'90,200,232' }
   };
   function spawnSparkles(x,y,n,col,spread){
     const sp = spread || 1;
@@ -5672,6 +5632,201 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.beginPath(); ctx.arc(w.x,w.y,rr*0.82,0,7); ctx.stroke();
         ctx.restore();
       }
+    }
+  }
+  // Called on assemble: one streak per team-mate, drawn along his own real
+  // position at the moment of the call rather than a fixed shape, so a squad
+  // spread wide sends three visibly different lines home. Farther heroes take
+  // a little longer to arrive — the same distance that decides their walk
+  // back decides how long their light is in the air — so a scattered squad
+  // gathers in, not all at once.
+  const ASSEMBLE_FX_MIN_DUR = 0.32, ASSEMBLE_FX_MAX_DUR = 0.85, ASSEMBLE_FX_SPEED = 1000;
+  const ASSEMBLE_AURA_DUR = 2.03;   // 50% longer than the streaks need, so the ring lingers well after the call lands
+  const ASSEMBLE_RING_MULT = 5.2;   // matches the orbit radius in spawnAuraMote/drawAssembleAuras
+  function triggerAssembleFX(anchor, mates){
+    const pal = FX_PAL.assemble;
+    anchor.aAura = { t:0, dur:ASSEMBLE_AURA_DUR, motes:[] };
+    // A couple of motes start orbiting immediately, ambient and faint, so the
+    // ring is already alive by the time the first streak lands in it rather
+    // than popping into existence.
+    for(let i=0;i<3;i++) spawnAuraMote(anchor, rand(0,Math.PI*2), 0);
+    // Each streak's target is where it crosses the ring, not the anchor's own
+    // position, so the arrival — and the burst it triggers — lands ON the
+    // circle. That is the splash the ring motes then pick up and carry on.
+    const ringR = anchor.r*ASSEMBLE_RING_MULT;
+    for(const m of mates){
+      if(!m.alive) continue;
+      const d = dist(m.x, m.y, anchor.x, anchor.y);
+      const inside = d <= ringR;
+      const tx = inside ? anchor.x : anchor.x + (m.x-anchor.x)/d*ringR;
+      const ty = inside ? anchor.y : anchor.y + (m.y-anchor.y)/d*ringR;
+      const travelD = inside ? d : d-ringR;
+      const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, travelD/ASSEMBLE_FX_SPEED));
+      assembleFx.push({ x0:m.x, y0:m.y, x1:tx, y1:ty, life:0, dur, pal, arrived:false, anchor });
+    }
+    anchor.levelGlow = Math.max(anchor.levelGlow||0, 1.3);
+    anchor.glowCol = pal.glow;
+    spawnSparkles(anchor.x, anchor.y, 10, pal.spark, 0.7);
+    addPing(anchor.x, anchor.y, pal.r2, 8, 46, 0.42);
+    addPing(anchor.x, anchor.y, pal.r1, 14, 68, 0.62);
+  }
+  // The same approaching light for a single follow order — drop one hero onto
+  // a team-mate and he sends the same streak-and-splash at him — but with no
+  // ring: this is one hero joining another, not the whole squad calling in,
+  // so nothing orbits and no halo is left behind.
+  function triggerFollowFX(h, target){
+    const pal = FX_PAL.assemble;
+    const stopR = target.r*1.4;
+    const d = dist(h.x, h.y, target.x, target.y);
+    const inside = d <= stopR;
+    const tx = inside ? target.x : target.x + (h.x-target.x)/d*stopR;
+    const ty = inside ? target.y : target.y + (h.y-target.y)/d*stopR;
+    const travelD = inside ? d : d-stopR;
+    const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, travelD/ASSEMBLE_FX_SPEED));
+    assembleFx.push({ x0:h.x, y0:h.y, x1:tx, y1:ty, life:0, dur, pal, arrived:false, anchor:null });
+  }
+  // One glowing mote, orbiting the anchor at head height, that fades in over
+  // its own short lifetime rather than snapping to full brightness.
+  function spawnAuraMote(anchor, angle, bornAt){
+    const ar = anchor.aAura; if(!ar) return;
+    ar.motes.push({
+      angle, speed: rand(1.5,2.2) * (Math.random()<0.5 ? 1 : -1),
+      rBase: anchor.r*ASSEMBLE_RING_MULT, rAmp: anchor.r*0.22, freq: rand(1.4,2.2), phase: rand(0,6.28),
+      born: bornAt
+    });
+  }
+  function updateAssembleFx(dt){
+    for(let i=assembleFx.length-1;i>=0;i--){
+      const f = assembleFx[i];
+      f.life += dt;
+      if(!f.arrived && f.life >= f.dur){
+        f.arrived = true;
+        // The mini-explosion where the streak actually meets the ring: a
+        // proper burst rather than a puff, plus a quick ripple so the impact
+        // itself is legible, not just the particles it throws.
+        addBurst(f.x1, f.y1, f.pal.mid, 16);
+        addBurst(f.x1, f.y1, '#FFFFFF', 6);
+        spawnSparkles(f.x1, f.y1, 10, f.pal.spark, 0.8);
+        addPing(f.x1, f.y1, f.pal.r2, 3, 30, 0.3);
+        // The streak's own arrival angle seeds fresh motes on the ring, so the
+        // light that just splashed against it visibly folds into the orbit
+        // instead of the two effects reading as separate systems.
+        if(f.anchor && f.anchor.aAura){
+          const ang = Math.atan2(f.y0-f.y1, f.x0-f.x1);
+          for(let k=0;k<3;k++) spawnAuraMote(f.anchor, ang+rand(-0.2,0.2), f.anchor.aAura.t);
+        }
+      }
+      if(f.life >= f.dur + 0.3) assembleFx.splice(i,1);
+    }
+  }
+  function updateAssembleAuras(dt){
+    for(const h of playerTeam){
+      const ar = h.aAura; if(!ar) continue;
+      ar.t += dt;
+      for(const m of ar.motes) m.angle += m.speed*dt;
+      if(ar.t >= ar.dur) h.aAura = null;
+    }
+  }
+  // A soft comet: a short glowing trail behind a bright head, both additive so
+  // they sit as light on the grass rather than paint over it. Eased so the
+  // head starts quick and settles into the anchor instead of snapping to a
+  // stop — a pull, not a teleport.
+  function drawAssembleFx(){
+    if(!assembleFx.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for(const f of assembleFx){
+      if(f.arrived){
+        // The splash itself: a bright flash that blows open into a soft ring
+        // right where the streak met the circle, gone within a couple of
+        // frames — the burst/sparkles/ping triggered on arrival carry the
+        // rest of the moment.
+        const st = Math.min(1, (f.life-f.dur)/0.3);
+        const flash = Math.max(0, 1-st*st*st);
+        if(flash>0.01){
+          const rr = 8 + st*40;
+          const fg = ctx.createRadialGradient(f.x1,f.y1,0,f.x1,f.y1,rr);
+          fg.addColorStop(0,   'rgba(255,255,255,'+(0.85*flash).toFixed(3)+')');
+          fg.addColorStop(0.55,'rgba(190,235,255,'+(0.5*flash).toFixed(3)+')');
+          fg.addColorStop(1,   'rgba(190,235,255,0)');
+          ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(f.x1,f.y1,rr,0,7); ctx.fill();
+        }
+        continue;
+      }
+      const t = Math.min(1, f.life/f.dur);
+      const e = 1 - (1-t)*(1-t)*(1-t);           // ease-out cubic
+      const eTail = Math.max(0, e - 0.22);
+      const hx = f.x0 + (f.x1-f.x0)*e,    hy = f.y0 + (f.y1-f.y0)*e;
+      const tx = f.x0 + (f.x1-f.x0)*eTail, ty = f.y0 + (f.y1-f.y0)*eTail;
+      const fade = 1 - t*0.25;
+      const grad = ctx.createLinearGradient(tx,ty,hx,hy);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(1, 'rgba(205,239,255,'+(0.85*fade).toFixed(3)+')');
+      ctx.strokeStyle = grad; ctx.lineCap = 'round';
+      ctx.lineWidth = 3*(1-t*0.35);
+      ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(hx,hy); ctx.stroke();
+      const g = ctx.createRadialGradient(hx,hy,0,hx,hy,11);
+      g.addColorStop(0,'rgba(255,255,255,0.95)');
+      g.addColorStop(0.5,'rgba(143,225,255,0.55)');
+      g.addColorStop(1,'rgba(143,225,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx,hy,11,0,7); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // A slow ring of light breathing around the hero everything just gathered
+  // on — each mote a bright head with a short fading tail curved along its
+  // own orbit, so the whole thing reads as flowing rather than spinning
+  // stickers. Whole-ring alpha eases in, holds, and breathes back out; each
+  // mote also eases in on its own so a late arrival doesn't just appear.
+  function drawAssembleAuras(){
+    for(const h of playerTeam){
+      const ar = h.aAura; if(!ar || !h.alive) continue;
+      if(!onScreen(h.x,h.y,h.r*8) || !isVisible(h.x,h.y,h.r)) continue;
+      const t = ar.t/ar.dur;
+      const envelope = t<0.1 ? t/0.1 : (t>0.7 ? Math.max(0,1-(t-0.7)/0.3) : 1);
+      if(envelope<=0) continue;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // A wide halo clear of the body itself, breathing gently, so the ring
+      // reads as something the squad gathered around him rather than a glow
+      // painted on his sprite.
+      const haloR = h.r*ASSEMBLE_RING_MULT + Math.sin(ar.t*2.2)*h.r*0.12;
+      const halo = ctx.createRadialGradient(h.x,h.y,h.r*0.9,h.x,h.y,haloR*1.4);
+      halo.addColorStop(0,   'rgba(205,239,255,0)');
+      halo.addColorStop(0.68,'rgba(180,230,255,'+(0.14*envelope).toFixed(3)+')');
+      halo.addColorStop(1,   'rgba(220,245,255,0)');
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(h.x,h.y,haloR*1.4,0,7); ctx.fill();
+      // Two concentric rings — a bright inner line and a fainter, slightly
+      // larger outer one — read as one ring with depth rather than a wire.
+      ctx.globalAlpha = 0.55*envelope;
+      ctx.strokeStyle = '#F5FCFF'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(h.x,h.y,haloR,0,7); ctx.stroke();
+      ctx.globalAlpha = 0.28*envelope;
+      ctx.strokeStyle = '#CDEFFF'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(h.x,h.y,haloR*1.06,0,7); ctx.stroke();
+      for(const m of ar.motes){
+        const age = ar.t - m.born;
+        if(age<0) continue;
+        const a = envelope * Math.min(1, age/0.25);
+        if(a<=0.01) continue;
+        const r = m.rBase + Math.sin(ar.t*m.freq+m.phase)*m.rAmp;
+        const trailSign = m.speed<0 ? -1 : 1, trail = 0.85, segs = 8;
+        for(let i=0;i<segs;i++){
+          const a0 = m.angle - trailSign*trail*(i/segs);
+          const a1 = m.angle - trailSign*trail*((i+1)/segs);
+          ctx.globalAlpha = a*(1-i/segs)*0.8;
+          ctx.strokeStyle = '#DFF6FF'; ctx.lineWidth = 5*(1-i/segs*0.5);
+          ctx.beginPath(); ctx.arc(h.x,h.y,r, Math.min(a0,a1), Math.max(a0,a1)); ctx.stroke();
+        }
+        const cx = h.x+Math.cos(m.angle)*r, cy = h.y+Math.sin(m.angle)*r;
+        ctx.globalAlpha = a;
+        const g = ctx.createRadialGradient(cx,cy,0,cx,cy,15);
+        g.addColorStop(0,   'rgba(255,255,255,1)');
+        g.addColorStop(0.45,'rgba(180,232,255,0.9)');
+        g.addColorStop(1,   'rgba(143,225,255,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx,cy,15,0,7); ctx.fill();
+      }
+      ctx.restore();
     }
   }
   function updateLevelFx(dt){
@@ -8380,6 +8535,7 @@ window.addEventListener('DOMContentLoaded', function(){
     squadTogether = false;
     h.mode='follow'; h.followTarget=target; h.moveTarget=null;
     h.standX=null; h.standY=null;
+    triggerFollowFX(h, target);
     addFloater(h.x, h.y-h.r-46, 'FOLLOW', '#8FD6FF', true);
     // Same hand-over as soloOrder: updateIdleAI skips whoever you are driving,
     // so a follow order written on him would just sit there unread.
@@ -8460,6 +8616,16 @@ window.addEventListener('DOMContentLoaded', function(){
   let touchSkillTap = false;
   let skillKeyWasDown = false;   // last frame's space, so a held key is one cast and not sixty
   let usedTouch = false;    // true once the player has actually touched the screen
+  // Two fingers pulled toward each other calls the squad home — the touch
+  // stand-in for the 0 key, since there is no ASSEMBLE button to tap on a
+  // phone. Tracked apart from the join/order machinery above: neither finger
+  // is claimed as a joystick or a drag while a pinch might be forming, so it
+  // never fights the two-thumb move-and-shoot combo.
+  let pinch = null;   // {aId, bId, dist0, t0, fired}
+  const PINCH_MIN_SPREAD = 90;   // fingers must start this far apart (css px)...
+  const PINCH_SHRINK = 0.55;     // ...and close to at most this fraction of that...
+  const PINCH_WINDOW = 1200;     // ...within this many ms, or it reads as drift, not a pinch.
+  function touchDist(t1, t2){ return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
 
   function canvasRect(){ return canvas.getBoundingClientRect(); }
   function toCanvasCoords(clientX, clientY){
@@ -8519,10 +8685,38 @@ window.addEventListener('DOMContentLoaded', function(){
         moved: 0, wx: wpt.x, wy: wpt.y
       };
     }
+    // A second finger landing while the first is free (not already steering
+    // the minimap or dragging a hero) opens a pinch window. Whether it turns
+    // into an assemble depends on how those two fingers move from here.
+    if(!pinch && e.touches.length===2){
+      const [ta, tb] = e.touches;
+      const busy = id => id===scoutTouch || (orderDrag && orderDrag.id===id);
+      if(!busy(ta.identifier) && !busy(tb.identifier)){
+        pinch = { aId:ta.identifier, bId:tb.identifier, dist0:touchDist(ta,tb), t0:performance.now(), fired:false };
+      }
+    }
     e.preventDefault();
   }
   function onTouchMove(e){
     if(state!=='playing') return;
+    if(pinch && !pinch.fired){
+      let ta=null, tb=null;
+      for(const t of e.touches){
+        if(t.identifier===pinch.aId) ta=t;
+        else if(t.identifier===pinch.bId) tb=t;
+      }
+      if(ta && tb && pinch.dist0 >= PINCH_MIN_SPREAD
+         && touchDist(ta,tb) <= pinch.dist0*PINCH_SHRINK
+         && performance.now()-pinch.t0 <= PINCH_WINDOW){
+        pinch.fired = true;
+        assembleOnFocus();
+        // Neither finger should also be steering the joystick it may have opened.
+        if(moveTouch && (moveTouch.id===pinch.aId || moveTouch.id===pinch.bId)){
+          moveTouch = null; touchMoveVec = {x:0,y:0}; hideJoystick(moveJoyEl);
+        }
+        delete pendingTouch[pinch.aId]; delete pendingTouch[pinch.bId];
+      }
+    }
     const r = stageEl.getBoundingClientRect();
     let handled = false;
     for(const t of e.changedTouches){
@@ -8567,6 +8761,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function onTouchEnd(e){
     let handled = false;
     for(const t of e.changedTouches){
+      if(pinch && (t.identifier===pinch.aId || t.identifier===pinch.bId)) pinch = null;
       if(scoutTouch === t.identifier){
         scoutTouch = null; scout = null; glideCam(0.8);    // let go: slide back to your hero
         handled = true;
@@ -8630,18 +8825,6 @@ window.addEventListener('DOMContentLoaded', function(){
       if(state==='playing') focusHero(i);
     });
   }
-
-  const assembleBtn = document.getElementById('assembleBtn');
-  const assembleCdFillEl = document.getElementById('assembleCdFill');
-  assembleBtn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); }, {passive:false});
-  bindTap(assembleBtn, assembleOnFocus);
-  bindTip(assembleBtn, ()=>
-    '<b>Assemble &mdash; 0</b>Sends your other two heroes to follow whichever hero you are '
-    + 'controlling right now. They hold formation until you drag one somewhere else.<br>'
-    + 'For one hero instead of both, drag him onto a team-mate — or onto that '
-    + 'team-mate\'s square — and he escorts him.<br><i>'
-    + (assembleCd>0 ? 'Ready in '+Math.ceil(assembleCd)+'s' : ASSEMBLE_CD+'s cooldown') + '</i>');
-
 
   let boltSeq = 0;              // walks every fired bolt onto a different frame
   function fireBasic(h, aimX, aimY, useAssist, rateMult){
@@ -10356,6 +10539,8 @@ window.addEventListener('DOMContentLoaded', function(){
     updateTrees(dt);
     updateLevelFx(dt);
     updateHealWaves(dt);
+    updateAssembleFx(dt);
+    updateAssembleAuras(dt);
     updatePings(dt);
     updateFireBlasts(dt);
     updateBirds(dt);
@@ -12617,8 +12802,6 @@ window.addEventListener('DOMContentLoaded', function(){
       chip.querySelector('.pbar.xp span').style.width = Math.max(0,h.xp/h.xpToNext*100)+'%';
       chip.querySelector('.plevel').textContent = h.level;
     }
-    assembleBtn.classList.toggle('cooling', assembleCd>0);
-    assembleCdFillEl.style.height = (assembleCd/ASSEMBLE_CD*100)+'%';
     const activeH = playerTeam[activePlayerIdx];
     const skillKey = activeH.type==='carry'?'dash':activeH.type==='tank'?'rocket':'heal';
     skillIconEl.className = 'skillIcon skill-' + skillKey;
@@ -12884,6 +13067,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
 
     drawLevelFxFront();
+    drawAssembleFx();
+    drawAssembleAuras();
     drawFireBlasts();
 
     // A tree that has been chopped wears what is left of it, over the canopy
@@ -13162,7 +13347,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.homeX=hx; h.homeY=hy; h.x=hx; h.y=hy; h.vx=0; h.vy=0;
     h.maxHp=h.stats.maxHp; h.hp=h.maxHp; h.maxMana=h.stats.maxMana; h.mana=h.maxMana;
     h.alive=true; h.respawnTimer=0;
-    h.basicCd=0; h.autoCd=0; h.manualT=0; h.skillCd=0; h.dashing=false; h.invuln=0; h.levelGlow=0; h.levelPop=0; h.kx=0; h.ky=0; h.kt=0;
+    h.basicCd=0; h.autoCd=0; h.manualT=0; h.skillCd=0; h.dashing=false; h.invuln=0; h.levelGlow=0; h.levelPop=0; h.kx=0; h.ky=0; h.kt=0; h.aAura=null;
     h.facing = h.side==='player'?0:Math.PI;
     h.animDist=0; h.animPrevX=hx; h.animPrevY=hy; h.moving=0; h.atkT=0; h.hurtT=0; h.hurtCd=0;
     h.ghosts.length=0; h.ghostT=0; h.dustAt=0; h.trail.length=0; h.trailBreak=true;
@@ -13720,10 +13905,10 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Assemble',
     text:()=>tutPick(
-      '<k>0</k>, or <b>ASSEMBLE</b> beside the cards, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
-      '<b>ASSEMBLE</b>, under the cards, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
+      '<k>0</k> drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
+      '<b>Pinch two fingers together</b> anywhere on the field to drop every order and pull both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
     goal:()=>'Call the squad back to you',
-    hl:()=>assembleBtn,
+    hl:()=>partyEl,
     done:()=>!!tut.p.assemble
   },
   {
@@ -13894,7 +14079,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
       return '3 · Destroy their outpost — ' + left + '% left';
     },
-    hl:()=>assembleBtn,
+    hl:()=>partyEl,
     enter(){
       // The phase that finally lets the waves out: a lane push is a wave with
       // heroes behind it, and there is nothing to walk behind without one.
@@ -13949,7 +14134,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const stage = (p.assemble ? 1 : 0) + (p.lane ? 1 : 0);
       if(stage !== p.stage){
         p.stage = stage;
-        tutHighlight(stage === 0 ? assembleBtn : null);
+        tutHighlight(stage === 0 ? partyEl : null);
         tutPaint();                    // the card says something new at each one
       }
     },
@@ -14373,7 +14558,7 @@ window.addEventListener('DOMContentLoaded', function(){
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
-    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
+    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
     woodDrops=[]; fellingTrees=[]; woodBanked=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
