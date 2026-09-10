@@ -6953,8 +6953,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // fixed speed — no curves, no wandering — and wraps around the world, so the
   // motion is constant and calm rather than eventful.
   const CLOUD_COUNT = 14;
+  // Survival's camera barely moves — the fight stays parked by the plaza the
+  // whole round — where Match's roams the full map over ten minutes. The same
+  // 14 clouds spread across the whole world drifted past the plaza once and
+  // then took minutes to wrap back around, so the sky over the tower sat
+  // empty most of a round. More clouds, below, fixes only half of that.
+  const CLOUD_COUNT_SURVIVAL = 20;
   const CLOUD_SPEED_MIN = 5, CLOUD_SPEED_MAX = 12;   // birds fly at ~90; this is a drift
   let clouds = [];
+  // The box clouds spawn in and wrap inside. A Match uses the whole world, same
+  // as always; Survival gets a patch centred on the arena and sized to comfortably
+  // cover the camera's own reach there, so clouds keep cycling back through view
+  // instead of wandering off into corners of the map nobody in that mode ever sees.
+  let cloudX0 = 0, cloudY0 = 0, cloudX1 = WORLD_W, cloudY1 = WORLD_H;
   /* Shape, and it is the same cumulus the loading sky is built from: a lumpy
      skyline over a flat base. The old build scattered puffs around a centre
      line with the outer ones sitting HIGHER than the middle, which is the one
@@ -7064,17 +7075,24 @@ window.addEventListener('DOMContentLoaded', function(){
              alpha: rand(0.26, 0.41), spr, pad: spr.pad };
   }
   function resetClouds(){
+    if(gameMode==='survival'){
+      const cx=WORLD_W/2, cy=WORLD_H/2, half=1600;
+      cloudX0=cx-half; cloudY0=cy-half; cloudX1=cx+half; cloudY1=cy+half;
+    } else {
+      cloudX0=0; cloudY0=0; cloudX1=WORLD_W; cloudY1=WORLD_H;
+    }
     clouds = [];
-    for(let i=0;i<CLOUD_COUNT;i++) clouds.push(makeCloud(rand(0, WORLD_W), rand(0, WORLD_H)));
+    const n = gameMode==='survival' ? CLOUD_COUNT_SURVIVAL : CLOUD_COUNT;
+    for(let i=0;i<n;i++) clouds.push(makeCloud(rand(cloudX0, cloudX1), rand(cloudY0, cloudY1)));
   }
   function updateClouds(dt){
     for(const c of clouds){
       c.x += c.vx*dt; c.y += c.vy*dt;
       // wrap on the far side rather than turning, so the direction never changes
-      if(c.x < -c.pad) c.x = WORLD_W + c.pad;
-      else if(c.x > WORLD_W + c.pad) c.x = -c.pad;
-      if(c.y < -c.pad) c.y = WORLD_H + c.pad;
-      else if(c.y > WORLD_H + c.pad) c.y = -c.pad;
+      if(c.x < cloudX0-c.pad) c.x = cloudX1 + c.pad;
+      else if(c.x > cloudX1 + c.pad) c.x = cloudX0 - c.pad;
+      if(c.y < cloudY0-c.pad) c.y = cloudY1 + c.pad;
+      else if(c.y > cloudY1 + c.pad) c.y = cloudY0 - c.pad;
     }
   }
   function drawClouds(){
@@ -8402,7 +8420,10 @@ window.addEventListener('DOMContentLoaded', function(){
   function spawnFlock(){
     if(!birdReady) return;
     const sp = Math.floor(Math.random()*BIRD_SPECIES);
-    const n = 1 + Math.floor(Math.random()*4);
+    // Bigger flocks than before (was 1-4): the spawn timer alone wasn't making
+    // birds any easier to spot against a busy screen, so each flock now carries
+    // more birds rather than just arriving more often.
+    const n = 2 + Math.floor(Math.random()*5);
     const ang = rand(0, Math.PI*2);
     const dx = Math.cos(ang), dy = Math.sin(ang)*0.4;
     const span = Math.max(W,H);
@@ -8419,14 +8440,14 @@ window.addEventListener('DOMContentLoaded', function(){
         x: sx - dx*i*rand(55,95) + rand(-22,22),
         y: sy - dy*i*rand(55,95) + rand(-46,46),
         vx: dx*spd, vy: dy*spd, sp,
-        t: rand(0,4), sc: rand(0.75,1.3), bob: rand(0,6.283),
+        t: rand(0,4), sc: rand(1.05,1.7), bob: rand(0,6.283),   // bigger than the 0.75-1.3 before: easier to spot against a busy screen
         turn: turn*rand(0.85,1.15), dropT: rand(0.2,1)
       });
     }
   }
   function updateBirds(dt){
     birdTimer -= dt;
-    if(birdTimer<=0){ spawnFlock(); birdTimer = rand(9,24); }
+    if(birdTimer<=0){ spawnFlock(); birdTimer = rand(4.5,12); }   // x2 rate: was rand(9,24)
     const cx = camera.x+W/2, cy = camera.y+H/2, lim = Math.max(W,H)*1.15;
     for(let i=birds.length-1;i>=0;i--){
       const b=birds[i];
