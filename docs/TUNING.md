@@ -76,9 +76,42 @@ measure them against yet, for the reason under the table.
 | `TREE_BAR_HOLD` | 6 | seconds the bar stays up after a chop. It appears on the FIRST chop: an untouched tree has nothing to report, and 32 trees each wearing a full bar is a forest of health bars |
 | `TREE_FALL_TIME` | 1.1 | the topple. The angle goes as the square of it, so the trunk hangs and then lets go; the sprite fades only over the last 18% |
 | `WOOD_PER_TREE` | 3 | logs |
-| `WOOD_DWELL` | 0.45 | seconds a log is left alone before the magnet takes it, timed from the drop. A coin flies out of a kill and into your pocket in one motion; wood you went and chopped for should be seen to come out of the tree. ONE timer, from the drop — it used to wait for the pop to settle and *then* start counting, and the two stacked: the pop decays exponentially towards a fixed threshold and takes most of a second on its own. Measured from the logs landing to the last of three banked, that was **2.52s**; it is **1.06s** now. At 0.45s the pop is already down to a sixth of its speed, so nothing is cut off — only the waiting after it |
+| `WOOD_DWELL` | 0.22 | seconds a log is left alone before the magnet takes it, timed from the drop. A coin flies out of a kill and into your pocket in one motion; wood you went and chopped for should be seen to come out of the tree. Below about 0.1 the magnet takes a log that is still visibly in the air, which is the only thing on the other side of the trade |
+| `WOOD_MAGNET_RADIUS` | 220 | against 130 for the coins. Nobody competes for wood — no enemy hero can take it and no ally wants it — so all three logs can be in range of whoever felled the tree wherever they scattered, instead of the far one crawling in at the shared magnet's slowest speed |
+| `WOOD_MAGNET_MULT` | 2.2 | on the shared magnet speed. Safe only because of the overshoot clamp below |
 | wood pop speed | 55–130 | against 90–220 for a coin. At coin speed a log could land outside `PICKUP_MAGNET_RADIUS`, and felling a tree you are standing next to left one log stranded a step away |
 | `WOOD_TTL` | `ORB_TTL`*2 (30s) | a coin is dropped mid-fight and taken in the same breath; wood is dropped by somebody who went somewhere to chop |
+
+**How long the tail is, and why it was three times that.** Measured from the
+logs landing to the last of the three banked, in GAME seconds — what a player at
+60fps waits, which is not what a headless browser at 12fps reports as wall time.
+
+| build | tail |
+|---|---|
+| as first written | 1.70s |
+| one dwell timer instead of two stacked delays | 0.70s |
+| overshoot clamped, dwell cut to a beat | **0.35s** |
+
+Neither of the first two numbers could have been read off the code. The first
+was two delays stacking — a log was not offered a collector while its mode was
+still `pop`, *and* its dwell only started counting once the pop had ended, and
+the pop decays exponentially towards a fixed speed threshold, so it takes most
+of a second on its own. The second only gave itself up to a frame-by-frame
+trace: the logs were **overshooting the hero and bouncing**.
+
+```
+343ms  magnet dd=39  49  36
+424ms  magnet dd=41  24  44     <- past the hero and out the far side
+509ms  magnet dd=38  63  32     <- flung back out to 63
+591ms  magnet dd=42   2  51
+```
+
+A pickup drawn in faster than `PICKUP_COLLECT_RADIUS` is wide steps straight
+past its collector, so it only lands when a frame happens to put it inside 24
+units. `updatePickup` now clamps the step to the distance remaining — but **only
+on the fast path**, the one wood passes a multiplier on. The coins' arithmetic
+is untouched, deliberately: they are slow enough not to need it, and leaving
+them alone is what keeps the seeded simulation below byte-identical.
 
 **A tree is the LAST thing a swing looks at** — after enemy heroes, after creeps,
 after buildings — so a fight fought in a wood never spends a swing on the

@@ -8229,8 +8229,9 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // `find` decides whose pickup this is. It defaults to nearestCollector —
   // anybody, either side — which is what a coin and a mana orb are. Wood passes
-  // its own, because wood is not everybody's.
-  function updatePickup(p, dt, find){
+  // its own, because wood is not everybody's, and `speedMult` with it, because
+  // wood is not drawn in at a coin's pace either.
+  function updatePickup(p, dt, find, speedMult){
     p.bobT += dt;
     if(p.mode==='pop'){
       p.x += p.vx*dt; p.y += p.vy*dt;
@@ -8243,8 +8244,20 @@ window.addEventListener('DOMContentLoaded', function(){
     p.mode='magnet';
     const dx=h.x-p.x, dy=h.y-p.y;
     const dd = Math.max(1, Math.sqrt(dx*dx+dy*dy));
-    const speed = PICKUP_MAGNET_SPEED + (1-Math.min(1,dd/PICKUP_MAGNET_RADIUS))*PICKUP_MAGNET_EXTRA;
-    p.x += dx/dd*speed*dt; p.y += dy/dd*speed*dt;
+    const speed = (PICKUP_MAGNET_SPEED + (1-Math.min(1,dd/PICKUP_MAGNET_RADIUS))*PICKUP_MAGNET_EXTRA)
+                  * (speedMult || 1);
+    // A pickup drawn in faster than PICKUP_COLLECT_RADIUS is wide steps straight
+    // past its collector and out the far side, then back again — traced at 2.2x:
+    // 39, 41, 38, 42, and one log that went 49, 24, 63, 2 before a frame finally
+    // landed it inside 24 units. Clamping the step to the distance left makes it
+    // ARRIVE instead of overshooting, which is worth about a third of a second.
+    //
+    // Only the fast path clamps. A coin's own speed is slow enough that it does
+    // not need it, and leaving the coins' arithmetic untouched is what keeps the
+    // simulation identical to the build before this branch.
+    let step = speed*dt;
+    if(speedMult) step = Math.min(step, dd);
+    p.x += dx/dd*step; p.y += dy/dd*step;
     p.near = dd;                                  // drives the shrink as it is drawn in
     p.trailT = (p.trailT||0) - dt;
     if(p.trailT <= 0){
@@ -8321,21 +8334,35 @@ window.addEventListener('DOMContentLoaded', function(){
   // player who WENT somewhere to chop, and who may well chop the next tree
   // before walking back for the pile.
   const WOOD_TTL = ORB_TTL*2;
-  // How long a log is left alone before the magnet takes it, timed from the
-  // moment it comes off the trunk. A coin flies out of a kill and into your
-  // pocket in one motion, which is right for a coin; wood you went and chopped
-  // for should be seen to come out of the tree.
+  // Chopping should not stall to be paid. Measured from the logs landing to the
+  // last of the three banked, in GAME seconds — which is what a player at 60fps
+  // waits, and is not the same as wall time under a headless browser at 12fps.
+  // It came down in three steps and every number here was measured, not reasoned
+  // about; the first two were both wrong for reasons no amount of reading the
+  // code would have shown:
   //
-  // ONE timer, from the drop — not "wait for the pop to settle, THEN start
-  // waiting". That is what this was, and the two stacked: the pop decays
-  // exponentially towards a fixed threshold and takes the better part of a
-  // second on its own, so the last of three logs was banked 2.5s after it
-  // landed and felling a tree ended with the player stood still watching it.
-  // Measured from the logs landing to the last of the three banked: 2.52s
-  // before, 1.06s now. By 0.45s the pop is down to a sixth of its speed anyway,
-  // so nothing is cut off — only the waiting after it. Shorter than this and the
-  // magnet snatches a log that is still visibly flying out of the trunk.
-  const WOOD_DWELL = 0.45;
+  //   1.70s  a log was not offered a collector while its mode was still 'pop',
+  //          AND its dwell only started counting once the pop had ended. The pop
+  //          decays exponentially towards a fixed speed threshold and takes most
+  //          of a second on its own, so the two delays stacked.
+  //   0.70s  one timer, from the drop, with the pop no longer a gate. Still slow,
+  //          and a frame-by-frame trace said why: the logs were OVERSHOOTING the
+  //          hero and bouncing — see the clamp in updatePickup.
+  //   0.35s  the overshoot fixed, and the timer cut to a beat.
+  //
+  // WOOD_DWELL is that beat: the log is inert for this long where it landed, and
+  // is drawn spinning for every frame of it. Below about a tenth of a second the
+  // magnet takes a log that is still visibly flying out of the trunk, which is
+  // the one thing on the other side of this trade.
+  const WOOD_DWELL = 0.22;
+  // Wood is not fought over — no enemy hero can take it and no ally competes for
+  // it — so its magnet does not have to be the careful little one the coins
+  // share. A wider reach means all three logs are always in range of whoever
+  // just felled the tree, wherever they scattered, instead of the far one
+  // crawling in at the shared magnet's slowest speed; the multiplier is what
+  // turns the rest of the tail into a flick.
+  const WOOD_MAGNET_RADIUS = 220;
+  const WOOD_MAGNET_MULT = 2.2;
   const CHIP_COLORS = ['#C99A5F','#8A6236','#E0BB84','#5C401F'];
   function woodChips(x, y, ang, n){
     for(let i=0;i<n;i++){
@@ -8418,7 +8445,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // it on, so its heroes walk over a log rather than hoovering up something
   // that would then leave the game entirely.
   function nearestWoodCollector(x, y){
-    let best = null, bd = PICKUP_MAGNET_RADIUS;
+    let best = null, bd = WOOD_MAGNET_RADIUS;
     for(const h of playerTeam){ if(h.alive){ const d = dist(x,y,h.x,h.y); if(d<bd){ bd=d; best=h; } } }
     return best;
   }
@@ -8440,7 +8467,8 @@ window.addEventListener('DOMContentLoaded', function(){
       // Nothing is magnetic for its first WOOD_DWELL seconds: the collector is
       // simply not offered until then.
       if(w.dwell > 0) w.dwell -= dt;
-      const taker = updatePickup(w, dt, w.dwell > 0 ? (()=>null) : nearestWoodCollector);
+      const taker = updatePickup(w, dt, w.dwell > 0 ? (()=>null) : nearestWoodCollector,
+                                 WOOD_MAGNET_MULT);
       if(taker){ collectWood(w, taker); woodDrops.splice(i,1); }
     }
   }
