@@ -27,6 +27,30 @@ docs/
   TUTORIAL.md      proposed in-game tutorial: phases and how it is built
 ```
 
+## Orders
+
+You drive one hero; the other two act on the last order you gave them. There are
+four, and each shows as four letters under the hero's portrait:
+
+| | |
+|---|---|
+| `PUSH` | walking his lane and hitting what stands in it — the opening order |
+| `MOVE` | walking to a spot you dragged him to, then holding it |
+| `FLLW` | escorting one team-mate: drag a hero onto another hero, or onto that hero's portrait |
+| `ASSM` | travelling as a squad behind whoever you are driving (Assemble, `0`) |
+| `HOLD` | no order: standing where he was left, fighting what comes to him |
+| `YOU` | the hero you are driving |
+
+Orders are given by dragging a hero — from his body on the field or from his
+portrait — with the right mouse button, or with a finger on touch. Where he
+lands decides which order it is: a half of the minimap is a lane, a team-mate is
+an escort, open ground is a posting.
+
+**Taking a hero over cancels his order.** Focus him and the walk, the lane and
+the dotted line all end there; switch away again and he holds that ground rather
+than resuming a march you had forgotten about. An assembled squad is the one
+order that survives a switch, because it re-forms on whoever you pick up.
+
 ## Running the simulation
 
 ```bash

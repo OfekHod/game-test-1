@@ -62,7 +62,11 @@
   canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;background:#1E9419;}
   #game{cursor:none;outline:none;touch-action:none;}
 
-  .party{position:absolute;top:calc(16px + var(--sat));left:calc(16px + var(--sal));display:flex;gap:8px;z-index:6;}
+  /* user-select:none because a chip is something you DRAG: without it, pulling a
+     hero off his portrait swept a text selection across the status labels and
+     left them sitting in blue highlight for the rest of the round. */
+  .party{position:absolute;top:calc(16px + var(--sat));left:calc(16px + var(--sal));display:flex;gap:8px;z-index:6;
+         user-select:none;-webkit-user-select:none;}
   .party.hidden{display:none;}
   /* Drawn as DOM, not on the canvas. The chips are DOM and sit ABOVE the canvas,
      so a canvas-drawn scoreboard is hidden behind them no matter where it is
@@ -126,7 +130,22 @@
   .pbar.hp span{background:#E8453C;}
   .pbar.mp span{background:#4c8fe2;}
   .pbar.xp span{background:#FFD54F;}
-  .asmBtn{cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;}
+  /* Four letters under the bars saying what this hero is doing while you are not
+     driving him: PUSH a lane, MOVE to a spot, FLLW another hero, ASSM with the
+     squad, HOLD where he was left. Without it the only way to tell a posted hero
+     from a laning one was to watch him walk. */
+  .pstat{display:block;margin-top:4px;font-size:9px;font-weight:800;letter-spacing:.5px;
+         line-height:1;color:#9A7B45;}
+  .pchip[data-stat="YOU"]  .pstat{color:#2f9bc4;}
+  .pchip[data-stat="PUSH"] .pstat{color:#C4771E;}
+  .pchip[data-stat="MOVE"] .pstat{color:#C4771E;}
+  .pchip[data-stat="FLLW"] .pstat{color:#3E8E5A;}
+  .pchip[data-stat="ASSM"] .pstat{color:#3E8E5A;}
+  .pchip[data-stat="DEAD"] .pstat{color:#A83A2C;}
+  /* The chips grew a row, and the party is a stretch row, so centre the ALL
+     button's own contents rather than leaving them stranded at the top. */
+  .asmBtn{cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
+          display:flex;flex-direction:column;justify-content:center;align-items:center;}
   .asmBtn:active{transform:translateY(1px);}
   .asmBtn.cooling{opacity:.55;}
   .asmBtn.cooling:active{transform:none;}
@@ -668,6 +687,7 @@
     .asmIcon{width:12px;height:12px;margin:1px auto 3px;border-width:1.5px;}
     .asmIcon::before{width:4px;height:4px;}
     .asmLabel{font-size:7.5px;letter-spacing:.3px;}
+    .pstat{font-size:7.5px;letter-spacing:.2px;margin-top:3px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -759,9 +779,9 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
     </div>
     <div class="party hidden" id="party">
-      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pkey">1</span></div>
-      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pkey">2</span></div>
-      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pkey">3</span></div>
+      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">1</span></div>
+      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">2</span></div>
+      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pdot"></div><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span><span class="pkey">3</span></div>
       <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ALL</span><span class="pkey">0</span></button>
     </div>
 
@@ -6406,6 +6426,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const w = toWorld(e.clientX, e.clientY);
       orderDrag.moved += dist(w.x, w.y, orderDrag.x, orderDrag.y);
       orderDrag.x = w.x; orderDrag.y = w.y;
+      orderDrag.cx = e.clientX; orderDrag.cy = e.clientY;
     }
   });
   canvas.addEventListener('contextmenu', e=> e.preventDefault());
@@ -6414,7 +6435,8 @@ window.addEventListener('DOMContentLoaded', function(){
       const w = toWorld(e.clientX, e.clientY);
       const h = playerHeroAt(w.x, w.y);
       const c0 = toCanvasCoords(e.clientX, e.clientY);
-      orderDrag = { hero:h, x:w.x, y:w.y, ox:w.x, oy:w.y, sx:c0.x, sy:c0.y, moved:0 };
+      orderDrag = { hero:h, x:w.x, y:w.y, ox:w.x, oy:w.y, sx:c0.x, sy:c0.y,
+                    cx:e.clientX, cy:e.clientY, moved:0 };
       return;
     }
     if(e.button!==0) return;
@@ -6445,13 +6467,16 @@ window.addEventListener('DOMContentLoaded', function(){
     const w = toWorld(e.clientX, e.clientY), c = toCanvasCoords(e.clientX, e.clientY);
     orderDrag.moved += dist(w.x, w.y, orderDrag.x, orderDrag.y);
     orderDrag.x = w.x; orderDrag.y = w.y; orderDrag.sx = c.x; orderDrag.sy = c.y;
+    orderDrag.cx = e.clientX; orderDrag.cy = e.clientY;
   });
   window.addEventListener('mouseup', e=>{
     if(scout){ scout = null; camSnap = 0.45; }   // release: snap back to the hero
     isMouseDown = false;
     if(orderDrag && !orderDrag.id){
       const lane = minimapLane(orderDrag.sx, orderDrag.sy);
+      const mate = dragFollowTarget(orderDrag);
       if(lane !== null && orderDrag.hero) laneOrder(orderDrag.hero, lane);
+      else if(mate) followOrder(orderDrag.hero, mate);
       else if(orderDrag.hero && orderDrag.moved > 10) soloOrder(orderDrag.hero, orderDrag.x, orderDrag.y);
       else if(!orderDrag.fromChip) groupOrder(orderDrag.x, orderDrag.y);
       lastDragMoved = orderDrag.moved;      // so the click that follows knows
@@ -6513,6 +6538,50 @@ window.addEventListener('DOMContentLoaded', function(){
         if(focusHero(idx)) break;
       }
     }
+  }
+  // Assemble for one: drop a hero on a team-mate and he tags along with him
+  // instead of being posted to a spot. The team-mate can be the hero you are
+  // driving, which is how you pick up a single escort without pulling the whole
+  // squad off its lanes.
+  function followOrder(h, target){
+    if(!h || !h.alive || !target || target===h) return;
+    squadTogether = false;
+    h.mode='follow'; h.followTarget=target; h.moveTarget=null;
+    h.standX=null; h.standY=null;
+    addFloater(h.x, h.y-h.r-46, 'FOLLOW', '#8FD6FF', true);
+    // Same hand-over as soloOrder: updateIdleAI skips whoever you are driving,
+    // so a follow order written on him would just sit there unread.
+    if(h===playerTeam[activePlayerIdx]){
+      for(let step=1; step<playerTeam.length; step++){
+        if(focusHero((activePlayerIdx+step) % playerTeam.length)) break;
+      }
+    }
+  }
+  // Which of your heroes a drag is currently hovering, by his chip or by his
+  // body on the map. One function so the highlight drawn during the drag and
+  // the order given on release can never disagree about the target.
+  function chipHeroAt(clientX, clientY){
+    if(clientX==null || clientY==null) return null;
+    for(let i=0;i<pchips.length;i++){
+      const r = pchips[i].getBoundingClientRect();
+      if(clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom){
+        const h = playerTeam[i];
+        return (h && h.alive) ? h : null;
+      }
+    }
+    return null;
+  }
+  function dragFollowTarget(d, pad, minMoved){
+    if(!d || !d.hero) return null;
+    if(minimapLane(d.sx, d.sy) !== null) return null;   // the minimap wins: that is a lane order
+    // A press that does not travel is still the old "everyone follow the hero
+    // under the cursor" order, so an escort needs a real drag behind it. Without
+    // this, right-clicking one of two heroes standing on top of each other would
+    // quietly become an escort order for one of them.
+    if(d.moved <= (minMoved==null ? 10 : minMoved)) return null;
+    let t = chipHeroAt(d.cx, d.cy);
+    if(!t) t = playerHeroAt(d.x, d.y, false, pad==null ? 16 : pad);
+    return (t && t !== d.hero && t.alive) ? t : null;
   }
   function groupOrder(wx, wy){
     squadTogether = false;      // you have just posted the formation yourself
@@ -6600,7 +6669,8 @@ window.addEventListener('DOMContentLoaded', function(){
       const hitHero = playerHeroAt(wpt.x, wpt.y, true, 34);
       if(hitHero && !orderDrag){
         const ct0 = toCanvasCoords(t.clientX, t.clientY);
-        orderDrag = { id:t.identifier, hero:hitHero, x:wpt.x, y:wpt.y, sx:ct0.x, sy:ct0.y, moved:0 };
+        orderDrag = { id:t.identifier, hero:hitHero, x:wpt.x, y:wpt.y, sx:ct0.x, sy:ct0.y,
+                      cx:t.clientX, cy:t.clientY, moved:0 };
         continue;
       }
       const r = stageEl.getBoundingClientRect();
@@ -6630,6 +6700,7 @@ window.addEventListener('DOMContentLoaded', function(){
         const ct = toCanvasCoords(t.clientX, t.clientY);
         orderDrag.moved += dist(w.x, w.y, orderDrag.x, orderDrag.y);
         orderDrag.x = w.x; orderDrag.y = w.y; orderDrag.sx = ct.x; orderDrag.sy = ct.y;
+        orderDrag.cx = t.clientX; orderDrag.cy = t.clientY;
         handled = true;
         continue;
       }
@@ -6666,7 +6737,11 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       if(orderDrag && orderDrag.id===t.identifier){
         const lane = minimapLane(orderDrag.sx, orderDrag.sy);
+        // A thumb is fatter than a cursor, so a drop counts as "on him" from
+        // further out on touch than it does under a mouse.
+        const mate = dragFollowTarget(orderDrag, 40, 24);
         if(lane !== null) laneOrder(orderDrag.hero, lane);
+        else if(mate) followOrder(orderDrag.hero, mate);
         else if(orderDrag.moved > 24) soloOrder(orderDrag.hero, orderDrag.x, orderDrag.y);
         else focusHero(playerTeam.indexOf(orderDrag.hero));
         orderDrag = null; handled = true;
@@ -6699,7 +6774,8 @@ window.addEventListener('DOMContentLoaded', function(){
       const h = playerTeam[i];
       if(state!=='playing' || !h || !h.alive) return false;
       const c = toCanvasCoords(clientX, clientY);
-      orderDrag = { hero:h, fromChip:true, id, x:h.x, y:h.y, sx:c.x, sy:c.y, moved:0 };
+      orderDrag = { hero:h, fromChip:true, id, x:h.x, y:h.y, sx:c.x, sy:c.y,
+                    cx:clientX, cy:clientY, moved:0 };
       return true;
     };
     pchips[i].addEventListener('mousedown', e=>{
@@ -6724,7 +6800,9 @@ window.addEventListener('DOMContentLoaded', function(){
   bindTap(assembleBtn, assembleOnFocus);
   bindTip(assembleBtn, ()=>
     '<b>Assemble &mdash; 0</b>Sends your other two heroes to follow whichever hero you are '
-    + 'controlling right now. They hold formation until you drag one somewhere else.<br><i>'
+    + 'controlling right now. They hold formation until you drag one somewhere else.<br>'
+    + 'For one hero instead of both, drag him onto a team-mate — or onto that '
+    + 'team-mate\'s square — and he escorts him.<br><i>'
     + (assembleCd>0 ? 'Ready in '+Math.ceil(assembleCd)+'s' : ASSEMBLE_CD+'s cooldown') + '</i>');
 
 
@@ -7721,6 +7799,17 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     activePlayerIdx = i;
+    // Taking a hero over cancels whatever he was told to do. He was walking to a
+    // posted spot or pushing a lane; you are driving him now, so the old order is
+    // finished — its dotted line goes with it, and switching away later leaves him
+    // standing where you stopped rather than quietly resuming a march you had
+    // forgotten about. The assemble block below re-forms the squad around him if
+    // one is travelling together, which is the one order that survives a switch.
+    {
+      const cur = playerTeam[i];
+      cur.mode = 'idle'; cur.moveTarget = null; cur.followTarget = null;
+      cur.standX = null; cur.standY = null;
+    }
     // An assembled squad stays with whoever you are driving. It used to keep
     // following the hero you just left — who is now standing still under AI
     // control — so switching heroes quietly stranded the other two behind you.
@@ -9062,9 +9151,11 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     addFireBlast(x, y, Math.max(R, attackerHero ? R : TOWER_BLAST_VIS), BLAST_TIME, !!attackerHero);
     addBurst(x,y,'#FF8C42', attackerHero?26:16);
-    // Only a hero's rocket announces itself. Towers fire every second, so a BOOM
-    // and a full camera kick each time would be unbearable.
-    if(attackerHero){ addFloater(x,y-20,'BOOM','#FF7A45',true); shake=Math.max(shake,0.5); }
+    // Only a hero's rocket kicks the camera. Towers fire every second, so a full
+    // shake each time would be unbearable. The blast used to print "BOOM" over
+    // itself as well; the flipbook and the shake already say it, and the word sat
+    // on top of the damage numbers that actually carry information.
+    if(attackerHero){ shake=Math.max(shake,0.5); }
     else {
       const ah = playerTeam[activePlayerIdx];
       if(ah && dist(x,y,ah.x,ah.y) < 430) shake = Math.max(shake, 0.14);
@@ -9489,12 +9580,37 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(h.moveTarget.x,h.moveTarget.y,11,0,7); ctx.stroke();
     }
-    if(orderDrag && orderDrag.hero && !(orderDrag.fromChip && orderDrag.moved < 4)){
-      ctx.strokeStyle='rgba(255,213,79,.9)'; ctx.lineWidth=3;
-      ctx.setLineDash([7,7]);
-      ctx.beginPath(); ctx.moveTo(orderDrag.hero.x, orderDrag.hero.y); ctx.lineTo(orderDrag.x, orderDrag.y); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.arc(orderDrag.x, orderDrag.y, 14, 0, 7); ctx.stroke();
+    ctx.restore();
+  }
+  // The order you are giving RIGHT NOW, drawn over the world rather than under
+  // it: a target standing on his own tower had the label painted over him by the
+  // tower sprite, and one in unexplored ground had it dimmed by the fog.
+  function drawDragOrder(){
+    if(state!=='playing') return;
+    if(!orderDrag || !orderDrag.hero) return;
+    if(orderDrag.fromChip && orderDrag.moved < 4) return;
+    // Hovering a team-mate turns the order from "go there" into "go with him",
+    // so the line ends on him and turns blue instead of pointing at bare ground.
+    const mate = dragFollowTarget(orderDrag, usedTouch ? 40 : 16, usedTouch ? 24 : 10);
+    const tx = mate ? mate.x : orderDrag.x, ty = mate ? mate.y : orderDrag.y;
+    ctx.save();
+    ctx.strokeStyle = mate ? 'rgba(143,214,255,.95)' : 'rgba(255,213,79,.9)';
+    ctx.lineWidth=3;
+    ctx.setLineDash([7,7]);
+    ctx.beginPath(); ctx.moveTo(orderDrag.hero.x, orderDrag.hero.y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(tx, ty, mate ? mate.r+10 : 14, 0, 7); ctx.stroke();
+    if(mate){
+      // UNDER him, not over: above a hero is where the damage numbers, the xp
+      // pickups and the level pops all fly, and in a brawl the word was
+      // completely buried in them.
+      const ly = ty + mate.r + 24;
+      ctx.font = "800 13px 'Baloo 2', sans-serif";
+      ctx.textAlign='center';
+      ctx.lineWidth=4; ctx.strokeStyle='rgba(40,30,12,.8)';
+      ctx.strokeText('FOLLOW', tx, ly);
+      ctx.fillStyle='#DCF2FF';
+      ctx.fillText('FOLLOW', tx, ly);
     }
     ctx.restore();
   }
@@ -9621,6 +9737,17 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.restore();
   }
 
+  // Four letters for what a hero is doing, short enough to sit under a 48px chip.
+  // The hero you are driving reads YOU rather than his last order, because taking
+  // him over cancels it.
+  function heroStatus(h, i){
+    if(!h.alive) return 'DEAD';
+    if(i===activePlayerIdx) return 'YOU';
+    if(h.mode==='lane') return 'PUSH';
+    if(h.mode==='moveto' && h.moveTarget) return 'MOVE';
+    if(h.mode==='follow' && h.followTarget) return squadTogether ? 'ASSM' : 'FLLW';
+    return 'HOLD';
+  }
   function updatePartyUI(){
     for(let i=0;i<3;i++){
       const h=playerTeam[i];
@@ -9628,6 +9755,11 @@ window.addEventListener('DOMContentLoaded', function(){
       chip.classList.toggle('active', i===activePlayerIdx);
       chip.classList.toggle('dead', !h.alive);
       chip.classList.toggle('solo', h!==playerTeam[0] && h.followTarget!==playerTeam[0]);
+      const st = heroStatus(h, i);
+      if(chip.dataset.stat !== st){
+        chip.dataset.stat = st;
+        chip.querySelector('.pstat').textContent = st;
+      }
       chip.querySelector('.pdot').style.background = HERO_STATS[h.type].colorPlayer;
       chip.querySelector('.pbar.hp span').style.width = Math.max(0,h.hp/h.maxHp*100)+'%';
       chip.querySelector('.pbar.mp span').style.width = Math.max(0,h.mana/h.maxMana*100)+'%';
@@ -9878,6 +10010,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Above the fog on purpose: a tutorial mark is what you are being sent to
     // find, so it must not be hidden by the fact that you have not found it.
     drawTutorialMarks();
+    drawDragOrder();      // and for the same reason: it is what you are doing now
     if(MUSIC_DEBUG && state==='playing') drawThreatRings();
     ctx.restore();
     drawVignetteOverlay();
@@ -10357,8 +10490,8 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Orders',
     text:()=>tutPick(
-      '<k>Right-click a hero and drag</k> him somewhere to detach him and post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.',
-      '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; somewhere to post him there. He holds that ground and fights whatever comes to him, and you take over one of the others.'),
+      '<k>Right-click a hero and drag</k> him somewhere to detach him and post him there. He holds that ground and fights whatever comes to him, and you take over one of the others. Drop him <b>on a team-mate</b> instead and he follows that hero around.',
+      '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; somewhere to post him there. He holds that ground and fights whatever comes to him, and you take over one of the others. Drop him <b>on a team-mate</b> instead and he follows that hero around.'),
     goal:()=>'Post a hero on the marked spot',
     enter(){
       // The practice targets from the shooting steps have done their job. Clear
