@@ -14886,6 +14886,22 @@ window.addEventListener('DOMContentLoaded', function(){
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
     setPaused(false);                  // a round quit while paused must not carry the freeze into the menu
+    // Quitting before beginRoundLoad's own tryReveal() ever got to fire —
+    // reachable now that the pause menu can end a round within its first few
+    // seconds — otherwise left that rAF loop alive with nothing to stop it. It
+    // would go on to call reveal() on its own schedule, well after the menu
+    // (or a newer round) owns the curtain, and stomp on whichever one is
+    // showing. Bumping the token here is what it checks each frame to know it
+    // has been superseded; the rest just puts the curtain back to the state
+    // the menu expects it in.
+    roundLoadToken++;
+    clearTimeout(curtainTimer);
+    curtainEl.classList.add('hidden');
+    curtainEl.classList.remove('hold', 'part');
+    loadScreen.classList.add('hidden');
+    loadScreen.classList.remove('leaving');
+    roundHold = false;
+    loadingRound = false;
     musicSync();                       // quitting the round lands on the menu
   }
   function tutUpdate(dt){
@@ -15238,6 +15254,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const WARM_FRAMES = 8;
   const LOAD_MAX_MS = 9000;    // never let the panel outstay its welcome
   let roundHold = false, loadingRound = false, warmFrames = 0, curtainTimer = 0;
+  // Bumped by every beginRoundLoad() and by tutQuit(). A round quit before its
+  // own tryReveal() below ever fired reveal() leaves that rAF loop running —
+  // nothing else stops it — and it would go on to call reveal() on its own
+  // schedule, well after a newer round (or the bare menu) owns the curtain.
+  // tryReveal checks its own token against this one each frame and simply
+  // stops once it no longer matches, instead of touching state it no longer owns.
+  let roundLoadToken = 0;
   // Every way into a round — Match, Survival, Tutorial, Play Again, the Enter
   // key — goes through here, so none of them can skip the panel.
   // Leaving the menu gets the same book-turn the menu itself arrived with —
@@ -15269,6 +15292,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function beginRoundLoad(mode){
+    const myToken = ++roundLoadToken;
     endScreen.classList.add('hidden');
     // Sky first, then the panel on top of it. Both go up in this same tick so
     // the field is never briefly naked between the click and the cover.
@@ -15312,6 +15336,9 @@ window.addEventListener('DOMContentLoaded', function(){
       // Reveal on a frame boundary, once the field behind has actually been
       // drawn a few times and the floor has passed.
       const tryReveal = ()=>{
+        // Superseded — a quit or a newer round now owns the curtain — so stop
+        // here rather than call reveal() on state that has moved on without it.
+        if(myToken !== roundLoadToken) return;
         const waited = performance.now() - shownAt;
         if(waited < LOAD_MAX_MS && (warmFrames < WARM_FRAMES || waited < LOAD_MIN_MS)){
           requestAnimationFrame(tryReveal);
