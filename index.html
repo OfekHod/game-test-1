@@ -8030,7 +8030,13 @@ window.addEventListener('DOMContentLoaded', function(){
     waveBannerSubEl.classList.toggle('on', !!sub);
     waveBannerEl.classList.add('show');
     clearTimeout(waveBannerTimer);
-    waveBannerTimer = setTimeout(()=>{ waveBannerEl.classList.remove('show'); }, SURV_BANNER_MS);
+    // Both classes come off together. Leaving the subtitle's on it while the
+    // banner itself is invisible is a lie about what is on the screen, and the
+    // next wave without an arrival would have to remember to clear it.
+    waveBannerTimer = setTimeout(()=>{
+      waveBannerEl.classList.remove('show');
+      waveBannerSubEl.classList.remove('on');
+    }, SURV_BANNER_MS);
   }
   function hideWaveBanner(){
     clearTimeout(waveBannerTimer);
