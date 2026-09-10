@@ -598,24 +598,42 @@
        - .introStage rotates around its own left edge — a right-hand page
          turning the ordinary way — with perspective() as the transform's
          own first function, so the 3D is local to the page and nothing about
-         the stage underneath has to change to host it.
-       - #introScreen itself (the dark veil behind the page) holds until the
-         page is most of the way through its turn, then fades quickly, so the
-         veil does not go transparent while there is still a page arcing
-         across it.
+         the stage underneath has to change to host it. The curve is a full
+         ease-in-out rather than an ease-in that never lets up: a page this
+         size does not accelerate the whole way through its own arc, it
+         swings fastest through the middle (edge-on, where there is least of
+         it left to move) and eases both into the lift and out of the fall.
+       - A second animation on the same element grows a drop shadow as the
+         page lifts off the veil, holds it through the fastest part of the
+         swing, and lets it go as the page turns away — the depth cue that
+         sells "lifting", not just "rotating".
+       - #introScreen itself (the dark veil behind the page) holds solid
+         while the page is still flat enough to be recognisable, then fades
+         continuously from there to the end, finishing exactly as the turn
+         does. That is what makes the menu grow in behind the page rather
+         than popping in once the page is gone: past the hold, the veil and
+         the page are fading together (opacity on a parent carries to its
+         children), so the thinning, ghosting page and the solidifying menu
+         behind it are the same motion, not two.
 
      pointer-events:none the instant the turn starts: a second tap mid-turn
      must not re-enter introDismiss, and Playwright's own click() already
      retries past an obscuring element, so this does not race the tooling
      either — see tools/shoot.js. */
-  #introScreen.turning{pointer-events:none;animation:introVeilOut .56s ease-in forwards;}
-  @keyframes introVeilOut{0%,65%{opacity:1}100%{opacity:0}}
+  #introScreen.turning{pointer-events:none;animation:introVeilOut 1s ease forwards;}
+  @keyframes introVeilOut{0%,45%{opacity:1}100%{opacity:0}}
   #introScreen.turning .introStage{transform-origin:left center;
-    box-shadow:0 0 min(8vw,60px) rgba(0,0,0,.5);
-    animation:introTurn .56s cubic-bezier(.5,0,.75,0) forwards;}
+    animation:introTurn 1s cubic-bezier(.61,.04,.44,.98) forwards,
+              introShadow 1s ease-in-out forwards;}
   @keyframes introTurn{
-    0%{transform:perspective(1800px) rotateY(0deg);}
-    100%{transform:perspective(1800px) rotateY(-100deg);}
+    0%{transform:perspective(1900px) rotateY(0deg);}
+    100%{transform:perspective(1900px) rotateY(-112deg);}
+  }
+  @keyframes introShadow{
+    0%{box-shadow:0 0 0 rgba(0,0,0,0);}
+    28%{box-shadow:0 0 min(11vw,90px) rgba(0,0,0,.55);}
+    72%{box-shadow:0 0 min(11vw,90px) rgba(0,0,0,.55);}
+    100%{box-shadow:0 0 min(4vw,30px) rgba(0,0,0,0);}
   }
   @media (prefers-reduced-motion:reduce){
     #introScreen.turning{animation:cFadeOut .3s ease-out forwards;}
@@ -14630,20 +14648,38 @@ window.addEventListener('DOMContentLoaded', function(){
     /* ------------------------------------------------------------ page turn */
 
     // The one UI sound in the file rather than a world event, so it has no
-    // place to be placed — it goes straight to master, centred, full width.
-    // A page has no impact at the end of it, only paper: the same "band
-    // walked down the spectrum is a swish" trick the crack of every impact
-    // above uses, but alone, with nothing to give it weight. Three more,
-    // narrower and staggered under the swish, are the individual crinkles a
-    // single sheet makes as it arcs over — the texture that turns a swoosh
-    // into paper rather than wind.
+    // place to be placed — it goes straight to master, centred, full width,
+    // and it is allowed to be the loudest thing here: every level below sits
+    // well above the loudest impact's crack (0.46), which is the point — a
+    // page this size moving this far reads as an event, not a background
+    // rustle. The compressor on master (see createLaneSfx's top) exists
+    // exactly to take a burst this hot down to a thump instead of a click,
+    // so pushing the levels here is safe in a way it would not be without it.
+    //
+    // Two swipes, matching the two-part turn on screen: a long first sweep
+    // for the page lifting and arcing through the air, then a second,
+    // shorter one half a second later for it landing on the other side —
+    // the same "leaving and arriving are a mirrored pair" idea the teleport
+    // above uses, just for paper instead of a hero. Under each sweep, a
+    // handful of narrower staggered crinkles are the texture that turns a
+    // whoosh into a single turning sheet rather than wind or a whole stack
+    // of paper. A soft body under the landing gives the second one
+    // somewhere to come to rest, the way every impact's body tone does.
     function pageTurn(){
       const t = ctx.currentTime + 0.002;
-      const j = 0.96 + Math.random() * 0.08;
-      burst(master, t, 0.30, 4400 * j, 1.3, 0.24, 'bandpass', 1000 * j);
-      burst(master, t + 0.03, 0.15, 6200 * j, 3.2, 0.05);
-      burst(master, t + 0.08, 0.13, 5100 * j, 3.0, 0.05);
-      burst(master, t + 0.13, 0.10, 6600 * j, 3.0, 0.045);
+      const j = 0.97 + Math.random() * 0.06;
+      // The lift and the arc.
+      burst(master, t,        0.62, 5000 * j, 1.0, 0.50, 'bandpass', 800 * j);
+      burst(master, t + 0.07, 0.34, 7200 * j, 2.3, 0.13);
+      burst(master, t + 0.17, 0.28, 5600 * j, 2.3, 0.12);
+      burst(master, t + 0.28, 0.22, 6800 * j, 2.3, 0.11);
+      burst(master, t + 0.39, 0.16, 5200 * j, 2.3, 0.10);
+      // The landing, half a second on.
+      const t2 = t + 0.55;
+      burst(master, t2,        0.44, 4200 * j, 1.0, 0.34, 'bandpass', 700 * j);
+      burst(master, t2 + 0.06, 0.22, 6000 * j, 2.5, 0.09);
+      burst(master, t2 + 0.13, 0.16, 4900 * j, 2.5, 0.08);
+      tone(master, t2 + 0.15, 'triangle', 165 * j, 80 * j, 0.15, 0.18, 0.02);
     }
 
     return { impact, shot, pickup, teleport, pageTurn, master, kinds: Object.keys(IMPACT) };
@@ -15014,7 +15050,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // do is get the page on top out of the way. INTRO_TURN_MS must match the
   // animation's own duration — CSS drives what it looks like, this only
   // drives when it is safe to stop pretending the page is still there.
-  const INTRO_TURN_MS = 560;
+  const INTRO_TURN_MS = 1000;
   function introDismiss(){
     if(introScreen.classList.contains('hidden') || introScreen.classList.contains('turning')) return;
     introScreen.classList.add('turning');
