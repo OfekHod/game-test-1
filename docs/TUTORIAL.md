@@ -87,7 +87,7 @@ drops you back to the menu.
 | 6 | **Your squad** | Tank and support walk out of the base | Taking control of each |
 | 7 | **Rocket and heal** | A mob each for them | Casting both skills |
 | 8 | **Orders** | A marked spot on the ground | Posting a hero on it |
-| 9 | **Assemble** | The ALL button pulses | Calling the squad back |
+| 9 | **Assemble** | The ASSEMBLE button pulses | Calling the squad back |
 | 10 | **The forest** | The camp is stocked and ringed, and two rings route you there down the river | Clearing it |
 | 11 | **Your base** | Your tower's range drawn | Standing inside it |
 | 12 | **The map** | — | Holding on the minimap to scout |

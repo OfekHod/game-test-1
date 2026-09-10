@@ -178,13 +178,17 @@
   .pchip[data-stat="FLLW"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="ASSM"] .pstat{color:#8BDCA6;}
   .pchip[data-stat="DEAD"] .pstat{color:#FF8E7C;}
-  /* The chips grew a row, and the party is a stretch row, so centre the ALL
+  /* The chips grew a row, and the party is a stretch row, so centre the ASSEMBLE
      button's own contents rather than leaving them stranded at the top. */
   /* Narrower than a player chip since the cards arrived: it is a button, not a
      hero, and at a card's width it read as a fourth card with the picture
      missing. It still stretches to their height — the row is one block — and
-     centres what it holds in that. */
-  .asmBtn{width:72px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
+     centres what it holds in that. The word sets the width — width:auto plus a
+     gutter either side — rather than a number measured against the fallback
+     font: Baloo 2 arrives over the network and is wider than what a machine
+     with no network renders ASSEMBLE in, and a width picked from the second one
+     clips the first. min-width is only a floor for a shorter word. */
+  .asmBtn{width:auto;min-width:76px;padding:0 12px;cursor:pointer;font-family:'Baloo 2',sans-serif;color:var(--text-strong);line-height:1;overflow:hidden;
           display:flex;flex-direction:column;justify-content:center;align-items:center;}
   .asmBtn:active{transform:translateY(1px);}
   .asmBtn.cooling{opacity:.55;}
@@ -193,7 +197,9 @@
   .asmIcon,.asmLabel{position:relative;}
   .asmIcon{position:relative;width:24px;height:24px;margin:3px auto 6px;border-radius:50%;border:3px solid var(--text-strong);opacity:.8;}
   .asmIcon::before{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:var(--text-strong);transform:translate(-50%,-50%);}
-  .asmLabel{display:block;font-size:13px;font-weight:800;letter-spacing:.9px;}
+  /* A point smaller than the chip's own type, because the word it carries is
+     ASSEMBLE and it has to read across a button narrower than a card. */
+  .asmLabel{display:block;font-size:11px;font-weight:800;letter-spacing:.4px;white-space:nowrap;}
   .pkey{position:absolute;top:-10px;right:-8px;font-size:13px;font-weight:800;background:var(--panel-border);color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;}
 
   /* The dock reaches the bottom edge and pads itself off it, so the strip the
@@ -735,7 +741,7 @@
        whole constraint here: the row shares the top of the screen with the
        scoreboard, and a 390px phone leaves it about 200 pixels — three 58px
        cards and the gaps between them, and no room at all for a fourth column.
-       So the ALL button drops out of the row and becomes a bar underneath, which
+       So the ASSEMBLE button drops out of the row and becomes a bar underneath, which
        is a better target for a thumb than the sliver it had shrunk to. 58 also
        keeps the row clear of the scoreboard on a 375px screen. */
     .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;padding-bottom:39px;}
@@ -775,11 +781,11 @@
     .skillName{display:none;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
-    /* A phone on its side has width to spare and no height at all, so the ALL
+    /* A phone on its side has width to spare and no height at all, so the ASSEMBLE
        button climbs back into the row rather than costing the party another
        forty pixels down a 390px-tall screen. */
     .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));padding-bottom:0;}
-    .asmBtn{position:static;width:44px;height:auto;flex-direction:column;gap:0;}
+    .asmBtn{position:static;width:auto;height:auto;flex-direction:column;gap:0;}
     .asmIcon{margin:0 auto 5px;}
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
@@ -850,7 +856,7 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">1</span></div>
       <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">2</span></div>
       <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div><span class="pkey">3</span></div>
-      <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ALL</span><span class="pkey">0</span></button>
+      <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ASSEMBLE</span><span class="pkey">0</span></button>
     </div>
 
     <div class="bottomDock hidden" id="bottomDock">
@@ -12278,8 +12284,8 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Assemble',
     text:()=>tutPick(
-      '<k>0</k>, or the <b>ALL</b> button beside the portraits, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
-      'The <b>ALL</b> button beside the portraits drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
+      '<k>0</k>, or the <b>ASSEMBLE</b> button beside the cards, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
+      'The <b>ASSEMBLE</b> button under the cards drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
     goal:()=>'Call the squad back to you',
     hl:()=>assembleBtn,
     done:()=>!!tut.p.assemble
