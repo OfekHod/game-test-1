@@ -3104,6 +3104,11 @@ window.addEventListener('DOMContentLoaded', function(){
     return !!t && t.hp>0 && dist(h.x,h.y,t.x,t.y) < TOWER_RANGE;
   }
   function baseRegenMult(h){ return inBaseRange(h) ? BASE_REGEN_MULT : 1; }
+  // Mana takes the base bonus AND the river one rather than the larger of the
+  // two, and that overlap is real: the Match map's river runs west into the
+  // player's own base ring, so the last few strides of it pay x6. Mana only,
+  // at your own base, where you were safe anyway.
+  function manaRegenMult(h){ return baseRegenMult(h) * (inRiver(h.x,h.y) ? RIVER_MANA_MULT : 1); }
   // One base per side, dead centre on its edge. Kept as arrays so everything
   // that iterates towers — vision, minimap, projectiles, win check — is unchanged.
   let playerTowers = [ makeTower(playerTowerX, BASE_Y, 'player') ];
@@ -4051,6 +4056,12 @@ window.addEventListener('DOMContentLoaded', function(){
   let rivers = [];    // shallow: you can ford them, they just slow you
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
   const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // Standing in a river doubles mana regen. Rivers already cost you speed and
+  // stand between the lanes, so the trade is real: the ground that gets your
+  // mana back fastest outside your own base is also the ground you are slowest
+  // to leave. Lakes are solid and cannot be stood in, so this is inRiver, not
+  // inWater. Health is untouched — a river is not a base.
+  const RIVER_MANA_MULT = 2;
   // Lakes are three times the radius they used to be. A 165-unit pond was
   // scenery you clipped the corner of on the way past; at 495 it is a piece of
   // terrain you commit to walking around, which is the only way still water
@@ -5479,11 +5490,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // the base bonus shows: the number is what is actually ticking, not what the
     // build says, and the button goes green so the boost reads on a phone too
     // (.sDerived is display:none in the narrow layout).
-    const rm = baseRegenMult(h);
+    // Mana carries the river bonus on top of the base one, so the two rates do
+    // not always agree — they are computed apart.
+    const rm = baseRegenMult(h), mm = manaRegenMult(h);
     sdEls.hpRegen.textContent = (h.stats.hpRegen*rm).toFixed(1)+'/s'+(rm>1?' ×'+rm:'');
-    sdEls.manaRegen.textContent = (h.stats.manaRegen*rm).toFixed(1)+'/s'+(rm>1?' ×'+rm:'');
+    sdEls.manaRegen.textContent = (h.stats.manaRegen*mm).toFixed(1)+'/s'+(mm>1?' ×'+mm:'');
     spEls.hpRegen.parentElement.classList.toggle('regenBoost', rm>1);
-    spEls.manaRegen.parentElement.classList.toggle('regenBoost', rm>1);
+    spEls.manaRegen.parentElement.classList.toggle('regenBoost', mm>1);
     sdEls.range.textContent = Math.round(attackRange(h))+' rng';
   }
 
@@ -8483,11 +8496,11 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function updateHeroCommon(h,dt){
     updateBars(h, dt);
-    // One multiplier for both bars, read once: a corpse is still standing where
-    // it fell as far as this is concerned, but respawnHero fills both bars
-    // anyway, so a dead hero's mana never notices either way.
-    const rm = baseRegenMult(h);
-    if(h.mana<h.maxMana) h.mana=Math.min(h.maxMana, h.mana+h.stats.manaRegen*rm*dt);
+    // Read once each: a corpse is still standing where it fell as far as these
+    // are concerned, but respawnHero fills both bars anyway, so a dead hero's
+    // mana never notices either way.
+    const rm = baseRegenMult(h), mm = manaRegenMult(h);
+    if(h.mana<h.maxMana) h.mana=Math.min(h.maxMana, h.mana+h.stats.manaRegen*mm*dt);
     if(!h.alive){
       h.respawnTimer -= dt;
       if(h.respawnTimer<=0) respawnHero(h);

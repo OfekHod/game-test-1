@@ -30,6 +30,7 @@ Values as shipped, with the evidence.
 | `ROUND_TIME` | 600 | see FINDINGS on match length |
 | `EARLY_PEACE` | 20 | 120 was 40% of the match spent not fighting |
 | `BASE_REGEN_MULT` | 3 | health and mana come back three times as fast inside your own main tower's range. Symmetric, and 80 games with it off finish within noise of 80 with it on (see FINDINGS) |
+| `RIVER_MANA_MULT` | 2 | mana only, and only in a river (`inRiver`, not `inWater` — lakes are solid). Multiplies with `BASE_REGEN_MULT`, and the Match map's river does run into the player's base ring, so those strides pay x6. Two 80-game pairs put it within noise; a single pair claimed a 21s speed-up that the second pair refuted (see FINDINGS). Deliberately not taught anywhere in the game |
 
 ## AI shape
 
