@@ -741,17 +741,19 @@
     .hud-right{gap:8px;font-size:12.5px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
-    /* Same card, same nameplate, at the width a phone has. 46px is four fifths
-       of the 58 this row started at and a bit over half again the 29 it was cut
-       to: the card at 58 crowded the screen, the card at 29 stopped being a
-       picture, and every length here is the 58 version times 0.8 so the chip is
-       that same object at the size in between.
+    /* Same card, same nameplate, at the width a phone has. 51px is four fifths
+       of the 58 this row started at plus a tenth back on top: 58 crowded the
+       screen, 29 stopped being a picture, 46 was the size in between and this is
+       that plus ten per cent. Only the chip's WIDTH carries the ten — .pcard is
+       246/364 of whatever it is given, so the picture grows by a tenth in both
+       directions and keeps its shape, while the nameplate under it stays the
+       height it was and simply takes up less of the chip.
        The ASSEMBLE button stays a bar underneath rather than a fourth column,
        which is a better target for a thumb and is what let the cards have the
        width in the first place — the row shares the top of the screen with the
        scoreboard, and a 390px phone leaves it about 200 pixels. */
     .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;padding-bottom:32px;}
-    .pchip{width:46px;border-width:1.5px;border-radius:7px;}
+    .pchip{width:51px;border-width:1.5px;border-radius:7px;}
     .plevel{top:-6px;left:-5px;font-size:8px;width:14px;height:14px;line-height:14px;}
     .pkey{top:-6px;right:-5px;font-size:8px;width:13px;height:13px;line-height:13px;}
     .pcard{border-radius:5.5px 5.5px 0 0;}
