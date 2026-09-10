@@ -5833,26 +5833,27 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
   }
-  // The path a blink leaves behind: a thin line the length of the whole
-  // dash, laid down the instant the hero arrives, scattered with pale motes
-  // along its length. Neither lasts — the line and the motes fade together
-  // over a third of a second, easing out rather than cutting off, so the
-  // route the hero took is still legible for a beat after he has already
-  // landed. It reads as the trace of the teleport itself, not another hit
-  // effect stacked on the burst that already lands on arrival.
+  // The path a blink leaves behind: a thin line scattered with pale motes,
+  // laid down the instant the hero arrives. It only covers the stretch just
+  // behind where he lands, not the whole dash — the full length read as a
+  // travelling streak, which fights the point of a blink; trimmed back like
+  // this it reads as an instant jump with a short flourish where he lands.
+  // Neither the line nor the motes last — they fade together over a third
+  // of a second, easing out rather than cutting off.
   const DASH_FX_DUR = 0.38;
-  function triggerDashFx(x0,y0,x1,y1){
+  const DASH_FX_TRAIL_FRAC = 0.4;   // fraction of the full dash the trail covers, measured back from the landing spot
+  function triggerDashFx(fromX,fromY,x1,y1){
+    const x0 = x1 - (x1-fromX)*DASH_FX_TRAIL_FRAC, y0 = y1 - (y1-fromY)*DASH_FX_TRAIL_FRAC;
     const dx=x1-x0, dy=y1-y0;
     const len = Math.max(1, Math.sqrt(dx*dx+dy*dy));
     const nx=-dy/len, ny=dx/len;
-    const n = Math.max(7, Math.min(22, Math.round(len/16)));
+    const n = Math.max(5, Math.min(14, Math.round(len/16)));
     const motes = [];
     for(let i=0;i<n;i++){
       const t = i/(n-1);
       const jitter = rand(-2.5,2.5);
       // The tail end starts fading a beat after the head, so the line
-      // dissolves from where the hero left rather than blinking off all at
-      // once.
+      // dissolves from where it starts rather than blinking off all at once.
       motes.push({ x:x0+dx*t+nx*jitter, y:y0+dy*t+ny*jitter, r:rand(1.8,3.4), delay:t*0.1+rand(0,0.05) });
     }
     dashFx.push({ x0,y0,x1,y1, life:0, dur:DASH_FX_DUR, motes });
