@@ -76,7 +76,7 @@ measure them against yet, for the reason under the table.
 | `TREE_BAR_HOLD` | 6 | seconds the bar stays up after a chop. It appears on the FIRST chop: an untouched tree has nothing to report, and 32 trees each wearing a full bar is a forest of health bars |
 | `TREE_FALL_TIME` | 1.1 | the topple. The angle goes as the square of it, so the trunk hangs and then lets go; the sprite fades only over the last 18% |
 | `WOOD_PER_TREE` | 3 | logs |
-| `WOOD_DWELL` | 0.5 | seconds a log lies where it fell before the magnet takes it. A coin flies out of a kill and into your pocket in one motion; wood you went and chopped for should be seen to come out of the tree |
+| `WOOD_DWELL` | 0.45 | seconds a log is left alone before the magnet takes it, timed from the drop. A coin flies out of a kill and into your pocket in one motion; wood you went and chopped for should be seen to come out of the tree. ONE timer, from the drop — it used to wait for the pop to settle and *then* start counting, and the two stacked: the pop decays exponentially towards a fixed threshold and takes most of a second on its own. Measured from the logs landing to the last of three banked, that was **2.52s**; it is **1.06s** now. At 0.45s the pop is already down to a sixth of its speed, so nothing is cut off — only the waiting after it |
 | wood pop speed | 55–130 | against 90–220 for a coin. At coin speed a log could land outside `PICKUP_MAGNET_RADIUS`, and felling a tree you are standing next to left one log stranded a step away |
 | `WOOD_TTL` | `ORB_TTL`*2 (30s) | a coin is dropped mid-fight and taken in the same breath; wood is dropped by somebody who went somewhere to chop |
 

@@ -8321,10 +8321,21 @@ window.addEventListener('DOMContentLoaded', function(){
   // player who WENT somewhere to chop, and who may well chop the next tree
   // before walking back for the pile.
   const WOOD_TTL = ORB_TTL*2;
-  // How long a log lies where it fell before the magnet takes it. A coin flies
-  // out of a kill and into your pocket in one motion, which is right for a coin;
-  // wood you went and chopped for should be seen to come out of the tree.
-  const WOOD_DWELL = 0.5;
+  // How long a log is left alone before the magnet takes it, timed from the
+  // moment it comes off the trunk. A coin flies out of a kill and into your
+  // pocket in one motion, which is right for a coin; wood you went and chopped
+  // for should be seen to come out of the tree.
+  //
+  // ONE timer, from the drop — not "wait for the pop to settle, THEN start
+  // waiting". That is what this was, and the two stacked: the pop decays
+  // exponentially towards a fixed threshold and takes the better part of a
+  // second on its own, so the last of three logs was banked 2.5s after it
+  // landed and felling a tree ended with the player stood still watching it.
+  // Measured from the logs landing to the last of the three banked: 2.52s
+  // before, 1.06s now. By 0.45s the pop is down to a sixth of its speed anyway,
+  // so nothing is cut off — only the waiting after it. Shorter than this and the
+  // magnet snatches a log that is still visibly flying out of the trunk.
+  const WOOD_DWELL = 0.45;
   const CHIP_COLORS = ['#C99A5F','#8A6236','#E0BB84','#5C401F'];
   function woodChips(x, y, ang, n){
     for(let i=0;i<n;i++){
@@ -8426,11 +8437,10 @@ window.addEventListener('DOMContentLoaded', function(){
         w.ttl -= dt;
         if(w.ttl <= 0){ woodDrops.splice(i,1); continue; }
       }
-      // Nothing is magnetic until it has landed and lain there a moment: the
-      // collector is simply not offered while the log is still in the air.
-      if(w.mode !== 'pop' && w.dwell > 0) w.dwell -= dt;
-      const held = w.mode === 'pop' || w.dwell > 0;
-      const taker = updatePickup(w, dt, held ? (()=>null) : nearestWoodCollector);
+      // Nothing is magnetic for its first WOOD_DWELL seconds: the collector is
+      // simply not offered until then.
+      if(w.dwell > 0) w.dwell -= dt;
+      const taker = updatePickup(w, dt, w.dwell > 0 ? (()=>null) : nearestWoodCollector);
       if(taker){ collectWood(w, taker); woodDrops.splice(i,1); }
     }
   }
