@@ -11219,9 +11219,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // the fog, or on the far side of a trunk, is not readable off the screen.
     // The orb is still there either way: it rots on the same clock and is still
     // yours the moment you walk into it. Finding it is the part that is now
-    // scouting. The tutorial needs no exception — its arena is already fenced
-    // against trees by over half a hero's vision (docs/TUTORIAL.md), so nothing
-    // there can cut the fog across the step that counts your pickups.
+    // scouting. The tutorial needs no exception — the treeline is fenced out of
+    // the practice box and the one hedge inside it is fenced out of every spawn
+    // by tutOpenSpot, which places the pack where you can SEE it, so the step
+    // that counts your pickups drops them in the open (docs/TUTORIAL.md).
     for(const c of xpOrbs){
       if(!onScreen(c.x,c.y,30) || !isVisible(c.x,c.y,ORB_SIGHT_R)) continue;
       ground.push({ y:c.y, k:5, o:c, b:false });
@@ -11643,40 +11644,90 @@ window.addEventListener('DOMContentLoaded', function(){
     return false;
   }
 
+  // Standing clear of a trunk is not the same thing as being VISIBLE, and a
+  // step that spawns something you cannot see is a step with no lesson in it.
+  // A tree hides a mob two ways, and neither of them is "the mob is inside the
+  // tree":
+  //
+  // - **Its canopy is drawn above its trunk.** A tree's sprite is about 250
+  //   wide and 265 tall against a collision radius of 40, and the field is
+  //   sorted by y, so anything standing NORTH of a trunk is painted over by
+  //   leaves it is nowhere near. The walking step leaves you at the hedge, and
+  //   the pack step measured its 100-unit spread from a clear centre straight
+  //   into it: five mobs to clear, none of them on screen.
+  // - **Its trunk carves the fog.** Vision rays stop at the near face, so a
+  //   trunk on the line between you and the mob puts the mob in the wedge
+  //   behind it — where it is not drawn at all, being neither on screen nor in
+  //   sight.
+  //
+  // Bushes and rocks are drawn over but do not block sight, so only the first
+  // test applies to them. They are fenced out of the practice box anyway; the
+  // check is here for the steps that run once tut.arena has lifted.
+  const TUT_SEE_PAD = 40;                  // room around the sprite, so nothing is clipped either
+  function tutUnderSprite(x, y, ox, oy, w, h, sink){
+    const foot = oy + sink;                // where drawImage puts the bottom of the trunk
+    return Math.abs(x - ox) < w*0.5 + TUT_SEE_PAD &&
+           y < foot + TUT_SEE_PAD && y > foot - h - TUT_SEE_PAD;
+  }
+  function tutHiddenByTree(x, y, ex, ey){
+    for(const t of trees){
+      if(tutUnderSprite(x, y, t.x, t.y, t.dw, t.dh, t.r*TREE_SINK)) return true;
+      if(segmentCircleHit(ex, ey, x, y, t.x, t.y, t.r*TREE_BLOCK_FACTOR + TUT_SEE_PAD)) return true;
+    }
+    for(const p of props){
+      if(tutUnderSprite(x, y, p.x, p.y, p.w, p.h, p.h*0.16)) return true;
+    }
+    return false;
+  }
+
   // Somewhere clear to put a target or a waypoint: inside the world, out of the
-  // water, not inside a tree, and — while tut.arena holds — out of the jungle
-  // and away from every camp. The relaxed spot is kept as a fallback so a
-  // cramped map degrades to "somewhere legal" rather than to nothing.
+  // water, not inside a tree, in plain sight of the hero you are driving, and —
+  // while tut.arena holds — out of the jungle and away from every camp. Three
+  // fallbacks are kept so a cramped map degrades by degrees rather than to
+  // nothing: somewhere visible but outside the box, then somewhere inside the
+  // box but hidden, then any legal spot at all.
   // a0 is a preference, not a starting point for a lap: the search fans out
   // either side of it, so a blocked heading yields the nearest clear one rather
   // than something most of the way around the circle. That is what keeps a
   // target in the direction the step meant to put it.
+  // The ring is walked at three distances for the same reason: a heading that
+  // is behind a canopy at the asked radius is usually open a little short of it
+  // or a little past it, which is a far smaller move than swinging the target
+  // round to the other side of the hero.
   function tutOpenSpot(cx, cy, radius, a0){
-    let relaxed = null;
-    for(let i=0;i<24;i++){
-      const a = (a0||0) + Math.ceil(i/2)*(i%2 ? 1 : -1)*(Math.PI*2/24);
-      const x = Math.min(WORLD_W-140, Math.max(140, cx + Math.cos(a)*radius));
-      const y = Math.min(WORLD_H-140, Math.max(140, cy + Math.sin(a)*radius));
-      if(nearWater(x, y, 60)) continue;
-      let blocked = false;
-      for(const t of trees){ if(dist(x,y,t.x,t.y) < t.r + 44){ blocked = true; break; } }
-      if(blocked) continue;
-      // Never inside a building's reach. A tower kills a practice creep in four
-      // shots, and being shot while learning to walk teaches nothing at all.
-      // This is checked BEFORE the fallback is recorded: the fallback used to be
-      // captured first, so on a cramped search the one rule that must never bend
-      // was the first one to go.
-      if(tutNearFoeTower(x, y, TUT_TOWER_KEEP)) continue;
-      if(!relaxed) relaxed = { x, y };
-      if(tut.arena){
-        if(x > TUT_ARENA_X) continue;
-        if(Math.abs(y - BASE_Y) > TUT_ARENA_Y) continue;
-        let inCamp = false;
-        for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R + 160){ inCamp = true; break; } }
-        if(inCamp) continue;
+    const eye = tutHero() || { x:cx, y:cy };   // seen from where the PLAYER is, not from the spread's centre
+    let relaxed = null, boxed = null, seen = null;
+    for(const rm of [1, 0.78, 1.24]){
+      for(let i=0;i<24;i++){
+        const a = (a0||0) + Math.ceil(i/2)*(i%2 ? 1 : -1)*(Math.PI*2/24);
+        const x = Math.min(WORLD_W-140, Math.max(140, cx + Math.cos(a)*radius*rm));
+        const y = Math.min(WORLD_H-140, Math.max(140, cy + Math.sin(a)*radius*rm));
+        if(nearWater(x, y, 60)) continue;
+        let blocked = false;
+        for(const t of trees){ if(dist(x,y,t.x,t.y) < t.r + 44){ blocked = true; break; } }
+        if(blocked) continue;
+        // Never inside a building's reach. A tower kills a practice creep in four
+        // shots, and being shot while learning to walk teaches nothing at all.
+        // This is checked BEFORE the fallback is recorded: the fallback used to be
+        // captured first, so on a cramped search the one rule that must never bend
+        // was the first one to go.
+        if(tutNearFoeTower(x, y, TUT_TOWER_KEEP)) continue;
+        if(!relaxed) relaxed = { x, y };
+        const inBox = !tut.arena || (x <= TUT_ARENA_X && Math.abs(y - BASE_Y) <= TUT_ARENA_Y &&
+                                     !camps.some(c => dist(x,y,c.x,c.y) < CAMP_RING_R + 160));
+        if(inBox && !boxed) boxed = { x, y };
+        if(tutHiddenByTree(x, y, eye.x, eye.y)) continue;
+        if(!seen) seen = { x, y };
+        if(!inBox) continue;
+        return { x, y };
       }
-      return { x, y };
     }
+    // Nothing satisfied both. Somewhere you can see it beats somewhere tidy:
+    // the box only decides where the practice ground SITS, and the one rule it
+    // carries that could hurt you — a wide berth from their towers — is checked
+    // on its own above and holds for every branch here.
+    if(seen) return seen;
+    if(boxed) return boxed;
     if(relaxed) return relaxed;
     // Nothing legal at this radius. Walk back toward the middle of the corridor
     // rather than returning a point next to a building.
