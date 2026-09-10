@@ -145,15 +145,25 @@
     border:3px solid var(--panel-border);border-radius:13px;text-align:center;}
   .pchip.solo{border-color:#E8A44A;box-shadow:0 0 0 3px rgba(232,164,74,.4);}
   .pchip.active{border-color:#2f9bc4;box-shadow:0 0 0 4px rgba(90,200,232,.5);}
-  .pchip.dead{opacity:.4;}
+  /* Used to dim the whole chip, portrait included — which buried the
+     respawn curtain under its own fade until covered and revealed pixels
+     were both just "dark". The picture now stays at full strength so the
+     curtain reads the way the skill square's does; only the plate under it
+     (bars nobody is watching while he's down) still dims. */
+  .pchip.dead .pmeter{opacity:.6;}
   .plevel{position:absolute;top:-10px;left:-9px;font-size:13px;font-weight:800;background:#5A3E1B;color:#fff;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;z-index:2;}
   /* The picture. Full chip width and 246/364 of it tall — the sheet's own ratio,
      margin included — so the drawing lands in the box edge to edge. `cover`
      rather than `contain`: the two ratios differ by under a percent, and cover
      spends that on a cropped pixel of width instead of a hairline of cream down
      the sides. Square at the foot, where the nameplate meets it. */
-  .pcard{width:100%;aspect-ratio:246/364;border-radius:10px 10px 0 0;
+  .pcard{position:relative;width:100%;aspect-ratio:246/364;border-radius:10px 10px 0 0;overflow:hidden;
     background-position:center;background-size:cover;background-repeat:no-repeat;}
+  /* Same trick as the skill square's cooldown: a plain curtain, anchored to
+     the bottom, sized off the real respawn timer rather than a spinner that
+     only approximates it. Full dark the instant he drops, receding from the
+     top as the clock runs, gone the frame he's back on his feet. */
+  .pdeathCd{position:absolute;left:0;right:0;bottom:0;height:0%;background:rgba(60,40,10,.55);pointer-events:none;}
   /* No card drawn for this hero. All three have one now, so nothing wears this
      — it is what a fourth hero would look like until his picture arrived: his
      flat colour, but inside the frame the drawn ones have, because a slab of
@@ -903,9 +913,9 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
     </div>
     <div class="party hidden" id="party">
-      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
       <button class="pchip asmBtn" id="assembleBtn"><span class="asmCd" id="assembleCdFill"></span><span class="asmIcon"></span><span class="asmLabel">ASSEMBLE</span><span class="pkey">0</span></button>
     </div>
 
@@ -12416,6 +12426,8 @@ window.addEventListener('DOMContentLoaded', function(){
         card.style.backgroundImage = art ? 'url("' + art + '")' : '';
         card.style.color = HERO_STATS[h.type].colorPlayer;
       }
+      chip.querySelector('.pdeathCd').style.height =
+        (h.alive ? 0 : Math.max(0, Math.min(100, h.respawnTimer/RESPAWN_TIME*100))) + '%';
       chip.querySelector('.pbar.hp span').style.width = Math.max(0,h.hp/h.maxHp*100)+'%';
       chip.querySelector('.pbar.mp span').style.width = Math.max(0,h.mana/h.maxMana*100)+'%';
       chip.querySelector('.pbar.xp span').style.width = Math.max(0,h.xp/h.xpToNext*100)+'%';
