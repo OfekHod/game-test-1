@@ -8355,13 +8355,13 @@ window.addEventListener('DOMContentLoaded', function(){
   //          and correct, which is the trade this constant is actually about.
   //
   // WOOD_DWELL is that beat, and it is counted from the moment the TREE IS GONE,
-  // not from the moment the logs land. Those are not the same instant: the wood
-  // comes off the trunk as it hits the ground, which is 62% of the way through
-  // the topple, and the sprite is still lying there fading for the rest of it.
-  // Timed from the drop, the whole tail expired while the trunk was still on
-  // screen and the logs were never once seen on their own. So spawnWood is
-  // handed the fall it still has to wait out, and this is the clear time after
-  // it — 0.4s of three logs on bare grass with nothing else in the frame.
+  // not from the moment the logs appear. Those are a whole topple apart: the
+  // logs come out on the felling blow and tumble clear while the trunk goes over
+  // behind them, and the sprite is still fading for the rest of TREE_FALL_TIME.
+  // Timed from the drop, the entire tail expired inside that fade and the logs
+  // were never once seen on their own. So spawnWood is handed the fall as dead
+  // time in front of the dwell, and this is the clear time AFTER it — 0.4s of
+  // three logs on bare grass with nothing else in the frame.
   const WOOD_DWELL = 0.4;
   // Wood is not fought over — no enemy hero can take it and no ally competes for
   // it — so its magnet does not have to be the careful little one the coins
@@ -8411,8 +8411,15 @@ window.addEventListener('DOMContentLoaded', function(){
     stumps.push({ x:t.x, y:t.y, r:t.r });
     woodChips(t.x, t.y + t.r*TREE_SINK, t.fallDir > 0 ? 0 : Math.PI, 18);
     addBurst(t.x, t.y - t.r*0.5, '#6bab5c', 16);
-    // The logs are NOT dropped here. They come off the trunk when the trunk
-    // lands — see updateTrees.
+    // The logs come out on the blow that fells it, and tumble clear while the
+    // trunk goes over behind them — woodDrops is drawn after the sorted pass, so
+    // they stay on top of it the whole way down. This used to wait for the thud
+    // on the argument that a tree paying out mid-topple reads as a vending
+    // machine; watched rather than reasoned about, it just looked like the axe
+    // had not done anything. WHEN they are collected is a separate clock and is
+    // unchanged: the hold below is the whole fall, so the 0.4s of clear time
+    // still starts when the trunk has finished fading.
+    spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE, TREE_FALL_TIME);
     if(h.side === 'player') shake = Math.max(shake, 0.22);
   }
   function updateTrees(dt){
@@ -8428,23 +8435,17 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!t.thudded && t.fallT > TREE_FALL_TIME*0.62){
         t.thudded = true;
         sfxImpact('timber', t.x, t.y);
-        // A tree that pays out while it is still going over reads as a vending
-        // machine. The wood comes off the trunk where the trunk hits the ground.
+        // Dust where the trunk hits, along its length. The logs are already out
+        // — they came off on the felling blow, see fellTree.
         woodChips(t.x + t.fallDir*t.r*0.7, t.y + t.r*TREE_SINK, t.fallDir > 0 ? 0 : Math.PI, 12);
-        // At the stump, not out along the fallen trunk. A pile thrown to the far
-        // side of the tree is another 30 units away from whoever just chopped
-        // it, which is enough to leave a log sitting outside the magnet.
-        // Read off the fall rather than typed: whatever is left of TREE_FALL_TIME
-        // is exactly how long the trunk still has to fade, so the logs' clear
-        // time starts when it goes and follows it if the topple is ever retuned.
-        spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE, TREE_FALL_TIME - t.fallT);
       }
       if(t.fallT >= TREE_FALL_TIME) fellingTrees.splice(i, 1);
     }
   }
-  // `hold` is dead time added in front of every log's dwell: whatever is left of
-  // the tree's topple, so the clear 0.4s starts when the trunk finishes fading
-  // rather than while it is still lying across them.
+  // `hold` is dead time added in front of every log's dwell: the tree's whole
+  // topple, so the clear 0.4s starts when the trunk finishes fading rather than
+  // while it is still coming down across them. The logs are on screen and
+  // tumbling for all of it — held only means not yet magnetic.
   function spawnWood(x, y, n, hold){
     for(let i=0;i<n;i++){
       // Slower out of the trunk than a coin is out of a kill. A log thrown as

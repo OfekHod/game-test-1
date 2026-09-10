@@ -76,7 +76,7 @@ measure them against yet, for the reason under the table.
 | `TREE_BAR_HOLD` | 6 | seconds the bar stays up after a chop. It appears on the FIRST chop: an untouched tree has nothing to report, and 32 trees each wearing a full bar is a forest of health bars |
 | `TREE_FALL_TIME` | 1.1 | the topple. The angle goes as the square of it, so the trunk hangs and then lets go; the sprite fades only over the last 18% |
 | `WOOD_PER_TREE` | 3 | logs |
-| `WOOD_DWELL` | 0.4 | seconds a log is left alone before the magnet takes it, counted from **the tree being gone**, not from the drop. Those are not the same instant — the wood comes off the trunk as it lands, 62% of the way through the topple, and the sprite is still fading for the rest of it. Timed from the drop, the whole tail expired while the trunk was still on screen and the logs were never once seen on their own. `spawnWood` is handed `TREE_FALL_TIME - t.fallT`, read off the fall rather than typed, so this stays the *clear* time if the topple is ever retuned |
+| `WOOD_DWELL` | 0.4 | seconds a log is left alone before the magnet takes it, counted from **the tree being gone**, not from the moment the logs appear. Those are a whole topple apart: the logs come out on the felling blow and tumble clear while the trunk goes over behind them (`woodDrops` is drawn after the sorted pass, so they stay on top of it the whole way down), and the sprite is still fading for the rest of `TREE_FALL_TIME`. Timed from the drop, the entire tail expired inside that fade and the logs were never once seen on their own. `spawnWood` is handed the fall as dead time in front of the dwell, so this stays the *clear* time if the topple is ever retuned |
 | `WOOD_MAGNET_RADIUS` | 220 | against 130 for the coins. Nobody competes for wood — no enemy hero can take it and no ally wants it — so all three logs can be in range of whoever felled the tree wherever they scattered, instead of the far one crawling in at the shared magnet's slowest speed |
 | `WOOD_MAGNET_MULT` | 2.2 | on the shared magnet speed. Safe only because of the overshoot clamp below |
 | wood pop speed | 55–130 | against 90–220 for a coin. At coin speed a log could land outside `PICKUP_MAGNET_RADIUS`, and felling a tree you are standing next to left one log stranded a step away |
@@ -86,23 +86,30 @@ measure them against yet, for the reason under the table.
 logs landing to the last of the three banked, in GAME seconds — what a player at
 60fps waits, which is not what a headless browser at 12fps reports as wall time.
 
-| build | logs land → banked |
+| build | logs appear → banked |
 |---|---|
 | as first written | 1.70s |
 | one dwell timer instead of two stacked delays | 0.70s |
 | overshoot clamped, dwell cut to a beat | 0.35s |
-| dwell counted from the tree being gone | **0.95s** |
+| dwell counted from the tree being gone | 0.95s |
+| logs dropped on the felling blow instead of at the thud | **1.40s** |
 
-The last row is longer on purpose and is not a regression of the two above it.
-At 0.35s the wood was never seen: it dropped while the trunk was still lying
-across it, and the whole tail ran out before the sprite had finished fading. The
-number that matters is the one in the middle of this, and only the last build
-has it:
+The last two rows are longer than the 0.35s above them on purpose, and neither
+is a regression. End to end is the wrong thing to measure here — what matters is
+how much of it the wood is actually visible for, and at 0.35s the answer was
+none of it: the logs dropped while the trunk was still lying across them and the
+whole tail expired before the sprite had finished fading. The useful breakdown:
 
-| | logs land → trunk gone | trunk gone → banked |
-|---|---|---|
-| dwell from the drop | 0.40s | 0.0s — already collected |
-| dwell from the tree being gone | 0.40s | **0.50s** (0.4 lying still, then the flick in) |
+| | felling blow → logs out | logs out → trunk gone | trunk gone → banked |
+|---|---|---|---|
+| dwell from the drop | 0.68s | 0.40s | 0.0s — already collected |
+| dwell from the tree gone | 0.68s | 0.40s | 0.50s |
+| logs on the felling blow | **0.00s** | **0.90s** | **0.50s** |
+
+The logs are on screen for all of the middle column as well as the right one —
+held only means not yet magnetic, not invisible. Confirmed off a per-frame
+canvas capture: the first frame of the topple already has three logs in it, and
+they are still there twenty-one frames later when the trunk finishes fading.
 
 Neither of the first two numbers could have been read off the code. The first
 was two delays stacking — a log was not offered a collector while its mode was
