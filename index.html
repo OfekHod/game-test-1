@@ -10314,6 +10314,11 @@ window.addEventListener('DOMContentLoaded', function(){
   function updateActiveControl(dt){
     const h = playerTeam[activePlayerIdx];
     if(!h || !h.alive) return;
+    // Frozen is frozen. Everywhere else a stun stops the walk, the auto-fire
+    // and the cast (moveHeroToward, tryAutoAttack) — this was the one path
+    // that never asked, so the hero you are driving could keep moving and
+    // shooting straight through its own stun mark.
+    if(isStunned(h)) return;
     const s = HERO_STATS[h.type];
     h.standX = h.standY = null;   // you are steering him; no auto stance
 
@@ -10664,6 +10669,11 @@ window.addEventListener('DOMContentLoaded', function(){
       if(i===activeIdx) continue;
       const h=team[i];
       if(!h.alive) continue;
+      // Frozen is frozen: a stunned hero neither retreats nor casts nor
+      // swings. moveHeroToward and tryAutoAttack already refuse a stunned
+      // unit on their own, but a skill cast never asked, so a stunned AI
+      // hero could still fire its rocket, dash or heal.
+      if(isStunned(h)) continue;
       const s=HERO_STATS[h.type];
 
       // RETREAT OUTRANKS EVERYTHING, including a macro order. Putting this
