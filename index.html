@@ -5565,6 +5565,21 @@ window.addEventListener('DOMContentLoaded', function(){
     addPing(anchor.x, anchor.y, pal.r2, 8, 46, 0.42);
     addPing(anchor.x, anchor.y, pal.r1, 14, 68, 0.62);
   }
+  // The same approaching light for a single follow order — drop one hero onto
+  // a team-mate and he sends the same streak-and-splash at him — but with no
+  // ring: this is one hero joining another, not the whole squad calling in,
+  // so nothing orbits and no halo is left behind.
+  function triggerFollowFX(h, target){
+    const pal = FX_PAL.assemble;
+    const stopR = target.r*1.4;
+    const d = dist(h.x, h.y, target.x, target.y);
+    const inside = d <= stopR;
+    const tx = inside ? target.x : target.x + (h.x-target.x)/d*stopR;
+    const ty = inside ? target.y : target.y + (h.y-target.y)/d*stopR;
+    const travelD = inside ? d : d-stopR;
+    const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, travelD/ASSEMBLE_FX_SPEED));
+    assembleFx.push({ x0:h.x, y0:h.y, x1:tx, y1:ty, life:0, dur, pal, arrived:false, anchor:null });
+  }
   // One glowing mote, orbiting the anchor at head height, that fades in over
   // its own short lifetime rather than snapping to full brightness.
   function spawnAuraMote(anchor, angle, bornAt){
@@ -8377,6 +8392,7 @@ window.addEventListener('DOMContentLoaded', function(){
     squadTogether = false;
     h.mode='follow'; h.followTarget=target; h.moveTarget=null;
     h.standX=null; h.standY=null;
+    triggerFollowFX(h, target);
     addFloater(h.x, h.y-h.r-46, 'FOLLOW', '#8FD6FF', true);
     // Same hand-over as soloOrder: updateIdleAI skips whoever you are driving,
     // so a follow order written on him would just sit there unread.
