@@ -6741,7 +6741,11 @@ window.addEventListener('DOMContentLoaded', function(){
   let mobReady = false, mobSheets = null, mobFlash = null;
   const MOB_ATTACK_SHOW = 0.62;   // creeps swing every 0.7s, so nearly fill it
   // How long a corpse takes to fall, and how long it lies there afterwards.
-  const MOB_DIE_TIME = 0.6, MOB_CORPSE_HOLD = 1.5, MOB_CORPSE_FADE = 0.8;
+  // The hold is deliberately short: a body that lies still for a second and a
+  // half before it starts to go reads as the game having forgotten about it,
+  // and in a fight it leaves the lane littered with things nothing can target.
+  // Landed, fading, gone in a beat and a quarter.
+  const MOB_DIE_TIME = 0.6, MOB_CORPSE_HOLD = 0.15, MOB_CORPSE_FADE = 0.5;
   // One grey sheet, washed per team at load. Without this both sides would
   // be the same monster and the lane would be unreadable.
   function tintSheet(img, color, alpha){
