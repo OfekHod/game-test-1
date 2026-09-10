@@ -2907,6 +2907,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // one another, which is the thing being drawn.
   const TREE_PATCH_MIN = 2, TREE_PATCH_MAX = 5;
   const TREE_PATCH_SPREAD = 285, TREE_MIN_GAP = 150;
+  const TREE_MIX_KEEP = 300;    // between stands of DIFFERENT silhouettes
   // roadPad and extra are the tutorial's; Match and Survival call this bare.
   function scatterTrees(roadPad, extra){
     const pad = roadPad || 70;
@@ -2924,7 +2925,14 @@ window.addEventListener('DOMContentLoaded', function(){
         if(nearAnyTower(x,y,260)) continue;
         if(nearWater(x,y,34)) continue;
         let tooClose = false;
-        for(const t of trees){ if(dist(x,y,t.x,t.y) < TREE_MIN_GAP){ tooClose=true; break; } }
+        // A stand of one silhouette keeps its distance from a stand of another,
+        // the same way the bushes and rocks do. Two overlapping stands are two
+        // kinds of tree in one clump, which is the thing being avoided; two
+        // trees of the SAME kind only need the ordinary gap.
+        for(const t of trees){
+          const gap = (t.bush === undefined && t.v !== v) ? TREE_MIX_KEEP : TREE_MIN_GAP;
+          if(dist(x,y,t.x,t.y) < gap){ tooClose=true; break; }
+        }
         if(tooClose) continue;
         for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R+90){ tooClose=true; break; } }
         if(tooClose) continue;
@@ -2959,6 +2967,10 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function scatterShoreTrees(roadPad, extra){
     const pad = roadPad || 70;
+    // One silhouette per body of water, for the same reason a stand has one:
+    // the trees on a single bank read as one line of trees, and a line of four
+    // different ones reads as clutter that happened to land near water.
+    let v = 0;
     function tryAt(x, y){
       if(Math.random() > SHORE_TREE_CHANCE) return;
       if(x<220 || y<220 || x>WORLD_W-220 || y>WORLD_H-220) return;
@@ -2966,11 +2978,17 @@ window.addEventListener('DOMContentLoaded', function(){
       if(onRoadway(x, y, pad)) return;
       if(nearAnyTower(x, y, 260)) return;
       if(!offWater(x, y, SHORE_TREE_GAP)) return;
-      for(const t of trees){ if(dist(x,y,t.x,t.y) < TREE_MIN_GAP) return; }
+      for(const t of trees){
+        const gap = (t.bush === undefined && t.v !== v) ? TREE_MIX_KEEP : TREE_MIN_GAP;
+        if(dist(x,y,t.x,t.y) < gap) return;
+      }
       for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R+90) return; }
-      trees.push(makeTree(x, y));
+      const t = makeTree(x, y);
+      t.v = v; sizeTree(t);
+      trees.push(t);
     }
     for(const l of lakes){
+      v = Math.floor(Math.random()*TREE_FRAMES.length);
       for(let i=0;i<SHORE_LAKE_SAMPLES;i++){
         const a = i/SHORE_LAKE_SAMPLES*Math.PI*2 + rand(-0.2, 0.2);
         // Step outward from the shoreline until the trunk is clear of it: on a
@@ -2986,6 +3004,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     for(const rv of rivers){
+      v = Math.floor(Math.random()*TREE_FRAMES.length);
       for(let i=1;i<rv.pts.length-1;i+=2){
         const a = rv.pts[i-1], b = rv.pts[i+1];
         let nx = -(b.y-a.y), ny = (b.x-a.x);
@@ -4023,20 +4042,64 @@ window.addEventListener('DOMContentLoaded', function(){
     if(tutMap && !tutOutsideArena(x, y)) return false;
     return true;
   }
+  // Two sprites of the same kind never stand together unless they are the SAME
+  // sprite. A patch already picks one and keeps it, but patch centres are dealt
+  // independently, and out where the keep-outs leave a lot of legal ground —
+  // the rim, mostly — several land on top of one another and the result reads
+  // as one group with four kinds of bush in it. This is the rule that stops
+  // that: variety between one group and the next, none inside one.
+  //
+  // Different KINDS are deliberately exempt. A boulder standing among the
+  // bushes is what a hillside looks like; it is a bush beside a different bush
+  // that looks like a mistake.
+  const SAME_KIND_KEEP = 1.25;   // in units of the wider of the two sprites
+  function mixesWithNeighbour(x, y, kind, f, w){
+    for(const d of props){
+      if(d.kind !== kind || d.f === f) continue;
+      const reach = (d.w > w ? d.w : w)*SAME_KIND_KEEP;
+      if(Math.abs(d.x-x) > reach || Math.abs(d.y-y) > reach) continue;   // cheap reject first
+      if(dist(x, y, d.x, d.y) < reach) return true;
+    }
+    return false;
+  }
+  // And a patch needs its own clearing to start in. Without this the counts
+  // were a target the placer met at any cost: the tower keep-outs clear the
+  // whole middle of the map, so every patch it could not fit there went to the
+  // rim, and the rim came out as one solid band of bushes shoulder to shoulder
+  // in every colour — technically one sprite per patch, and unreadable as
+  // patches. Spacing the centres means the count is a ceiling rather than a
+  // quota: what does not fit with room around it simply does not get placed.
+  const PATCH_CLEAR = 320;
+  function patchRoom(x, y, kind){
+    for(const d of props){
+      if(d.kind !== kind) continue;
+      if(Math.abs(d.x-x) > PATCH_CLEAR || Math.abs(d.y-y) > PATCH_CLEAR) continue;
+      if(dist(x, y, d.x, d.y) < PATCH_CLEAR) return false;
+    }
+    return true;
+  }
   function placeDecor(RR, kind, frames, count, patchMax, jitLo, jitHi){
     let placed=0, guard=0;
-    while(placed<count && guard++ < count*12){
+    // A generous guard: the same-kind keep-out rejects a lot of candidate
+    // ground, and at count*12 the loop ran out of attempts before it ran out of
+    // bushes — the map came up with half of them.
+    while(placed<count && guard++ < count*45){
       const f = frames[(RR()*frames.length)|0];
-      // Squaring the roll makes a patch of one or two the common case and a
-      // stand of five the rare one, which is the shape a hillside actually has.
-      const n = 1 + ((RR()*RR())*patchMax)|0;
+      // Two is the floor, not one. Squaring the roll still makes the small
+      // patch the common case, but a patch of one is a lone bush — and with the
+      // centres spaced out, a map made of lone bushes is a map with nothing on
+      // it. More per patch means fewer patches for the same count, which is
+      // both easier to space and more obviously a group.
+      const n = 2 + ((RR()*RR())*(patchMax-1))|0;
       const cx = RR()*WORLD_W, cy = RR()*WORLD_H;
+      if(!patchRoom(cx, cy, kind)) continue;
       const spread = f[4]*DECOR_SCALE*PATCH_SPREAD;
       for(let i=0; i<n && placed<count; i++){
         const x = cx + (RR()*2-1)*spread, y = cy + (RR()*2-1)*spread*0.7;
         const jit = jitLo+RR()*(jitHi-jitLo), flip = RR()<0.5;
         if(!decorSpotClear(x, y)) continue;
         const w = f[4]*jit*DECOR_SCALE, h = w*(f[3]/f[2]);
+        if(mixesWithNeighbour(x, y, kind, f, w)) continue;
         props.push({ x, y, kind, f, w, h, flip });
         placed++;
       }

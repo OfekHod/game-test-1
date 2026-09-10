@@ -51,7 +51,9 @@ is solid, so all of it is tuning.
 |---|---|---|
 | `DECOR_SCALE` | 2.5 | on top of each sprite's own size; below this a tree was a shrub you could see over |
 | `TREE_COUNT` | 32 | loose trees, on top of the camp rings and the corridor clumps |
-| `BUSH_COUNT` / `ROCK_COUNT` | 118 / 62 | objects, not patches — a patch is 1–5 of them |
+| `BUSH_COUNT` / `ROCK_COUNT` | 118 / 62 | a CEILING, not a quota. What actually lands is what fits with room around it: about 45 and 38 on Match, 70 and 60 on Survival |
+| `PATCH_CLEAR` | 320 | a patch needs its own clearing. Without it the counts were met at any cost, and everything the middle of the map could not hold went to the rim as one solid band |
+| `SAME_KIND_KEEP` | 1.25 | in sprite widths, between two DIFFERENT sprites of the same kind. Different kinds are exempt: a boulder among the bushes is a hillside, a bush beside a different bush is a mistake |
 | `PROP_BAR_HALF` / `PROP_BAR_T` | 0.40w / 6 | what a prop blocks: a horizontal bar at the foot of its sprite |
 | `TREE_PATCH_MIN/MAX` | 2 / 5 | a stand is two to five of ONE silhouette |
 | `TREE_PATCH_SPREAD` / `TREE_MIN_GAP` | 285 / 150 | at 128 and 104 a stand was a pile: the canopies read as one lumpy mass |
@@ -67,10 +69,10 @@ build with no scenery on it at all:
 
 | | no scenery | shipped |
 |---|---|---|
-| base destroyed | 221/240 (92%) | 219/240 (91%) |
-| median win | 268s | 264s |
-| enemy deaths/game | 0.85 | 0.85 |
-| end levels | 12.0 / 14.5 / 8.6 | 12.2 / 14.5 / 8.3 |
+| base destroyed | 221/240 (92%) | 215/240 (90%) |
+| median win | 268s | 280s |
+| enemy deaths/game | 0.85 | 0.97 |
+| end levels | 12.0 / 14.5 / 8.6 | 12.3 / 14.6 / 9.0 |
 
 **But solid scenery must clear a tower's REACH, not its footprint.** This is the
 same trap `scatterClumps` fell into and wrote down, and solid bushes and rocks
