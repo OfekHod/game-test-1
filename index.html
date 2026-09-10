@@ -4910,30 +4910,35 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.save();
       fctx.globalAlpha = fade;
       fctx.fillStyle = '#ffffff';
-      // Disc and column, ONE path and ONE fill: the mask is composited with
-      // 'lighter', so filling them separately would add the overlap to itself
-      // and leave a brighter lens down the trunk wherever fade is under 1.
-      fctx.beginPath();
-      // The canopy stands ABOVE the trunk now, so the disc is the canopy's own
-      // circle rather than a ring around t.r — but it is still cut a little
-      // tighter than the leaves for the reason written above, so the wedge is
-      // only ever seen coming out from behind them.
-      const cy = t.y + t.r*TREE_SINK - t.dh*0.46;
-      const cdr = Math.max(t.r, t.dw*0.5)*TREE_RELIT_R;
-      fctx.moveTo(t.x + cdr, cy);
-      fctx.arc(t.x, cy, cdr, 0, 7);
-      // And the trunk under it, down to the sprite's own foot. The canopy disc
-      // stops well clear of the ground, so on a tree lit from the north the
-      // wedge's apex used to land across the wood — the one place a tree's own
-      // shadow can never fall.
+      // ONE path and ONE fill for the lot: the mask is composited with
+      // 'lighter', so filling the pieces separately would add every overlap to
+      // itself and leave brighter lenses where they cross.
       //
-      // It has to end AT the foot and not past it. The circle the tree blocks
-      // with has radius t.r*TREE_BLOCK_FACTOR about t.y, while the art only
-      // reaches t.r*TREE_SINK below the same point: lighting the blocking
-      // circle relights half a radius of bare grass beyond the trunk and opens
-      // a lit gap between a tree and its own shadow. A column stops on the last
-      // row of pixels the tree draws, so the wedge comes out from under it.
-      const foot = t.y + t.r*TREE_SINK;
+      // The rule the shape has to keep is a single line: relight the sprite and
+      // NOTHING BELOW IT. Relit ground above the foot puts shade on the tree
+      // itself; relit ground below the foot opens a lit gap between the tree
+      // and its own shadow. Both were bugs in turn.
+      const foot = t.y + t.r*TREE_SINK;          // last row of pixels it draws
+      const cy = foot - t.dh*0.46;
+      const cdr = Math.max(t.r, t.dw*0.5)*TREE_RELIT_R;
+      fctx.beginPath();
+      // The canopy's own circle — cut a little tighter than the leaves for the
+      // reason written above, so the wedge only ever comes out from behind
+      // them — and cut off flat at the foot. On a tree wider than it is tall
+      // that disc alone hangs well past the ground the tree stands on, which is
+      // where the gap came from; the chord is what stops it there.
+      const k = (foot - cy)/cdr;
+      if(k >= 1){
+        fctx.moveTo(t.x + cdr, cy);
+        fctx.arc(t.x, cy, cdr, 0, 7);
+      } else {
+        const a = Math.asin(k);
+        fctx.arc(t.x, cy, cdr, Math.PI - a, Math.PI*2 + a);
+        fctx.closePath();                        // the chord, along the foot
+      }
+      // And the trunk below the canopy, down to that same line. A tall tree's
+      // disc stops well clear of the ground, and without this the wedge's apex
+      // landed across the wood.
       const half = t.dw*0.15;                    // a shade wider than the wood
       fctx.rect(t.x - half, cy, half*2, foot - cy);
       fctx.fill();
