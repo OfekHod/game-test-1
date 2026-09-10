@@ -6177,8 +6177,14 @@ window.addEventListener('DOMContentLoaded', function(){
     // size it always was: he is drawn at the scale the art he replaces was,
     // and he is a taller drawing, which is what a tank should be. Five frames
     // at a stride of 16 is a step every 80 world units, the carry's cadence.
+    // `upright` is the only thing here that argues with the art. The pack draws
+    // him pitched forward -- six to seven degrees on the run, less standing --
+    // which is right for a run and reads as a stoop on a hero who spends most
+    // of a match still. Three degrees back is enough to notice and not enough
+    // to flatten the run's lean, and it costs the frames nothing: it is a
+    // rotation about the ground line at draw time, not a change to the sheet.
     tank:    { w:144, h:121, walk:5, atk:5, idle:5, idleFps:6,
-               scale:4.5382, foot:0.95, stride:16 },   // biggest on the field
+               scale:4.5382, foot:0.95, stride:16, upright:3 },   // biggest on the field
     // 8 real directions x 8 frames. `dirs` marks a sheet whose ROW is chosen by
     // facing; such a sheet is never mirrored, because it already contains both
     // sides and flipping it would show a left-facing pose for a right turn.
@@ -6488,6 +6494,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.save();
       ctx.translate(g.x, g.y);
       if(!def.dirs && Math.cos(g.facing) < 0) ctx.scale(-1,1);
+      uprightSheet(def, h.r*def.foot);
       ctx.drawImage(sheet, g.f*def.w, (g.row||0)*def.h, def.w, def.h, -sw/2, h.r*def.foot-sh, sw, sh);
       ctx.restore();
     }
@@ -6584,6 +6591,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // A sheet lays its cells out walk, then attack, then -- if it has one -- idle.
   // A sheet with no idle row stands on walk frame 0, which is what every sheet
   // did before one of them had something better to stand on.
+  // Stand a sheet up. This art is drawn pitched a few degrees forward, which
+  // is right for the run and reads as a stoop on a hero who spends most of a
+  // match standing still. Rotating about the GROUND LINE rather than the
+  // sprite's centre is what keeps his boots where they were: a rotation about
+  // the middle would lift one foot off the floor and push the other through
+  // it. It goes on inside the mirror, so it turns with him instead of leaning
+  // him the wrong way the moment he walks west.
+  function uprightSheet(def, footY){
+    if(!def.upright) return;
+    ctx.translate(0, footY);
+    ctx.rotate(-def.upright * Math.PI/180);
+    ctx.translate(0, -footY);
+  }
   function heroFrame(h, def, row){
     if(h.atkT > 0 && def.atk > 0){
       const p = 1 - h.atkT/HERO_ATK_ANIM;
@@ -10007,6 +10027,7 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.translate(0, -h.r*0.95);
       }
       if(!sdef.dirs && Math.cos(h.facing) < 0) ctx.scale(-1,1);
+      uprightSheet(sdef, h.r*sdef.foot);
       const top = h.r*sdef.foot - sh - heroBob(h, sdef, row);
       ctx.drawImage(sheet, f*sdef.w, row*sdef.h, sdef.w, sdef.h, -sw/2, top, sw, sh);
       if(h.flash>0 && sdef.flash){
