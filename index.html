@@ -797,6 +797,17 @@
     100%{box-shadow:0 0 0 0 rgba(255,213,79,0);transform:scale(1);}
   }
   .tutPulse{animation:tutPulse 1s cubic-bezier(.4,0,.4,1) infinite;border-radius:10px;}
+  /* The party ROW gets highlighted for steps that are not about any one card
+     (call the squad back, push a lane) — a keyboard press or a pinch, not a
+     tap on a chip. Scaling three chips up and down as one block reads as
+     "pick one of these", the same language "take over the tank" uses on a
+     single chip, so the row gets the ping without the scale-breathe. */
+  @keyframes tutPulseArea{
+    0%{box-shadow:0 0 0 0 rgba(255,213,79,.5);}
+    60%{box-shadow:0 0 0 15px rgba(255,213,79,0);}
+    100%{box-shadow:0 0 0 0 rgba(255,213,79,0);}
+  }
+  .tutPulseArea{animation:tutPulseArea 1.4s ease-in-out infinite;border-radius:14px;}
   /* The arrow that points at whatever the step is asking you to press. The
      pulse alone says "this corner matters"; the arrow says "that one, there".
      Bigger than a plain triangle needs to be and lit from inside with its own
@@ -14859,9 +14870,12 @@ window.addEventListener('DOMContentLoaded', function(){
     tutCardEl.classList.toggle('touchPad', isTouchDevice);
   }
   function tutHighlight(el){
-    if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse');
+    if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse', 'tutPulseArea');
     tut.hl = el || null;
-    if(tut.hl) tut.hl.classList.add('tutPulse');
+    // The party row stands for the whole squad, not a card to tap — a
+    // keyboard press or a pinch, same as "Assemble" and "Push a lane" ask
+    // for. The scale-breathe belongs to a single chip you take over.
+    if(tut.hl) tut.hl.classList.add(tut.hl === partyEl ? 'tutPulseArea' : 'tutPulse');
     tutAimPointer();
   }
   // The arrow that sits next to the highlighted control. It goes on whichever
