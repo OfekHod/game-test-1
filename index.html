@@ -3399,13 +3399,15 @@ window.addEventListener('DOMContentLoaded', function(){
       return;
     }
     assembleCd = ASSEMBLE_CD;
+    const mates = [];
     for(const h of playerTeam){
       h.moveTarget = null; h.standX = null; h.standY = null;
       if(h===anchor){ h.mode='idle'; h.followTarget=null; }
-      else { h.mode='follow'; h.followTarget=anchor; }
+      else { h.mode='follow'; h.followTarget=anchor; mates.push(h); }
     }
     squadTogether = true;
     addFloater(anchor.x, anchor.y-anchor.r-52, 'ASSEMBLE', '#5AC8E8', true);
+    triggerAssembleFX(anchor, mates);
     if(tut.on) tutNote('assemble');
   }
   function setLanePath(h){
@@ -4211,6 +4213,7 @@ window.addEventListener('DOMContentLoaded', function(){
   let manaOrbs = [];
   let levelFx = [];
   let healWaves = [];
+  let assembleFx = [];   // light streaks travelling each called hero's real position -> the anchor
   let sparkles = [];
   let trees = [];
   // Trees that have been felled and are still toppling. They come OUT of
@@ -5372,7 +5375,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // green at two thirds the size instead of a second effect to maintain.
   const FX_PAL = {
     level: { core:'#FFFDF0', mid:'#FFD54F', ray:'#FFE9A6', r1:'#FFD54F', r2:'#FFF3C4', spark:'#FFF3C4', glow:'255,213,79' },
-    heal:  { core:'#F2FFF4', mid:'#7CD98C', ray:'#B6F0C0', r1:'#7CD98C', r2:'#DFF7E2', spark:'#DFF7E2', glow:'124,217,140' }
+    heal:  { core:'#F2FFF4', mid:'#7CD98C', ray:'#B6F0C0', r1:'#7CD98C', r2:'#DFF7E2', spark:'#DFF7E2', glow:'124,217,140' },
+    assemble: { core:'#F5FCFF', mid:'#8FE1FF', ray:'#CDEFFF', r1:'#5AC8E8', r2:'#EAFBFF', spark:'#CDEFFF', glow:'90,200,232' }
   };
   function spawnSparkles(x,y,n,col,spread){
     const sp = spread || 1;
@@ -5524,6 +5528,69 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.restore();
       }
     }
+  }
+  // Called on assemble: one streak per team-mate, drawn along his own real
+  // position at the moment of the call rather than a fixed shape, so a squad
+  // spread wide sends three visibly different lines home. Farther heroes take
+  // a little longer to arrive — the same distance that decides their walk
+  // back decides how long their light is in the air — so a scattered squad
+  // gathers in, not all at once.
+  const ASSEMBLE_FX_MIN_DUR = 0.32, ASSEMBLE_FX_MAX_DUR = 0.85, ASSEMBLE_FX_SPEED = 1000;
+  function triggerAssembleFX(anchor, mates){
+    const pal = FX_PAL.assemble;
+    for(const m of mates){
+      if(!m.alive) continue;
+      const d = dist(m.x, m.y, anchor.x, anchor.y);
+      const dur = Math.max(ASSEMBLE_FX_MIN_DUR, Math.min(ASSEMBLE_FX_MAX_DUR, d/ASSEMBLE_FX_SPEED));
+      assembleFx.push({ x0:m.x, y0:m.y, x1:anchor.x, y1:anchor.y, life:0, dur, pal, arrived:false });
+    }
+    anchor.levelGlow = Math.max(anchor.levelGlow||0, 1.3);
+    anchor.glowCol = pal.glow;
+    spawnSparkles(anchor.x, anchor.y, 10, pal.spark, 0.7);
+    addPing(anchor.x, anchor.y, pal.r2, 8, 46, 0.42);
+    addPing(anchor.x, anchor.y, pal.r1, 14, 68, 0.62);
+  }
+  function updateAssembleFx(dt){
+    for(let i=assembleFx.length-1;i>=0;i--){
+      const f = assembleFx[i];
+      f.life += dt;
+      if(!f.arrived && f.life >= f.dur){
+        f.arrived = true;
+        addBurst(f.x1, f.y1, f.pal.mid, 9);
+        spawnSparkles(f.x1, f.y1, 6, f.pal.spark, 0.55);
+      }
+      if(f.life >= f.dur + 0.16) assembleFx.splice(i,1);
+    }
+  }
+  // A soft comet: a short glowing trail behind a bright head, both additive so
+  // they sit as light on the grass rather than paint over it. Eased so the
+  // head starts quick and settles into the anchor instead of snapping to a
+  // stop — a pull, not a teleport.
+  function drawAssembleFx(){
+    if(!assembleFx.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for(const f of assembleFx){
+      if(f.arrived) continue;
+      const t = Math.min(1, f.life/f.dur);
+      const e = 1 - (1-t)*(1-t)*(1-t);           // ease-out cubic
+      const eTail = Math.max(0, e - 0.22);
+      const hx = f.x0 + (f.x1-f.x0)*e,    hy = f.y0 + (f.y1-f.y0)*e;
+      const tx = f.x0 + (f.x1-f.x0)*eTail, ty = f.y0 + (f.y1-f.y0)*eTail;
+      const fade = 1 - t*0.25;
+      const grad = ctx.createLinearGradient(tx,ty,hx,hy);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(1, 'rgba(205,239,255,'+(0.85*fade).toFixed(3)+')');
+      ctx.strokeStyle = grad; ctx.lineCap = 'round';
+      ctx.lineWidth = 3*(1-t*0.35);
+      ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(hx,hy); ctx.stroke();
+      const g = ctx.createRadialGradient(hx,hy,0,hx,hy,11);
+      g.addColorStop(0,'rgba(255,255,255,0.95)');
+      g.addColorStop(0.5,'rgba(143,225,255,0.55)');
+      g.addColorStop(1,'rgba(143,225,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx,hy,11,0,7); ctx.fill();
+    }
+    ctx.restore();
   }
   function updateLevelFx(dt){
     for(let i=levelFx.length-1;i>=0;i--){
@@ -10185,6 +10252,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateTrees(dt);
     updateLevelFx(dt);
     updateHealWaves(dt);
+    updateAssembleFx(dt);
     updatePings(dt);
     updateFireBlasts(dt);
     updateBirds(dt);
@@ -12653,6 +12721,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
 
     drawLevelFxFront();
+    drawAssembleFx();
     drawFireBlasts();
 
     // A tree that has been chopped wears what is left of it, over the canopy
@@ -14079,7 +14148,7 @@ window.addEventListener('DOMContentLoaded', function(){
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
-    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
+    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
     woodDrops=[]; fellingTrees=[]; woodBanked=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
