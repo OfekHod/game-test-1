@@ -2618,17 +2618,13 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.restore();
   }
 
-  // Skills ramp with hero level automatically — no stat point buys this. A
-  // level is now a capability upgrade, not just three numbers going up.
+  // Skill range still ramps with hero level automatically — no stat point buys
+  // this. Skill damage, below, does not: it is a flat number from level 1.
   const DASH_DIST_MIN = 175, DASH_DIST_MAX = 330;
   const DASH_DISTANCE = DASH_DIST_MAX;   // kept for range checks and UI copy
   const DASH_DURATION = 0.12;
   const DASH_IFRAME = 0.25;
-  // Base 150. Keeping the old 3.9x growth ratio from here would top out at 583,
-  // more than a whole hero's health in one button, so the dash now starts strong
-  // and grows modestly instead of starting weak and growing enormously.
-  const DASH_DMG_MIN = 150, DASH_DMG_MAX = 300;
-  const DASH_DAMAGE_BASE = DASH_DMG_MIN;
+  const DASH_DMG_MAX = 300;
   const RESPAWN_TIME = 12;   // long enough that a kill buys a real window
 
   const ROCKET_SPEED = 380;
@@ -2637,8 +2633,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // of six. At 180 it covers a wave, which is what a slow, telegraphed shell on
   // a six-second cooldown should be worth.
   const ROCKET_SPLASH_RADIUS = 180;
-  const ROCKET_DMG_MIN = 30, ROCKET_DMG_MAX = 210;
-  const ROCKET_DMG_BASE = ROCKET_DMG_MIN;
+  const ROCKET_DMG_MAX = 250;
   // Doubled from 700. The shell is the tank's only ranged answer and 700 barely
   // cleared his own creep wave: a lane fight two screens away had to be walked
   // to. At 1400 he can open on a wave he can see rather than one he is standing
@@ -5243,8 +5238,8 @@ window.addEventListener('DOMContentLoaded', function(){
   function skillT(h){ return (h.level-1)/(MAX_LEVEL-1); }
   function lerp(a,b,t){ return a + (b-a)*t; }
   function heroDashDist(h){ return lerp(DASH_DIST_MIN, DASH_DIST_MAX, skillT(h)); }
-  function heroDashDmg(h){ return lerp(DASH_DMG_MIN, DASH_DMG_MAX, skillT(h)); }
-  function heroRocketDmg(h){ return lerp(ROCKET_DMG_MIN, ROCKET_DMG_MAX, skillT(h)); }
+  function heroDashDmg(h){ return DASH_DMG_MAX; }
+  function heroRocketDmg(h){ return ROCKET_DMG_MAX; }
   function heroHealAmount(h){ return lerp(HEAL_MIN, HEAL_MAX, skillT(h)); }
   function defenseMult(h){ const d = FIXED_DEF[h.type] || 0; return 1 - d/(d+50); }
 
@@ -5732,11 +5727,11 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     if(h.type==='carry') return '<b>Dash</b>Blink forward, damaging everything you pass through, and briefly untargetable. '
       + 'Anything that dies on the way through refunds the cooldown instantly &mdash; chain it as long as your mana holds.<br><i>'
-      + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Grows every level.</i>';
+      + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Range grows every level.</i>';
     if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast. '
       + 'Whatever it catches is frozen, and while it is frozen everything you land on it hits for double. '
       + 'The shell sees for you on the way out and the camera rides along with it, coming back where it lands. Press the skill again while it is still in the air and it goes off there and then, for free &mdash; the only way to catch something that has moved since you fired.<br><i>'
-      + Math.round(heroRocketDmg(h))+' damage (grows every level) in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '
+      + Math.round(heroRocketDmg(h))+' damage in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '
       + ROCKET_TRAVEL_MAX+' range &middot; '
       + STUN_TIME.toFixed(0)+'s stun, x'+STUN_DMG_MULT+' damage taken &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
     return '<b>Heal</b>A ring of light sweeps out from you, healing every friendly hero and creep it passes over.<br><i>~'
