@@ -9335,7 +9335,8 @@ window.addEventListener('DOMContentLoaded', function(){
       dmg:APEX_DMG, big:false, huge:true, neutral:true, band, xp:APEX_XP, atkCd:rand(0,0.5),
       kx:0, ky:0, kt:0, hitT:0, hpLag:1, levelGlow:0, glowCol:null,
       animDist:0, apx:p.x, apy:p.y, moving:0, face:1, atkT:0,
-      wpX:p.x, wpY:p.y, wpT:0, chasing:false, chaseX:0, chaseY:0 };
+      wpX:p.x, wpY:p.y, wpT:0, chasing:false, chaseX:0, chaseY:0,
+      lastAttacker:null, lastAttackerT:0 };
     neutralCreeps.push(c);
     apexSlots[band].mob = c;
     return c;
@@ -9364,6 +9365,14 @@ window.addEventListener('DOMContentLoaded', function(){
       let target=null, bd=APEX_AGGRO;
       for(const h of playerTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
       for(const h of enemyTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
+      // Retaliate against whoever last hit it even if they're outside the
+      // aggro scan -- see applyCreepHit. Without this a hero poking from
+      // beyond APEX_AGGRO never gets noticed, and it just stands there
+      // regenerating between hits.
+      if(n.lastAttackerT > 0){
+        n.lastAttackerT -= dt;
+        if(!target && n.lastAttacker && n.lastAttacker.alive) target = n.lastAttacker;
+      }
       if(n.atkCd>0) n.atkCd -= dt;
       if(isStunned(n)){ resolveSolidCollision(n); continue; }
       if(target){
@@ -11937,6 +11946,11 @@ window.addEventListener('DOMContentLoaded', function(){
     dmg*=stunDmgMult(creep);
     dmg=Math.round(dmg);
     creep.hp-=dmg; creep.flash=0.18;
+    // The apex's own aggro scan only reaches APEX_AGGRO (300), well short of
+    // a hero's attack range (RNG ~367+) -- without this, poking it from max
+    // range never registers as a target, so it stands there "unaware" and
+    // regens between hits instead of retaliating.
+    if(creep.huge && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
     sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
     addFloater(creep.x, creep.y-creep.r-6, String(dmg), dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit, false, isCrit);
     addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
