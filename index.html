@@ -89,6 +89,7 @@
   .scoreHud.hidden{display:none;}
   .scoreBox{min-width:84px;padding:6px 12px 5px;border-radius:11px;text-align:center;overflow:hidden;
     background:rgba(24,26,32,.80);border:2px solid transparent;}
+  .scoreBox.hidden{display:none;}
   .scoreBox b{display:block;text-align:center;font-size:27px;font-weight:800;
     --rowH:1.18em; --colW:0.62em;
     transform-origin:50% 60%;will-change:transform;font-variant-numeric:tabular-nums;}
@@ -127,6 +128,12 @@
   .scoreBox.lead{border-color:currentColor;}
   .scoreBox.you.lead{border-color:#8FD6FF;}
   .scoreBox.foe.lead{border-color:#FF9A8B;}
+  /* Survival has no other side to be blue or red against, just a count that
+     climbs — the same gold the WAVE banner already uses for its own number,
+     so the two read as the same stat. */
+  .scoreBox.wave b{color:#FFD54F;}
+  .scoreBox.wave b.bump{animation:waveBoxBump .35s ease;}
+  @keyframes waveBoxBump{ 0%{transform:scale(1.4);} 100%{transform:scale(1);} }
   @media (max-width:520px){
     .scoreBox{min-width:72px;padding:5px 9px 4px;}
     .scoreBox b{font-size:21px;} .scoreBox > span{font-size:9px;letter-spacing:.02em;}
@@ -946,6 +953,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="scoreHud hidden" id="scoreHud">
       <div class="scoreBox you" id="scoreBoxYou"><b id="scoreYou">0</b><span>BLUE TEAM</span></div>
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
+      <div class="scoreBox wave hidden" id="scoreBoxWave"><b id="scoreWave">1</b><span>WAVE</span></div>
     </div>
     <div class="party hidden" id="party">
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
@@ -2575,6 +2583,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const waveBannerEl = document.getElementById('waveBanner');
   const waveBannerNumEl = document.getElementById('waveBannerNum');
   const waveBannerSubEl = document.getElementById('waveBannerSub');
+  const scoreBoxWaveEl = document.getElementById('scoreBoxWave');
+  const scoreWaveEl = document.getElementById('scoreWave');
   const dashCdFillEl = document.getElementById('dashCdFill');
   const skillIconEl = document.getElementById('skillIcon');
   const hpFillEl = document.getElementById('hpFill');
@@ -2918,6 +2928,17 @@ window.addEventListener('DOMContentLoaded', function(){
   // Static geometry: the arena is the same shape every round, so build it once.
   // Each path runs plaza-outwards; mobs walk it backwards.
   const SURV_PATHS = [survLanePath(0), survLanePath(1)];
+  // The road's own length, walked once. The switchback's bends make this
+  // meaningfully longer than SURV_LANE_OUT-SURV_LANE_IN, the straight-line
+  // radius -- SURV_SPAWN_R (in survivalWave) has to be measured against this,
+  // not the radius, or a wave spawns partway down the road instead of at its
+  // far end. Both lanes are mirrors of each other, so either serves.
+  function survPathLen(p){
+    let d = 0;
+    for(let i=1;i<p.length;i++) d += dist(p[i-1].x,p[i-1].y,p[i].x,p[i].y);
+    return d;
+  }
+  const SURV_LANE_LEN = survPathLen(SURV_PATHS[0]);
   // The head of a mob's path, stepped sideways into its slot in the wave, so a
   // wave spawns in formation instead of stacked on the centre line.
   function survOffsetPoint(path, off){
@@ -3268,10 +3289,15 @@ window.addEventListener('DOMContentLoaded', function(){
   let survBreak = 0;           // seconds left of the lull before the next wave marches
   // How far along its lane a mob appears, measured ALONG THE ROAD rather than
   // as a radius: on a snaking lane those are very different numbers, and it is
-  // the walk that sets the pace. 1250 was the old straight-spoke walk; it now
-  // has to clear the far outpost as well, or a wave materialises on top of the
-  // building that is supposed to soften it.
-  const SURV_SPAWN_R = 1700;
+  // the walk that sets the pace. Pinned to SURV_LANE_LEN, the road's actual
+  // (bent) length, rather than a flat distance from the plaza: a flat 1700 was
+  // tuned back when this was a straight spoke, and against the switchback's
+  // longer road that same number lands barely past its midpoint -- a wave
+  // spawning in full view of the plaza instead of at the far end of the lane
+  // it is supposed to walk in from. The 900-unit margin leaves the widest
+  // wave's ranks (SURV_RANK_GAP apart) room to fan out behind the front rank
+  // without running off the end of the road.
+  const SURV_SPAWN_R = SURV_LANE_LEN - 900;
   // Waves are CLEARED, not timed. Nothing spawns while a single mob of the last
   // wave is still on the field, so the pace is set by how fast you kill rather
   // than by a stopwatch — which is what makes a growing wave a real question
@@ -9584,6 +9610,12 @@ window.addEventListener('DOMContentLoaded', function(){
     waveBannerSubEl.textContent = sub || '';
     waveBannerSubEl.classList.toggle('on', !!sub);
     waveBannerEl.classList.add('show');
+    // The banner itself fades after a few seconds; this is the same count
+    // held on screen for the rest of the wave, in the same top-right slot a
+    // Match's score sits in when there is one.
+    scoreWaveEl.textContent = w;
+    scoreWaveEl.classList.remove('bump'); void scoreWaveEl.offsetWidth;
+    scoreWaveEl.classList.add('bump');
     clearTimeout(waveBannerTimer);
     // Both classes come off together. Leaving the subtitle's on it while the
     // banner itself is invisible is a lie about what is on the screen, and the
@@ -15178,7 +15210,14 @@ window.addEventListener('DOMContentLoaded', function(){
     bottomDock.classList.remove('hidden');
     partyEl.classList.remove('hidden');
     const hud = document.getElementById('scoreHud');
-    if(hud) hud.classList.toggle('hidden', gameMode === 'survival');
+    if(hud) hud.classList.remove('hidden');
+    // Same top-right slot either way -- a Match's blue/red score boxes, or
+    // Survival's own gold one, never both at once.
+    const scoreBoxYouEl = document.getElementById('scoreBoxYou'), scoreBoxFoeEl = document.getElementById('scoreBoxFoe');
+    if(scoreBoxYouEl) scoreBoxYouEl.classList.toggle('hidden', gameMode === 'survival');
+    if(scoreBoxFoeEl) scoreBoxFoeEl.classList.toggle('hidden', gameMode === 'survival');
+    if(scoreBoxWaveEl) scoreBoxWaveEl.classList.toggle('hidden', gameMode !== 'survival');
+    if(gameMode === 'survival') scoreWaveEl.textContent = '1';
     resetScoreHud();
     if(isTouchDevice){
       skillBtnEl.style.display='flex';
