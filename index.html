@@ -5007,6 +5007,22 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     return null;
   }
+  // The same foot-bar that stops a hero walking through a bush or a boulder,
+  // tested against a shell instead: you cannot walk through the base of one, so
+  // a rocket has no business flying through it either. The BASE only — the bar
+  // is 40% of the sprite's width and a few units thick — so a shell still passes
+  // the canopy of a bush it goes by, which is what it looks like it should do.
+  function propBlockingProjectile(px,py){
+    const rr = PROJ_R + PROP_BAR_T;
+    for(const d of props){
+      const ny = py - d.y;
+      if(ny > rr || ny < -rr) continue;              // above or below the bar
+      const half = d.w*PROP_BAR_HALF;
+      const nx = px - (d.x + Math.max(-half, Math.min(half, px - d.x)));
+      if(nx*nx + ny*ny < rr*rr) return d;
+    }
+    return null;
+  }
 
   // ---------- stat / leveling helpers ----------
   function heroSpeed(h){
@@ -9687,7 +9703,13 @@ window.addEventListener('DOMContentLoaded', function(){
       }
 
       const hitTree = treeBlockingProjectile(p.x,p.y);
-      if(hitTree){
+      // Only the tank's own shell is tested against the scenery. Bullets still
+      // thread past it — they are small, and stopping every lane trade on a
+      // boulder is a balance change nobody asked for — and a tower's shell can
+      // never reach a prop anyway, because scenery keeps TOWER_RANGE + 120 clear
+      // of every tower, so scanning for it would be pure waste.
+      const hitProp = (!hitTree && p.isRocket && p.attacker) ? propBlockingProjectile(p.x,p.y) : null;
+      if(hitTree || hitProp){
         if(p.isRocket){ explodeRocket(p.x,p.y,p.owner,p.dmgBase,p.attacker,p.splash,p.heroDmg); }
         else { addBurst(p.x,p.y,'#8a6a3c',8); if(p.fireBolt) boltImpact(p, true); }
         projectiles.splice(i,1);
@@ -10012,6 +10034,37 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.setLineDash([9,11]); ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(h.x,h.y,attackRange(h),0,7); ctx.stroke();
     ctx.restore();
+  }
+  // The blast the shell would make if it went off right now, drawn around it all
+  // the way out. This is what the second press is aimed with: a hero standing
+  // inside this ring but not in the shell's path is exactly the shot the
+  // detonator exists for, and without the ring you would be guessing at 180
+  // units. Only your own shell — putting the same ring on an enemy tank's would
+  // hand you a free read on where his blast lands.
+  const SPLASH_RING_BLOOM = 70;   // world units of travel to open up over
+  function drawRocketSplashRings(){
+    const dash = -performance.now()/1000*24;
+    for(const p of projectiles){
+      if(!p.isRocket || !p.attacker || p.owner !== 'player') continue;
+      if(!onScreen(p.x, p.y, ROCKET_SPLASH_RADIUS + 40)) continue;
+      // Opens out of the barrel rather than popping into existence at full size.
+      const bloom = Math.min(1, (p.traveled||0)/SPLASH_RING_BLOOM);
+      const r = ROCKET_SPLASH_RADIUS*(0.5 + 0.5*bloom);
+      ctx.save();
+      ctx.globalAlpha = bloom;
+      ctx.fillStyle = 'rgba(232,101,74,.10)';
+      ctx.strokeStyle = 'rgba(255,140,66,.7)';
+      // Everything here is in world units, and the desktop draws the world at
+      // half size — a 3-unit line lands under a pixel wide there and the ring
+      // simply is not on the screen. Scaling by VIEW_ZOOM keeps it the same
+      // thickness to look at on both, which is what a marker has to be.
+      ctx.lineWidth = 3*VIEW_ZOOM;
+      ctx.setLineDash([10*VIEW_ZOOM, 12*VIEW_ZOOM]);
+      ctx.lineDashOffset = dash*VIEW_ZOOM;   // creeping round, so it reads as live rather than as scenery
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
   }
   function drawHealRange(h){
     ctx.save();
@@ -10449,6 +10502,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawAimLine(worldMouseX, worldMouseY);
     drawOrders();
     drawPings();
+    drawRocketSplashRings();   // an aim marker, so it sits with the ranges and under the units
 
     drawBurns();            // scorched ground, under everything that walks on it
     drawRipples();          // on the surface, so units stand in them
