@@ -4026,9 +4026,21 @@ window.addEventListener('DOMContentLoaded', function(){
   let props = [];
   let camps = [];
   let lakes = [];     // solid, organic outline
-  let rivers = [];    // shallow: you can ford them, they just slow you
+  let rivers = [];    // shallow: you can ford them, and they have a direction
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
-  const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // A river now has a direction, and wading it is not one number any more.
+  // Go with the water and it carries you; do anything else — fight it, or cross
+  // it — and you are wading, which is what the single number used to mean.
+  const WATER_SLOW = 0.62;   // against the current, across it, or standing in it
+  const WATER_WITH = 1.5;    // carried, going clearly downstream
+  // "Clearly downstream" is the whole point of the rule, so the cone is tight:
+  // nothing at all until you are within 50 degrees of the flow, and the full
+  // push only inside 40. Crossing a river is 90 degrees off and must never earn
+  // a penny of it. The ten degrees between the two are ramped rather than
+  // switched, because the flow direction changes as the river bends underneath
+  // you, and a hard edge there would strobe a hero between 0.62 and 1.5.
+  const FLOW_COS_NONE = Math.cos(50*Math.PI/180);
+  const FLOW_COS_FULL = Math.cos(40*Math.PI/180);
   // Lakes are three times the radius they used to be. A 165-unit pond was
   // scenery you clipped the corner of on the way past; at 495 it is a piece of
   // terrain you commit to walking around, which is the only way still water
@@ -4134,9 +4146,18 @@ window.addEventListener('DOMContentLoaded', function(){
     return false;
   }
   function inWater(x,y){ return inLake(x,y) || inRiver(x,y); }
-  function makeRiver(x0,y0,x1,y1,w,steps,wob){
+  // The centreline is a sine, which is smooth; the river was not, because it was
+  // only sampled at a dozen points and every one of them became a corner in both
+  // banks. The curve is unchanged — t still runs 0..1 whatever the sample count
+  // — it is just read finely enough that the corners fall below anything the eye
+  // can pick out. One point every RIVER_STEP units puts a river's banks at the
+  // same resolution a lake's shoreline has always had, which also lands its foam
+  // at the lake's spacing instead of a puff every two hundred units.
+  const RIVER_STEP = 45;      // world units between centreline samples
+  function makeRiver(x0,y0,x1,y1,w,wob){
     const pts=[], nx=-(y1-y0), ny=(x1-x0);
     const nl=Math.max(1,Math.sqrt(nx*nx+ny*ny));
+    const steps=Math.max(12, Math.round(nl/RIVER_STEP));
     for(let i=0;i<=steps;i++){
       const t=i/steps, s=Math.sin(t*Math.PI*2.1)*wob;
       pts.push({ x: x0+(x1-x0)*t + (nx/nl)*s, y: y0+(y1-y0)*t + (ny/nl)*s });
@@ -4160,6 +4181,51 @@ window.addEventListener('DOMContentLoaded', function(){
         if(pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y) < rv.w*0.5) return true;
     }
     return false;
+  }
+  // How much of the current a unit at (x,y) is getting while moving along
+  // (dx,dy): -1 if it is not in a river at all, 0 for anything that is not
+  // clearly downstream, up to 1 for dead on. The flow is the tangent of the
+  // nearest stretch of the river you are standing in, so it bends with the
+  // river — walking a bend means steering to keep the push.
+  //
+  // The same rv.w*0.5 test inRiver uses, so the water that carries you is
+  // exactly the water you are drawn wading in. Standing still short-circuits to
+  // that test alone, which is what heroSpeed asks for thirty times a frame; the
+  // walk over segments only happens for something actually in the water.
+  function flowAlign(x, y, dx, dy){
+    const l = Math.sqrt(dx*dx + dy*dy);
+    if(l < 1e-6) return inRiver(x,y) ? 0 : -1;
+    for(const rv of rivers){
+      riverBox(rv);
+      if(x<rv.bx0 || x>rv.bx1 || y<rv.by0 || y>rv.by1) continue;
+      const p = rv.pts;
+      let best = 1e18, bi = -1;
+      for(let i=0;i<p.length-1;i++){
+        const d = pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y);
+        if(d < best){ best = d; bi = i; }
+      }
+      if(bi < 0 || best >= rv.w*0.5) continue;
+      const a = p[bi], b = p[bi+1];
+      const sx = b.x-a.x, sy = b.y-a.y, sl = Math.sqrt(sx*sx+sy*sy) || 1;
+      const dot = (dx*sx + dy*sy)/(l*sl);
+      if(dot <= FLOW_COS_NONE) return 0;
+      return Math.min(1, (dot - FLOW_COS_NONE)/(FLOW_COS_FULL - FLOW_COS_NONE));
+    }
+    return -1;
+  }
+  // The whole wading multiplier: 1 on dry land, WATER_SLOW to WATER_WITH in a
+  // river depending on which way you are pointed.
+  function wadeMul(x, y, dx, dy){
+    const a = flowAlign(x, y, dx, dy);
+    return a < 0 ? 1 : WATER_SLOW + (WATER_WITH - WATER_SLOW)*a;
+  }
+  // For movers that were handed a speed with the standing-still wading already
+  // in it — every AI path goes through moveHeroToward, which cannot know the
+  // heading until after the turn rate has had its say. This is the rest of the
+  // multiplier, so speed*flowAssist lands on exactly what wadeMul would give.
+  function flowAssist(x, y, dx, dy){
+    const a = flowAlign(x, y, dx, dy);
+    return a <= 0 ? 1 : (WATER_SLOW + (WATER_WITH - WATER_SLOW)*a)/WATER_SLOW;
   }
   function nearWater(x,y,pad){
     // Measured in the lake's round space and then charged the squash, so the
@@ -4241,7 +4307,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // both lanes so no wave ever has to ford it. Step one walks you through
       // it on purpose: shallow water is a thing you should meet while nothing
       // is chasing you.
-      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 12, 55);
+      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 55);
       // The practice ground is the match map, so it gets the match map's lakes:
       // both sit in the jungle beyond the lanes, clear of the corridor the
       // tutorial keeps you in, so they are terrain you can see and learn the
@@ -4262,7 +4328,7 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const s of [0, Math.PI]){
         const a = gap.a + s, ca = Math.cos(a), sa = Math.sin(a);
         makeRiver(cx+ca*SURV_RIVER_IN, cy+sa*SURV_RIVER_IN,
-                  cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, 14, wob);
+                  cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, wob);
         survLake(a-0.66, 1340, 176*LAKE_SCALE);
         survLake(a+0.66, 1080, 158*LAKE_SCALE);
         // And one closer in, on the base's side of the wedge. It is the water a
@@ -4276,7 +4342,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // The river runs the length of the corridor between the lanes — right where
       // rotations happen, so you actually see it. It is shallow: crossing costs
       // you speed rather than being impossible, which keeps the map connected.
-      makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 16, 105);
+      makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 105);
       makeMatchLakes();
     }
   }
@@ -4973,9 +5039,11 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   // ---------- stat / leveling helpers ----------
-  function heroSpeed(h){
-    const s = SPEED_BASE + h.stats.agi;
-    return inRiver(h.x, h.y) ? s*WATER_SLOW : s;   // wading costs you
+  // The heading is optional and most callers have none — they want the number
+  // for a stat readout or a "how long to walk there" estimate, and with no
+  // heading this is the wading speed it always returned.
+  function heroSpeed(h, dx, dy){
+    return (SPEED_BASE + h.stats.agi) * wadeMul(h.x, h.y, dx||0, dy||0);
   }
   function heroBasicDmg(h){ return FIXED_DMG[h.type]; }
   // 0 at level 1, 1 at max level — the single curve every skill ramps along.
@@ -6633,14 +6701,31 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // A river as a real polygon, so it can be filled, clipped and outlined like a
   // lake instead of only stroked. Built once and cached.
+  // Half a circle across a mouth, from the left bank round to the right. The
+  // normal at angle 0 is the left bank and at PI the right, and the tangent term
+  // pushes the middle of the sweep out past the end of the centreline.
+  // Segments scaled to the mouth, not a fixed count: a 150-wide river's cap is a
+  // 75-unit arc and twelve flats across it are visible from a normal camera.
+  function capPoints(p, nx, ny, half, from){
+    const n = Math.max(10, Math.min(28, Math.round(half/4)));
+    const tx = ny, ty = -nx, out = [];
+    for(let k=1;k<n;k++){
+      const a = from + Math.PI*k/n, c = Math.cos(a), sn = Math.sin(a);
+      out.push({ x: p.x + (c*nx + sn*tx)*half, y: p.y + (c*ny + sn*ty)*half });
+    }
+    return out;
+  }
   function riverPoly(rv){
     if(rv.poly) return rv;
     const p = rv.pts, half = rv.w/2;
     rv.left = []; rv.right = []; rv.leftIn = []; rv.rightIn = [];
+    let n0x=0, n0y=0, n1x=0, n1y=0;
     for(let i=0;i<p.length;i++){
       const a = p[Math.max(0,i-1)], b = p[Math.min(p.length-1,i+1)];
       let nx = -(b.y-a.y), ny = (b.x-a.x);
       const nl = Math.max(1, Math.sqrt(nx*nx+ny*ny)); nx/=nl; ny/=nl;
+      if(i===0){ n0x=nx; n0y=ny; }
+      if(i===p.length-1){ n1x=nx; n1y=ny; }
       rv.left.push({ x:p[i].x+nx*half, y:p[i].y+ny*half });
       rv.right.push({ x:p[i].x-nx*half, y:p[i].y-ny*half });
       // A lake scallops its foam four units inside the shoreline, not on it, so
@@ -6648,7 +6733,14 @@ window.addEventListener('DOMContentLoaded', function(){
       rv.leftIn.push({ x:p[i].x+nx*(half-4), y:p[i].y+ny*(half-4) });
       rv.rightIn.push({ x:p[i].x-nx*(half-4), y:p[i].y-ny*(half-4) });
     }
-    rv.poly = rv.left.concat(rv.right.slice().reverse());
+    // The mouths were cut square, which put the only hard corners in the whole
+    // shape at both ends of it. Rounding them is also the shape inRiver has
+    // always tested — pointSegDist against the centreline is a capsule, round
+    // ends and all — so the water you can see is now the water you can wade in.
+    rv.poly = rv.left
+      .concat(capPoints(p[p.length-1], n1x, n1y, half, 0))
+      .concat(rv.right.slice().reverse())
+      .concat(capPoints(p[0], n0x, n0y, half, Math.PI));
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
     for(const q of rv.poly){ x0=Math.min(x0,q.x); y0=Math.min(y0,q.y); x1=Math.max(x1,q.x); y1=Math.max(y1,q.y); }
     rv.cx=(x0+x1)/2; rv.cy=(y0+y1)/2; rv.ext=Math.max(x1-x0,y1-y0)/2+40;
@@ -8678,7 +8770,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(tut.on) tutNote('skill', h.type);
     }
     const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const spd = heroSpeed(h);
+    const spd = heroSpeed(h, dx, dy);          // the keys say which way: the current can read them
     const tvx=(dx/len)*spd, tvy=(dy/len)*spd;
     h.vx += (tvx-h.vx)*Math.min(1,dt*12);
     h.vy += (tvy-h.vy)*Math.min(1,dt*12);
@@ -8943,7 +9035,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function moveHeroTowardRaw(h,tx,ty,speed,dt){
     const dx=tx-h.x, dy=ty-h.y; const len=Math.sqrt(dx*dx+dy*dy)||1;
     if(len < 3) return;                       // already there; do not twitch
-    const step=Math.min(len, speed*dt);
+    const step=Math.min(len, speed*flowAssist(h.x,h.y,dx,dy)*dt);
     h.x += dx/len*step; h.y += dy/len*step;
     h.x=Math.min(WORLD_W-h.r-6,Math.max(h.r+6,h.x));
     h.y=Math.min(WORLD_H-h.r-6,Math.max(h.r+6,h.y));
@@ -9406,7 +9498,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(tgt){
         const td = dist(c.x,c.y,tgt.x,tgt.y);
         if(td > c.r + tgt.r + 4 && !isStunned(c)){
-          const cs = CREEP_SPEED*(inRiver(c.x,c.y)?WATER_SLOW:1)*dt;
+          const cs = CREEP_SPEED*wadeMul(c.x,c.y,tgt.x-c.x,tgt.y-c.y)*dt;
           c.x += (tgt.x-c.x)/td*cs;
           c.y += (tgt.y-c.y)/td*cs;
         }
@@ -9422,7 +9514,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const dx = (wp.x - (sy/sl)*off) - c.x, dy = (wp.y + (sx/sl)*off) - c.y;
       const d = Math.sqrt(dx*dx+dy*dy) || 1;
       if(d < 30 && c.wp < c.path.length-1){ c.wp++; continue; }
-      const cs = CREEP_SPEED*(inRiver(c.x,c.y)?WATER_SLOW:1)*dt;
+      const cs = CREEP_SPEED*wadeMul(c.x,c.y,dx,dy)*dt;
       if(isStunned(c)) continue;      // frozen: no advance, no chase
       c.x += dx/d*cs;
       c.y += dy/d*cs;
