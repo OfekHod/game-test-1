@@ -732,27 +732,30 @@
     .hud-right{gap:8px;font-size:12.5px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
-    /* The row shares the top of the screen with the scoreboard, and on a 390px
-       phone that leaves it about 200px for three cards and the ALL button — so
-       the card is 48px wide, and 48px of card is only 71px tall. The bars want
-       thirty-five of those, which laid over the picture would put the fade
-       across the man's chin. So on a phone the meter comes OFF the picture and
-       sits on a plate under it: the card keeps its proportions, the chip is a
-       card with a nameplate, and the status keeps the same light colours it has
-       on the fade. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;}
-    .pchip{width:48px;aspect-ratio:auto;border-width:2px;border-radius:9px;}
+    /* The chip is the card here too — same 246/364, same meter over the foot of
+       the picture. What gives way instead is the ALL button, which drops out of
+       the row and becomes a bar underneath the three cards. That is where the
+       width came from: the row shares the top of the screen with the scoreboard
+       and a 390px phone leaves it about 200 of them, which is three cards and
+       the gaps between them and no room at all for a fourth column. The bar is
+       a better target for a thumb than that column was anyway.
+       An earlier pass put the meter on a plate UNDER the card here instead. It
+       fit, and it turned the chip back into the strip the cards were meant to
+       stop being — 48 wide by 107 tall, which is nothing like the shape the art
+       is drawn in. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;padding-bottom:39px;}
+    .pchip{width:58px;border-width:2px;border-radius:9px;}
     .plevel{top:-7px;left:-6px;font-size:9.5px;width:17px;height:17px;line-height:17px;}
     .pkey{top:-7px;right:-6px;font-size:9.5px;width:16px;height:16px;line-height:16px;}
-    .pcard{position:static;width:100%;aspect-ratio:246/364;border-radius:7px 7px 0 0;}
-    .pmeter{position:static;padding:4px 4px 3px;border-radius:0 0 7px 7px;
-      background:rgba(26,15,5,.9);}
+    .pcard{border-radius:7px;}
+    .pmeter{padding:7px 5px 3px;border-radius:0 0 7px 7px;}
     .pbar{height:4px;border-radius:2px;margin-top:2px;}
-    .asmBtn{width:34px;}
-    .asmIcon{width:16px;height:16px;margin:1.5px auto 4px;border-width:2px;}
-    .asmIcon::before{width:5px;height:5px;}
-    .asmLabel{font-size:10px;letter-spacing:.4px;}
     .pstat{font-size:9.5px;letter-spacing:.25px;margin-top:3px;}
+    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;aspect-ratio:auto;height:34px;
+      flex-direction:row;gap:7px;border-radius:9px;}
+    .asmIcon{width:15px;height:15px;margin:0;border-width:2px;}
+    .asmIcon::before{width:5px;height:5px;}
+    .asmLabel{font-size:11px;letter-spacing:.5px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
