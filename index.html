@@ -12405,15 +12405,20 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = 'rgba(40,26,14,.65)';
+    // Squares, not circles — a building on the minimap, unlike a hero, never
+    // moves, so its mark can afford to say "structure" at a glance rather than
+    // matching the round camp/hero marks.
     for(const t of playerTowers){
       p=mp(t.x,t.y);
       ctx.fillStyle = t.hp>0?'#C68958':'#8a7a6a';
-      ctx.beginPath(); ctx.arc(p.x,p.y, t.main?MM_TOWER_R_MAIN:MM_TOWER_R, 0,7); ctx.fill(); ctx.stroke();
+      const s = t.main?MM_TOWER_R_MAIN:MM_TOWER_R;
+      ctx.beginPath(); ctx.rect(p.x-s,p.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
     }
     for(const t of enemyTowers){
       p=mp(t.x,t.y);
       ctx.fillStyle = t.hp>0?'#B5482D':'#8a7a6a';
-      ctx.beginPath(); ctx.arc(p.x,p.y, t.main?MM_TOWER_R_MAIN:MM_TOWER_R, 0,7); ctx.fill(); ctx.stroke();
+      const s = t.main?MM_TOWER_R_MAIN:MM_TOWER_R;
+      ctx.beginPath(); ctx.rect(p.x-s,p.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
     }
 
     // Survival puts the whole wave on the map. A wave now has to be CLEARED
