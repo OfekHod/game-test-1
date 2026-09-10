@@ -10149,23 +10149,30 @@ window.addEventListener('DOMContentLoaded', function(){
     // would otherwise pull a hero back out of the base to defend the outpost the
     // siege phase is asking you to take.
     const tutHome = tut.on && tut.homeEnemies;
+    // The sparring step is the same kind of full takeover: `tutSparAI` drives
+    // all three of them, holding position and firing on its own slow count.
+    // Without this, `updateIdleAI` below saw the tank and support sitting in
+    // 'idle' mode with a hostile squad nearby and gave them their own normal
+    // auto-attack on top of it — the tank's real melee swing, at his real
+    // damage, one-shotting a low-level ally standing next to you.
+    const tutSpar = tut.on && tut.spar;
     // The arena runs its own enemy brain end to end. The macro layer decides
     // which of two lanes to commit to and which of its own buildings to defend,
     // and in Survival there is one road per hero and nothing of theirs to
     // defend — so it is not a smaller version of the match AI, it is a
     // different one, and none of the match one runs.
     const arena = gameMode === 'survival';
-    if(!tutHome && !arena){
+    if(!tutHome && !tutSpar && !arena){
       updateEnemyMacro(dt);
       applyEnemyMacro();
     }
     if(arena) survHeroAI(dt);
     else if(tutHome) tutEnemiesHome(dt);
-    else if(tut.on && tut.spar) tutSparAI(dt);
+    else if(tutSpar) tutSparAI(dt);
     else if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
     else { aiTrySkill(enemyTeam[0], dt); lanePush(enemyTeam[0], dt); tryAutoAttack(enemyTeam[0]); }
     updateIdleAI(playerTeam, activePlayerIdx, enemyTeam, enemyCreeps, dt, true);
-    if(!tutHome && !arena) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
+    if(!tutHome && !tutSpar && !arena) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
     for(const h of playerTeam){ if(h.alive) resolveSolidCollision(h); }
     for(const h of enemyTeam){ if(h.alive) resolveSolidCollision(h); }
     // Backstop for the truce. Dash, knockback and any path I have not thought of
@@ -13023,38 +13030,56 @@ window.addEventListener('DOMContentLoaded', function(){
     tutPaint();
   }
 
-  // Drives the enemy carry for the step that introduces him, in place of his
-  // real AI: close to arm's length, hold there, and fire on a slow count.
+  // Drives the whole enemy team for the step that introduces them, in place of
+  // their real AI: close to arm's length — just past YOUR reach, so walking up
+  // is the point — hold there in a fanned line, and fire on a slow count. A hit
+  // on any one of them sends all three home on their own two feet, the same
+  // walk `tutEnemiesHome` continues once the siege phase takes over.
+  //
+  // The cooldown is shared across all three rather than one each: the card
+  // says "one shot every couple of seconds" for the team, not per hero, and
+  // three independent clocks were three times the old carry's damage.
+  //
+  // Only the ranged two ever fire. `fireBasic` is a straight shot at whatever
+  // it hits first, and the melee tank's basicDmg is tuned for a short, slow
+  // swing, not a sniped shot from the same range the carry holds — aimed via
+  // fireBasic it one-shot a low-level ally standing between him and you. He
+  // still walks up and holds the line with the other two; he just never gets
+  // to swing at this range, which is the truth of a melee hero anyway.
+  //
+  // Each one's stand is a fixed point set once, at `enter`, not a live offset
+  // off wherever you currently are: chasing your position every frame reads
+  // as backing off the instant you close in on them, since the target itself
+  // retreats by exactly however far you just advanced. Set once, they walk to
+  // it and stop — you come to them, they do not renegotiate the distance.
   function tutSparAI(dt){
-    const e = enemyTeam[0], h = tutHero();
-    // However he left the fight — you shot him, or he walked off — he stays
-    // gone. Without pinning the respawn he strolls back in two steps later on
-    // his real AI, which is the same hero hunting you that the flee is for.
-    if(!e || !e.alive){ if(e) e.respawnTimer = Infinity; tut.spar = tut.sparFlee = false; return; }
+    const h = tutHero();
     if(!h || !h.alive) return;
-    // The step wanted one hit and it has it, so he is done: he turns and runs
-    // for his own side without firing on the way. Standing there trading after
-    // the goal is met teaches nothing, and he used to keep at it through the
-    // two steps that follow — the first of which walks you to his outpost.
-    if(tut.sparFlee){
-      moveHeroToward(e, e.homeX, e.homeY, heroSpeed(e)*1.2, dt);
-      e.facing = Math.atan2(e.homeY-e.y, e.homeX-e.x);
-      if(dist(e.x, e.y, h.x, h.y) > TUT_SPAR_CLEAR){
-        // Clear of you and off the screen. He leaves the field the way the rest
-        // of his team did at the start, rather than jittering at the far edge.
-        e.alive = false; e.hp = 0; e.respawnTimer = Infinity;
-        tut.spar = tut.sparFlee = false;
-      }
-      return;
-    }
-    const d = dist(e.x, e.y, h.x, h.y);
-    if(d > TUT_SPAR_HOLD) moveHeroToward(e, h.x, h.y, heroSpeed(e)*0.7, dt);
-    else if(d < TUT_SPAR_HOLD*0.65) moveHeroToward(e, e.x*2-h.x, e.y*2-h.y, heroSpeed(e)*0.5, dt);
-    e.facing = Math.atan2(h.y-e.y, h.x-e.x);
+    // The step wanted one hit and it has it, so they are done: they turn and
+    // run for their own side without firing on the way, and they keep walking
+    // — through the hold below and into the siege phase's own homeward walk —
+    // rather than vanishing partway and reappearing at the base later.
+    if(tut.sparFlee){ tutEnemiesHome(dt); return; }
     tut.sparCd -= dt;
-    if(tut.sparCd <= 0 && d < attackRange(e) && e.mana >= HERO_STATS[e.type].basicManaCost){
+    const canFire = [];
+    for(const e of enemyTeam){
+      // However one of them left the fight — shot down by an ally — he stays
+      // gone. Without pinning the respawn he strolls back in on his real AI,
+      // which is the same hero hunting you that the flee is for.
+      if(!e.alive){ e.respawnTimer = Infinity; continue; }
+      if(dist(e.x, e.y, e._sparTX, e._sparTY) > 20){
+        moveHeroToward(e, e._sparTX, e._sparTY, heroSpeed(e)*0.7, dt);
+        e.facing = Math.atan2(e._sparTY-e.y, e._sparTX-e.x);
+      } else {
+        e.facing = Math.atan2(h.y-e.y, h.x-e.x);   // arrived: just watch you
+      }
+      if(!HERO_STATS[e.type].melee && dist(e.x, e.y, h.x, h.y) < attackRange(e) &&
+         e.mana >= HERO_STATS[e.type].basicManaCost) canFire.push(e);
+    }
+    if(tut.sparCd <= 0 && canFire.length){
+      const shooter = canFire[Math.floor(Math.random()*canFire.length)];
       tut.sparCd = TUT_SPAR_RATE;
-      fireBasic(e, h.x, h.y, false, 1);
+      fireBasic(shooter, h.x, h.y, false, 1);
     }
   }
 
@@ -13070,8 +13095,17 @@ window.addEventListener('DOMContentLoaded', function(){
       e.standX = null; e.standY = null; e.pushing = false; e.siegeT = null;
       const d = dist(e.x, e.y, e.homeX, e.homeY);
       if(d > 24){
-        moveHeroToward(e, e.homeX, e.homeY, heroSpeed(e), dt);
-        e.facing = Math.atan2(e.homeY-e.y, e.homeX-e.x);
+        // A tower in range outranks the walk home: peel away from it first
+        // rather than cross back through its ring for the sake of a straight
+        // line — the whole point of sending them home is that they stop
+        // taking hits, not that they take one more on the way out.
+        let danger = null;
+        for(const t of playerTowers){
+          if(t.hp > 0 && dist(e.x, e.y, t.x, t.y) < TUT_SPAR_TOWER_SAFE){ danger = t; break; }
+        }
+        const to = danger ? tutClearOwnTower(e.x, e.y) : { x:e.homeX, y:e.homeY };
+        moveHeroToward(e, to.x, to.y, heroSpeed(e), dt);
+        e.facing = Math.atan2(to.y-e.y, to.x-e.x);
       } else {
         e.facing = Math.PI;              // home, and watching the way you come
       }
@@ -13096,6 +13130,27 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutNearFoeTower(x, y, pad){
     for(const t of enemyTowers){ if(t.hp > 0 && dist(x, y, t.x, t.y) < pad) return true; }
     return false;
+  }
+  // The reverse berth, for the enemy team the sparring step puts on the field:
+  // THEIR own building never hurts them, but YOURS fires on anything hostile
+  // in range — escorted or not, and enraged when it is not — so a spot or a
+  // walk that drifts inside your tower's reach hands it a free kill on a hero
+  // that is supposed to be sparring, not dying. Pushes the point radially
+  // clear of whichever tower is too close, rather than refusing it outright:
+  // there is no ring search to fall back to mid-walk the way `tutOpenSpot`
+  // has one at setup time.
+  const TUT_SPAR_TOWER_SAFE = TOWER_RANGE + 60;
+  function tutClearOwnTower(x, y){
+    for(const t of playerTowers){
+      if(t.hp <= 0) continue;
+      const d = dist(x, y, t.x, t.y);
+      if(d < TUT_SPAR_TOWER_SAFE){
+        const ang = d > 1 ? Math.atan2(y - t.y, x - t.x) : TUT_SHOW_ANGLE;
+        x = t.x + Math.cos(ang) * (TUT_SPAR_TOWER_SAFE + 20);
+        y = t.y + Math.sin(ang) * (TUT_SPAR_TOWER_SAFE + 20);
+      }
+    }
+    return { x, y };
   }
 
   // Standing clear of a trunk is not the same thing as being VISIBLE, and a
@@ -13199,12 +13254,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // hero left of centre with the room to the east.
   const TUT_SHOW_ANGLE = -0.42;
   const TUT_PACK = 5;               // mobs in the pack the drops step asks you to clear
-  // The sparring pass. He walks into view, holds at arm's length and plinks —
-  // one shot every couple of seconds instead of five a second — because the
-  // step is for meeting an enemy hero, not for losing to one. Their outposts
-  // are the far side of the map and a real carry fights from under them.
-  const TUT_SPAR_HOLD = 330;
-  const TUT_SPAR_CLEAR = 1000;   // beaten off: further than a screen, so he leaves out of sight
+  // The sparring pass. They walk into view, hold just past arm's length and
+  // plink — one shot every couple of seconds instead of five a second —
+  // because the step is for meeting the enemy team, not for losing to it.
+  // Their outposts are the far side of the map and a real carry fights from
+  // under them.
+  const TUT_SPAR_GAP = 70;       // held outside YOUR attack range, so closing it is the step
   const TUT_SPAR_RATE = 2.0;
   const TUT_SPAR_HP = 900;
   // The walk is authored on the tutorial's own map, so the rings are places
@@ -13567,42 +13622,53 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'The enemy',
-    text:()=>'Their carry has come to meet you, and he is holding back &mdash; one shot every couple of seconds where a real one fires five times that. A hero kill is worth <b>30 points</b>, a heap of experience, and twelve seconds with him out of the round. That window is what you win fights with.',
-    goal:()=>'Land a hit on the enemy carry',
+    text:()=>'Their whole team has come to meet you, and they are holding back just past your reach &mdash; one shot every couple of seconds where a real one fires five times that. Walk up and land a hit. A hero kill is worth <b>30 points</b>, a heap of experience, and twelve seconds with him out of the round. That window is what you win fights with.',
+    goal:()=>'Land a hit on an enemy hero',
     enter(){
       const h = tutHero();
-      const e = enemyTeam[0];
-      e.homeX = WORLD_W-130; e.homeY = BASE_Y;
-      respawnHero(e);
-      // In front of you and in the open, not four screens away under their
-      // outposts. Walking to him used to mean walking into a tower.
-      const s = tutOpenSpot(h.x, h.y, 700, TUT_SHOW_ANGLE);
-      e.x = s.x; e.y = s.y;
-      e.animPrevX = e.x; e.animPrevY = e.y;
-      e.mode = 'idle'; e.moveTarget = null; e.standX = null; e.standY = null;
       macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
-      // Enough health to spar rather than to be deleted: three heroes shoot
-      // him the moment he is in range, and a step about meeting an enemy is
-      // worth nothing if he is a corpse before you have looked at him.
-      e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
+      const hold = attackRange(h) + TUT_SPAR_GAP;
+      enemyTeam.forEach((e, i)=>{
+        respawnHero(e);
+        // In front of you and in the open, not four screens away under their
+        // outposts. Walking to him used to mean walking into a tower. Fanned
+        // out by index so the three of them arrive as a line, not a stack.
+        const bearing = TUT_SHOW_ANGLE + (i-1)*0.5;
+        const spot = tutOpenSpot(h.x, h.y, 700 + i*60, bearing);
+        const s = tutClearOwnTower(spot.x, spot.y);
+        e.x = s.x; e.y = s.y;
+        e.animPrevX = e.x; e.animPrevY = e.y;
+        e.mode = 'idle'; e.moveTarget = null; e.standX = null; e.standY = null;
+        // Enough health to spar rather than to be deleted: your allies shoot
+        // whichever of them is in range the moment they arrive, and a step
+        // about meeting the enemy is worth nothing if they are corpses before
+        // you have looked at them.
+        e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
+        // Where each one stands, fixed once — see `tutSparAI` for why it is
+        // not recomputed off your position every frame — and clear of your
+        // own tower's reach, or the step that introduces the enemy team hands
+        // your tower a free kill on one of them before you ever get there.
+        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
+        e._sparTX = stand.x; e._sparTY = stand.y;
+      });
       tut.spar = true; tut.sparCd = 1.5;
       tut.sparFlee = false;
-      tut.mark = { unit:e, r:48, col:'#FF9A8B', label:'ENEMY CARRY', mini:true };
-      addPing(e.x, e.y, '#FF6B6B', 14, 90, 0.7);
+      tut.mark = { unit:enemyTeam[0], r:48, col:'#FF9A8B', label:'ENEMY TEAM', mini:true };
+      addPing(enemyTeam[0].x, enemyTeam[0].y, '#FF6B6B', 14, 90, 0.7);
     },
     tick(){
       if(tut.p.heroHit && !tut.sparFlee){
         tut.sparFlee = true;
-        tut.mark = null;                 // stop sending you after him
-        tut.nudge = 'Landed. He has broken off and is running for his own side.';
+        tut.mark = null;                 // stop sending you after them
+        tut.nudge = 'Landed. They have broken off and are retreating to base.';
         tut.nudgeT = 4;
         tutPaint();
       }
     },
-    // A longer beat than the usual one, so you watch him turn and go rather
+    // A longer beat than the usual one, so you watch them turn and go rather
     // than reading about it on the next card.
     hold:2.4,
-    done:()=>!!tut.p.heroHit || !enemyTeam[0].alive
+    done:()=>!!tut.p.heroHit || enemyTeam.every(e=>!e.alive)
   },
   {
     title:'Push a lane, take a tower',
@@ -13633,16 +13699,20 @@ window.addEventListener('DOMContentLoaded', function(){
       tut.spar = false; tut.sparFlee = false;
       // And their team goes home for it. Three enemy heroes holding an outpost
       // is a fight a squad this size loses, and the phase is about the push.
-      // They are put back on their feet rather than left as the corpses the
-      // opening parked, so the minimap shows where they went.
+      // `tutSparAI` already had them walking home the moment the sparring step
+      // landed a hit — this just hands that walk to `tutEnemiesHome` rather
+      // than snapping anyone back to base, so the minimap shows where they
+      // went and you saw them go rather than finding them arrived.
       tut.homeEnemies = true;
       for(const e of enemyTeam){
-        e.respawnTimer = 0;
-        // The sparring step handed their carry TUT_SPAR_HP so he could be shot
-        // at without dying; give him his own health back on the way home.
+        // The sparring step handed each of them TUT_SPAR_HP so they could be
+        // shot at without dying; give them their own health back where they
+        // stand. Only a hero shot down mid-spar has no walk to continue — he
+        // is a corpse, so his return really is a respawn.
         e.maxHp = e.stats.maxHp;
-        respawnHero(e);
         e.mode = 'idle'; e.followTarget = null; e.moveTarget = null;
+        if(e.alive) e.hp = e.maxHp;
+        else { e.respawnTimer = 0; respawnHero(e); }
         e.animPrevX = e.x; e.animPrevY = e.y;
       }
       const h = tutHero();
