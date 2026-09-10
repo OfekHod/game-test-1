@@ -5536,7 +5536,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // back decides how long their light is in the air — so a scattered squad
   // gathers in, not all at once.
   const ASSEMBLE_FX_MIN_DUR = 0.32, ASSEMBLE_FX_MAX_DUR = 0.85, ASSEMBLE_FX_SPEED = 1000;
-  const ASSEMBLE_AURA_DUR = 1.35;   // outlives the longest streak, so the orbit is still turning when the last one lands
+  const ASSEMBLE_AURA_DUR = 2.03;   // 50% longer than the streaks need, so the ring lingers well after the call lands
   const ASSEMBLE_RING_MULT = 5.2;   // matches the orbit radius in spawnAuraMote/drawAssembleAuras
   function triggerAssembleFX(anchor, mates){
     const pal = FX_PAL.assemble;
