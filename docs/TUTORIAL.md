@@ -84,8 +84,8 @@ drops you back to the menu.
 | 3 | **The blink** | One forest mob, 470 units out, auto-assist off | Killing it *with the blink* |
 | 4 | **Experience and mana** | A pack of five mobs, drops switched on, assist back on | Clearing them and picking up the drops |
 | 5 | **Levels and stats** | Stat strip pulses; a level granted if you lack one | Spending a point |
-| 6 | **Your squad** | Tank and support walk out of the base | Taking control of each |
-| 7 | **Rocket and heal** | A mob each for them | Casting both skills |
+| 6 | **Your squad** | Tank and support walk out of the base; two mobs for the blast | Taking the tank over, *then* firing his rocket |
+| 7 | **Your support** | — | Taking the support over, *then* casting his heal |
 | 8 | **Orders** | A marked spot on the ground | Posting a hero on it |
 | 9 | **Assemble** | The ALL button pulses | Calling the squad back |
 | 10 | **The forest** | The camp is stocked and ringed, and two rings route you there down the river | Clearing it |
@@ -95,6 +95,13 @@ drops you back to the menu.
 | 14 | **The enemy** | Their carry walks over and spars | Landing a hit on him yourself |
 | 15 | **Push a lane, take a tower** | Wave spawning, both sides; their whole team sent home | Assembling, sending the squad down a lane, and destroying an enemy outpost |
 | 16 | **How a round is won** | Scoreboard appears | **Play a Match** |
+
+**Every card was cut down**, without dropping a fact any of them stated. The
+cuts are the usual ones — a clause that restates the clause before it, a
+qualifier the ground already teaches, "your hero" where "you" does the job —
+and the longest card in the tutorial went from 76 words to 40. The rule is that
+the bottom line survives: if a card told you the current gives you half again
+your speed, it still does.
 
 ### Notes on particular steps
 
@@ -154,9 +161,24 @@ the next one."* rather than a refusal.
 **5 · Levels and stats.** A level buys three points. If the first four steps did
 not produce a level-up, the step grants one, so it is always reachable.
 
-**6 · Your squad.** They walk out of the base rather than appearing beside you,
-and they arrive at your level — switching to a level-1 tank halfway through a
-tutorial reads as a punishment for switching.
+**6–7 · Your squad, and your support.** They walk out of the base rather than
+appearing beside you, and they arrive at your level — switching to a level-1
+tank halfway through a tutorial reads as a punishment for switching.
+
+Each of these two phases is **one hero and one skill, asked for in that order**:
+take the tank over, then fire his rocket; take the support over, then cast his
+heal. The card, the goal line and the pointer all change at the halfway mark,
+the way the walking phase's do. The earlier split — one phase for both switches,
+then one phase for both skills — put four things in the air at once, gave the
+skills phase a seventy-six-word card describing two skills for heroes you were
+not driving, and left the pointer nothing more specific to aim at than the whole
+party bar.
+
+The order enforces itself: only the tank can fire a rocket, so `cast.tank`
+cannot be set before `seen.tank`. `tutDriving(type)` is what reads the stage,
+and it accepts *either* the `switch` note or the hero you happen to be driving
+already — a player who is still on the tank when phase 7 opens fires no
+`focusHero` and would otherwise never leave stage one.
 
 **8–9 · Orders and Assemble.** The drag gesture is taught here on open ground;
 step 13 points the same gesture at the minimap, and step 15 asks for both at once.
@@ -319,6 +341,28 @@ No hook string `sim/harness.js` matches on was touched.
 in world space over your hero's head — high enough to clear two rows of damage
 numbers, which stack upward from the same point. Your eyes are on your hero, not
 on the bottom of the screen.
+
+**And the control it wants is pointed at.** `tutHighlight(el)` puts a pulsing
+ring on a HUD element; it now also parks a bobbing arrow against that element's
+edge, so "take the tank over" aims at the tank's own portrait rather than at the
+party bar, and "fire his rocket" aims at the button that fires it. Three things
+the arrow has to get right:
+
+- **The tip rests *on* the control**, not clear of it. The dock stacks the stat
+  strip a few pixels above the skill button, so an arrow with air under it
+  points at the row above the one it means — it read as pointing at **HPR**.
+  The downward arrow also bobs *into* its target rather than away from it, for
+  the same reason.
+- **Which side it sits on** comes from where the control is: above the middle of
+  the stage and the arrow goes underneath pointing up (the party chips), below
+  it and the arrow goes on top pointing down (the dock, and the phone's skill
+  button).
+- **"The skill button" is two different elements.** The round one only exists on
+  touch; on a desktop the same skill is the **SPACE** slot in the dock, so
+  `tutSkillEl()` picks between them.
+
+It is re-aimed every frame while a phase holds one, because the party bar and
+the dock are laid out in percentages of a stage that resizes.
 
 **The card** is a DOM panel above the bottom dock — the dock's height is measured
 in JS, because the HUD is a percentage of a stage whose height nothing in CSS
