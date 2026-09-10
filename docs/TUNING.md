@@ -198,3 +198,42 @@ games the band on a 90% rate is roughly ±9 points, which is wider than every
 effect measured here — three separate 40-game runs read 98%, 88% and 93% off
 builds that were doing the same thing. Nothing under 120 games says anything,
 and a claim of parity wants 240.
+
+## The arena's enemy players
+
+| constant | value | note |
+|---|---|---|
+| `SURV_HERO_FROM` | 4 | the first wave an enemy player walks in with; waves 1-3 teach the arena's own shape first |
+| `SURV_HERO_EVERY` | 3 | waves between arrivals. **At 2 all three were on the field by wave 8 and an idle-player arena that reached wave 12 was overrun on wave 6** — that is a step, not a ramp |
+| `SURV_HERO_ORDER` | tank, carry, support | and each attaches to the one before it |
+| `SURV_HERO_LV_BASE` / `_STEP` | 4, +0.7/wave | the tank debuts at roughly a level-4 player tank (660hp), capping at 26 around wave 36. Halving both **changed nothing measurable** — a scripted play-through was overrun on wave 8 either way — because what ends a round is a carry with a mana bar next to a 500hp base, not its level |
+| `SURV_HERO_SPAWN_R` | `SURV_SPAWN_R` − 160 | measured along the road, a little ahead of the mobs' own mark so the tank starts in front of its pack |
+| `SURV_LEAD_AHEAD` | 160 | how far ahead of its own front mob a hero may get. A hero walks half again as fast as a mob, so with no cap the tank arrives half a minute early and dies alone |
+| `SURV_GROUP_LEAD` | 280 | stage four only: nobody outruns the rearmost of the three by more |
+| `SURV_BACK_HOLD` | 1.5s | the arena's fall-back is a fresh question every frame, not `RETREAT_IN/OUT`'s latch — see `AI.md`, "Backing off" |
+
+A wave is not cleared until its enemy players are dead too, so `survTick` gates
+on both. The pacing cost is real and intended: an idle round that reached wave 7
+at 145s reaches it at 210s once the heroes have to be killed. The risk it
+carries is a hero that waits out of reach forever, and `survAllIn` is the answer
+— measured over a full idle round, the longest the field ever sat with no mobs
+and a live enemy hero on it was 15.5 seconds.
+
+`pushTowers` is not a constant but belongs here: an arena hero will not attack
+your base while an outpost on its own road stands. Instrumented, an idle-player
+round lost every point of its 500 base hp to HEROES rather than to mobs, so
+without that rule the two outposts were scenery and the base was the only
+building in the game.
+
+Measured with the player idle and never moving, one run each: the arena reached
+wave 12 before this and wave 7 after, so an enemy player is worth roughly five
+waves to a defence that does nothing — an idle player never contests an outpost
+or spends a stat point, so treat it as the floor rather than as the difficulty.
+A scripted play-through that spends its points, uses its skills and fights at
+its own towers is the more useful number, and it says the same thing louder:
+the same script holds **wave 12 and climbing** on the old arena and is overrun
+on **wave 8** on this one, three runs out of three. It does not focus the enemy
+carry, which is the counter-play the whole design rests on, so treat it as a
+lower bound too — but it does mean the healer at wave 10 and the column at
+wave 13 are a long way past where an average round now ends. `SURV_HERO_EVERY`
+is the dial for that, and it is the one to turn first.

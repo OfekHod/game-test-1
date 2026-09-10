@@ -619,6 +619,12 @@
   .waveBanner span{display:block;font-size:23px;font-weight:800;letter-spacing:.36em;
     text-indent:.36em;color:#FFF3D6;}
   .waveBanner b{display:block;font-size:110px;line-height:1.02;font-weight:800;color:#FFD54F;}
+  /* The wave a new enemy player walks in with says so, once, under the number.
+     A hero arriving is the only thing the arena ever changes about a wave that
+     you cannot read off its size, so it is the one thing worth spelling out. */
+  .waveBanner i{display:none;font-style:normal;font-size:17px;font-weight:800;
+    letter-spacing:.2em;text-indent:.2em;color:#FF9E80;margin-top:2px;}
+  .waveBanner i.on{display:block;}
   @media (prefers-reduced-motion:reduce){ .waveBanner{transition:opacity .3s ease;transform:none;} }
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
@@ -695,6 +701,7 @@
     .waveBanner{top:13%;}
     .waveBanner span{font-size:15px;}
     .waveBanner b{font-size:66px;}
+    .waveBanner i{font-size:12px;}
 
     .hud{min-height:50px;padding:0 2%;gap:4px;}
     .hud-left{gap:6px;}
@@ -750,6 +757,7 @@
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
     .waveBanner b{font-size:52px;}
+    .waveBanner i{font-size:11px;}
     .mobileHint{display:none !important;}
   }
 </style>
@@ -788,7 +796,7 @@ window.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="skillBtn" id="skillBtn"><div class="cdRing" id="skillBtnCd"></div><div class="skillIcon skill-dash" id="skillBtnIcon"></div></div>
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · circle: skill</div>
-    <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b></div>
+    <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
     <div class="tutCard hidden" id="tutCard">
       <div class="tutHead"><span class="tutStep" id="tutStep"></span><b class="tutTitle" id="tutTitle"></b></div>
@@ -2419,6 +2427,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const timerEl = document.getElementById('timer');
   const waveBannerEl = document.getElementById('waveBanner');
   const waveBannerNumEl = document.getElementById('waveBannerNum');
+  const waveBannerSubEl = document.getElementById('waveBannerSub');
   const cdFillEl = document.getElementById('cdFill');
   const dashCdFillEl = document.getElementById('dashCdFill');
   const skillIconEl = document.getElementById('skillIcon');
@@ -3108,6 +3117,48 @@ window.addEventListener('DOMContentLoaded', function(){
   // second out at the first corner, so a wave meets a building at the one place
   // it has to slow down and turn.
   const SURV_OUTPOST = 470, SURV_OUTPOST_FAR = 950;
+  // ---------- the arena's enemy players ----------
+  // The opening waves are mobs and mobs only: the arena has to teach its own
+  // shape — two roads, four outposts, a wave you have to CLEAR — before it
+  // starts sending heroes down it. From SURV_HERO_FROM one enemy player joins
+  // every SURV_HERO_EVERY waves, in the order below, and each arrival attaches
+  // to the one before it: the tank walks at the head of a mob pack, the carry
+  // shelters behind the tank, the healer shadows the carry. Once all three are
+  // in they stop being three separate arrivals and travel as one column.
+  const SURV_HERO_FROM  = 4;
+  // Every THREE waves, not every two. At two the tank, the carry and the healer
+  // were all on the field by wave eight, and an idle-player arena that used to
+  // reach wave 12 was overrun on wave 6 — the ramp was not a ramp, it was a
+  // step. Three gives you a wave to learn each arrival before the next one
+  // shows up, and still has the whole team pushing together by wave 13.
+  const SURV_HERO_EVERY = 3;
+  const SURV_HERO_ORDER = ['tank','carry','support'];
+  // Levels. A wave-4 tank at level 1 is a mob with a sword; the whole point of
+  // an enemy PLAYER is that it is a hero, so it arrives already built and keeps
+  // gaining as the waves do. Both numbers are re-read at the top of every wave,
+  // so a hero that survived a wave is built exactly like a fresh arrival — the
+  // difficulty is a property of the wave, never of who happened to live.
+  // Roughly a level-appropriate player hero: a wave-4 tank has about the health
+  // a player's tank has at level 4, and the curve reaches the cap around wave
+  // 36. Halving both was tried and MEASURED TO DO NOTHING — a scripted
+  // play-through was overrun on wave 8 either way, and so was an idle one on
+  // wave 7 — because what ends an arena round is a carry with a mana bar
+  // standing next to a 500hp base, not what level it is. Left where they read
+  // sensibly rather than tuned against a number they do not move.
+  const SURV_HERO_LV_BASE = 4;      // the tank's level on the wave it debuts
+  const SURV_HERO_LV_STEP = 0.7;    // levels gained per wave after that
+  // They arrive ON the road, with the wave, rather than at a base the arena
+  // does not give them. Measured along the road like everything else here, and
+  // a little ahead of the mobs' own mark so the tank starts the walk in front
+  // of the pack it is leading rather than inside it.
+  const SURV_HERO_SPAWN_R = SURV_SPAWN_R - 160;
+  const SURV_HERO_GAP = 140;        // how far back down the road the next one starts
+  // Pace. A hero walks half again as fast as a mob, so left to itself the tank
+  // arrives at your tower a full half-minute ahead of the pack it is supposed
+  // to be leading — alone, which is the one way it cannot hurt you. It leads by
+  // this much and no more, and only while its pack is still alive to lead.
+  const SURV_LEAD_AHEAD = 160;
+  const SURV_GROUP_LEAD = 280;      // once all three are in, nobody outruns the column by more
   // ---------- the tutorial's own map ----------
   // Purpose-built and deliberately bare: the lane skeleton a Match has, one
   // river to wade, one wall of trees to walk around, one camp, and nothing
@@ -3393,6 +3444,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // person does.
   const SHIELD_REACTION = 0.4;
   function towerShieldedAt(h, t){
+    // Every caller is really asking "may I stand in this tower's reach?", and
+    // for the last arena hero of a dead wave the answer is yes — not because
+    // anything is soaking the shells, but because there is nothing left to wait
+    // for. See survAllIn.
+    if(survAllIn(h)) return true;
     const hold = towerShieldTime(h, t);
     if(hold <= 0) return false;
     const d = dist(h.x, h.y, t.x, t.y);
@@ -3490,6 +3546,32 @@ window.addEventListener('DOMContentLoaded', function(){
     // moment you do — but never throw the hero away for no progress.
     return isEndgame() && survive > toKill * 0.8;
   }
+  // IN THE ARENA, A LANE'S GUNS COME DOWN IN ORDER.
+  //
+  // An enemy player will not touch your base while an outpost on the road it
+  // walked in on is still standing. Without this the carry walked past both
+  // outposts behind its wave and deleted the base in one mana bar — measured,
+  // two full play-throughs that spent their stat points, used their skills and
+  // fought at their own towers were both overrun on wave 8, which would have
+  // made the healer at wave 10 and the column at wave 13 content nobody ever
+  // saw. It is also just how a lane is supposed to fall, and it gives the two
+  // outposts on a road something to be: hold them and your base is not the
+  // thing being pushed.
+  //
+  // Only the CHOICE of target is narrowed. Every safety rule — tower danger,
+  // the keep-out in walkLane, whether the wave is soaking the shells — still
+  // reads every tower on the map, because a building it may not attack can
+  // still kill it.
+  function pushTowers(h){
+    const own = h.side==='player' ? enemyTowers : playerTowers;
+    if(gameMode !== 'survival' || h.side !== 'enemy') return own;
+    const guards = [];
+    for(const t of own){
+      if(t.main || t.hp <= 0) continue;
+      if(distToOwnLane(h, t.x, t.y) < LANE_HALF*2) guards.push(t);   // the outposts on OUR road
+    }
+    return guards.length ? guards : own;
+  }
   function laneSeekTarget(h){
     const oppCreeps = h.side==='player' ? enemyCreeps : allyCreeps;
     const oppTeam   = h.side==='player' ? enemyTeam : playerTeam;
@@ -3503,12 +3585,12 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const oh of oppTeam){ if(oh.alive) consider(oh); }
     // Buildings were never in this list, so a hero standing beside an enemy
     // outpost with his wave alive saw no target at all and simply held.
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
     for(const t of oppTowers){
       if(t.hp<=0) continue;
       const d = dist(h.x,h.y,t.x,t.y) - t.r;
       if(h.side === 'enemy' && inEarlyPeace()) continue;   // no buildings during the truce
-      const mayHit = escortedAt(h, t) || (h.pushing && siegeViable(h, t));
+      const mayHit = escortedAt(h, t) || (h.pushing && siegeViable(h, t)) || survAllIn(h);
       if(d < attackRange(h)*1.05 && mayHit && d < bd){ bd=d; best=t; }
     }
     // PUSH ORDER: defending creeps, then the building. Never the defending hero.
@@ -5565,6 +5647,13 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function grantXP(h, amount){
     if(!h || h.level>=MAX_LEVEL) return;
+    // IN THE ARENA AN ENEMY PLAYER'S LEVEL IS THE WAVE'S. It is set when the
+    // hero walks in and nothing else moves it, so how hard a wave hits is a
+    // property of the wave rather than of who happened to live through the last
+    // one — measured, a tank that survived a few waves was fighting two levels
+    // above the wave that brought it, and a wave you cleared cheaply made the
+    // next one harder for having cleared it.
+    if(gameMode==='survival' && h.side==='enemy') return;
     h.xp += amount;
     while(h.level<MAX_LEVEL && h.xp>=h.xpToNext){
       h.xp -= h.xpToNext;
@@ -8386,7 +8475,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     const oppCreeps = h.side==='player' ? enemyCreeps : allyCreeps;
     const oppTeam   = h.side==='player' ? enemyTeam : playerTeam;
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
 
     // A swing is a swing: everything hostile standing in the cone takes it, not
     // just whoever happened to be nearest. Own-side creeps and heroes are never
@@ -8465,7 +8554,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // first and only starts chipping the structure once nothing else is in
     // range — otherwise shots flip between a creep and the base and waste travel.
     if(skipTowers) return null;
-    const oppTowers = h.side==='player' ? enemyTowers : playerTowers;
+    const oppTowers = pushTowers(h);
     for(const t of oppTowers){
       if(t.hp<=0) continue;
       if(dist(h.x,h.y,t.x,t.y) - t.r >= range) continue;
@@ -8707,27 +8796,110 @@ window.addEventListener('DOMContentLoaded', function(){
     if(w < SURV_BIG_FROM) return 0;
     return Math.min(survWaveCount(w), 1 + Math.floor((w-SURV_BIG_FROM)/SURV_BIG_EVERY));
   }
+  // How far the enemy team has arrived by wave w. 0 is mobs only; 1, 2 and 3
+  // are the tank, the carry and the healer walking in one at a time; 4 is all
+  // three travelling as a column instead of as a chain of escorts.
+  function survHeroStage(w){
+    if(w < SURV_HERO_FROM) return 0;
+    return Math.min(4, 1 + Math.floor((w - SURV_HERO_FROM)/SURV_HERO_EVERY));
+  }
+  function survHeroTypes(w){
+    return SURV_HERO_ORDER.slice(0, Math.min(SURV_HERO_ORDER.length, survHeroStage(w)));
+  }
+  function survHeroLevel(w){
+    return Math.max(1, Math.min(MAX_LEVEL,
+      Math.round(SURV_HERO_LV_BASE + (w - SURV_HERO_FROM)*SURV_HERO_LV_STEP)));
+  }
+  // Levelling with no experience to spend. It runs the same loop grantXP runs —
+  // three points a level, spent through AI_BUILD — so a wave-20 arena carry is
+  // built by exactly the rules a match carry is built by, and the stat panel
+  // would report the same numbers for both.
+  function survSetHeroLevel(h, lv){
+    while(h.level < lv && h.level < MAX_LEVEL){
+      h.level++;
+      h.points += 3;
+      h.xp = 0; h.xpToNext = xpForLevel(h.level);
+      aiSpendPoints(h);
+    }
+  }
+  // Put wave w's enemy players on road li. A hero still standing from the last
+  // wave is NOT re-spawned — it is levelled where it stands and keeps walking
+  // the road it was already on, so killing one is what empties its slot.
+  function survDeployHeroes(w, li){
+    const types = survHeroTypes(w);
+    if(!types.length) return null;
+    const lv = survHeroLevel(w);
+    // A FALLBACK, not the usual path: survTick will not start a wave while an
+    // enemy player is still alive, so by the time this runs they are all dead
+    // and the whole roster walks in together on the wave's own road. It is kept
+    // because it is the rule that has to hold if that gate ever loosens — a
+    // newcomer joins the road of whoever is already out there, or the carry
+    // walks in from the north while the tank it shelters behind came from the
+    // south. SURV_HERO_ORDER is tank-first, so the tank's road wins.
+    for(const t of SURV_HERO_ORDER){
+      const a = enemyTeam.find(e => e.type === t);
+      if(a && a.alive){ li = a.laneIdx; break; }
+    }
+    const p = SURV_PATHS[li];
+    let joined = null;
+    for(let i=0;i<types.length;i++){
+      const h = enemyTeam.find(e => e.type === types[i]);
+      if(!h) continue;
+      if(h.alive){ survSetHeroLevel(h, lv); continue; }   // see above: cannot happen through survTick
+      // The order they are listed in is the order they walk in: the tank at the
+      // front, and each of the others a stride further back down the road.
+      const idx = survPathIndexAt(p, SURV_HERO_SPAWN_R + i*SURV_HERO_GAP);
+      const s = p[idx];
+      h.homeX = s.x; h.homeY = s.y;                 // the arena's "home" is where it walked in
+      survSetHeroLevel(h, lv);
+      respawnHero(h);                               // full bars, no stale targets, x/y from home
+      h.laneIdx = li;
+      h.lpath = p.slice(0, idx+1).reverse();        // the road it came in on, walked inwards
+      h.lwp = 1;
+      h.facing = Math.atan2(h.lpath[1].y - s.y, h.lpath[1].x - s.x);
+      h._healT = null; h.pushing = true;
+      if(types.length === i+1 && w === SURV_HERO_FROM + i*SURV_HERO_EVERY) joined = h.type;
+    }
+    return joined;
+  }
+  const SURV_JOIN_CALL = { tank:'THE ENEMY TANK JOINS THE WAVE',
+    carry:'THE ENEMY CARRY JOINS THE WAVE', support:'THE ENEMY HEALER JOINS THE WAVE' };
   // The wave call. Real time, not game time: the frame loop caps dt, so a
   // banner timed off the clock hangs about for twenty seconds on a slow machine
   // and blinks past on a fast one. Every entry point that leaves the arena —
   // a new round, the end card — clears it, or it survives the round it announced.
   let waveBannerTimer = 0;
-  function showWaveBanner(w){
+  function showWaveBanner(w, sub){
     waveBannerNumEl.textContent = w;
+    waveBannerSubEl.textContent = sub || '';
+    waveBannerSubEl.classList.toggle('on', !!sub);
     waveBannerEl.classList.add('show');
     clearTimeout(waveBannerTimer);
-    waveBannerTimer = setTimeout(()=>{ waveBannerEl.classList.remove('show'); }, SURV_BANNER_MS);
+    // Both classes come off together. Leaving the subtitle's on it while the
+    // banner itself is invisible is a lie about what is on the screen, and the
+    // next wave without an arrival would have to remember to clear it.
+    waveBannerTimer = setTimeout(()=>{
+      waveBannerEl.classList.remove('show');
+      waveBannerSubEl.classList.remove('on');
+    }, SURV_BANNER_MS);
   }
   function hideWaveBanner(){
     clearTimeout(waveBannerTimer);
     waveBannerEl.classList.remove('show');
+    waveBannerSubEl.classList.remove('on');
   }
   // The gate. A wave is over when the field is empty, and only then does the
   // lull start running — so the break is a real breather you can spend walking
   // back to the tower or clearing a camp, not a countdown that started while
   // you were still fighting.
   function survTick(dt){
+    // A WAVE IS ITS MOBS *AND* ITS PLAYERS. Gating on the mobs alone let the
+    // next wave march while the last one's tank was still on the field, so the
+    // heroes stacked up wave on wave and clearing the pack bought you nothing.
+    // Killing the enemy players is now part of clearing a wave, which is what
+    // makes them worth turning round for.
     if(enemyCreeps.length) return;       // last wave still standing: nothing moves
+    for(const h of enemyTeam){ if(h.alive) return; }
     survBreak -= dt;
     if(survBreak > 0) return;
     survivalWave();
@@ -8767,7 +8939,14 @@ window.addEventListener('DOMContentLoaded', function(){
       enemyCreeps.push(c);
     }
     survWave = w;
-    showWaveBanner(w);
+    // The enemy players walk in on the road the wave STARTED on, which is the
+    // one carrying its first and biggest rank — a hero leading the tail of a
+    // column is not leading anything.
+    const joined = survDeployHeroes(w, base % SURV_PATHS.length);
+    let sub = joined ? SURV_JOIN_CALL[joined] : '';
+    if(!sub && w === SURV_HERO_FROM + SURV_HERO_ORDER.length*SURV_HERO_EVERY)
+      sub = 'THE ENEMY TEAM PUSHES TOGETHER';
+    showWaveBanner(w, sub);
   }
 
   // ---------- neutral jungle camps ----------
@@ -9792,16 +9971,23 @@ window.addEventListener('DOMContentLoaded', function(){
     // would otherwise pull a hero back out of the base to defend the outpost the
     // siege phase is asking you to take.
     const tutHome = tut.on && tut.homeEnemies;
-    if(!tutHome){
+    // The arena runs its own enemy brain end to end. The macro layer decides
+    // which of two lanes to commit to and which of its own buildings to defend,
+    // and in Survival there is one road per hero and nothing of theirs to
+    // defend — so it is not a smaller version of the match AI, it is a
+    // different one, and none of the match one runs.
+    const arena = gameMode === 'survival';
+    if(!tutHome && !arena){
       updateEnemyMacro(dt);
       applyEnemyMacro();
     }
-    if(tutHome) tutEnemiesHome(dt);
+    if(arena) survHeroAI(dt);
+    else if(tutHome) tutEnemiesHome(dt);
     else if(tut.on && tut.spar) tutSparAI(dt);
     else if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
     else { aiTrySkill(enemyTeam[0], dt); lanePush(enemyTeam[0], dt); tryAutoAttack(enemyTeam[0]); }
     updateIdleAI(playerTeam, activePlayerIdx, enemyTeam, enemyCreeps, dt, true);
-    if(!tutHome) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
+    if(!tutHome && !arena) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
     for(const h of playerTeam){ if(h.alive) resolveSolidCollision(h); }
     for(const h of enemyTeam){ if(h.alive) resolveSolidCollision(h); }
     // Backstop for the truce. Dash, knockback and any path I have not thought of
@@ -9885,6 +10071,11 @@ window.addEventListener('DOMContentLoaded', function(){
     const rm = baseRegenMult(h), mm = manaRegenMult(h);
     if(h.mana<h.maxMana) h.mana=Math.min(h.maxMana, h.mana+h.stats.manaRegen*mm*dt);
     if(!h.alive){
+      // An arena hero is not on a respawn clock: it comes back with the wave
+      // that brings it, out on the road, at that wave's level. So killing one
+      // buys you the rest of this wave without it — which is the whole reward
+      // for turning round and fighting a hero instead of clearing the pack.
+      if(gameMode==='survival' && h.side==='enemy') return;
       h.respawnTimer -= dt;
       if(h.respawnTimer<=0) respawnHero(h);
       return;
@@ -10560,6 +10751,185 @@ window.addEventListener('DOMContentLoaded', function(){
         h.mode = 'lane'; h.laneIdx = (i-1+LANE_YS.length)%LANE_YS.length; setLanePath(h);
       }
     }
+  }
+  // ---------- the arena's enemy players ----------
+  // One brain, three heroes, one job: walk the road you came in on and hit what
+  // stands on it. Everything the match AI does BESIDES pushing is deliberately
+  // absent here — no camps, no orbs, no running across the map to a team-mate's
+  // fight, no macro states to defend a base they do not own. A wave is a thing
+  // that arrives, and an enemy player that stops to farm on the way is an enemy
+  // player the round never sees. The only reasons it ever stops walking are the
+  // ones a pushing hero has anywhere: a target in reach, a tower it is not
+  // shielded from, and a health bar low enough to leave on.
+  function survHeroAI(dt){
+    for(const h of enemyTeam){ if(h.alive) survHeroPush(h, dt); }
+  }
+  // Progress along a road, measured as distance from the plaza: the roads snake
+  // but they never double back, so a smaller number is always further in. Every
+  // pacing rule below is written in it, which is what lets one rule cover two
+  // lanes of different shape.
+  function survDepth(x, y){ return dist(x, y, WORLD_W/2, WORLD_H/2); }
+  // Who this hero walks behind. The chain is the whole escalation: the tank
+  // leads, the carry shelters on the tank, the healer shadows the carry.
+  function survAnchor(h){
+    if(h.type === 'tank') return null;
+    const want = h.type === 'support' ? 'carry' : 'tank';
+    let fallback = null;
+    for(const a of enemyTeam){
+      if(a === h || !a.alive) continue;
+      if(a.type === want) return a;
+      if(a.type === 'tank') fallback = a;
+    }
+    return h.type === 'support' ? fallback : null;
+  }
+  // BACKING OFF IN THE ARENA MEANS BACKING INTO THE PACK, NOT OUT OF THE ROUND.
+  //
+  // wantsRetreat is a latch: once it trips it holds until the hero is back to
+  // 60% health, because in a Match it can walk to a base that mends it three
+  // times as fast. The arena gives an enemy player no base and no ring, so the
+  // latch means natural regeneration, and measured that is a carry standing at
+  // the mouth of its road for EIGHTY SECONDS while the wave it walked in with
+  // died without it. Twice in ten waves the whole enemy side was two heroes
+  // standing still.
+  //
+  // So it is a fresh question every frame instead of a latch, and the answer
+  // moves the hero back down its own road rather than off the map: a step
+  // behind the front rank is cover, and the pack walking past puts it back in
+  // the push without it having to decide anything. The hold below is the only
+  // stickiness it gets — enough that it commits to the step back instead of
+  // dithering on the threshold.
+  const SURV_BACK_HOLD = 1.5;
+  // NOTHING LEFT TO HIDE BEHIND, SO NOTHING TO WAIT FOR.
+  //
+  // The wave gate now waits for the enemy players too, and everything an arena
+  // hero does around a tower is written in terms of the wave shielding it —
+  // hold outside the reach, back out when the shield goes, take the building
+  // once the mobs are closer to it than you are. With the mobs gone, all three
+  // say "wait", and a hero waiting for a wave that is already dead is a round
+  // that never continues: it would stand off the outpost until the player came
+  // out to find it, which is a search, not a fight.
+  //
+  // So the last enemy player standing goes all in. It walks in, takes the
+  // shells, and either finishes the building or dies to it — and either way the
+  // wave ends. Every rule below reads this, which is why it is one predicate
+  // rather than a flag threaded through four of them.
+  function survAllIn(h){
+    return gameMode === 'survival' && h.side === 'enemy' && enemyCreeps.length === 0;
+  }
+  function survWantsBack(h){
+    if(survAllIn(h)) return false;       // there is nowhere better to be
+    if(towerEscapeUnsafe(h)) return true;                     // in the guns with the shield gone
+    return h.hp < h.maxHp*RETREAT_IN && threatNear(h);        // hurt, and being pressed
+  }
+  function survFallBack(h){
+    for(const a of enemyTeam)
+      if(a !== h && a.alive && a.type === 'support' && a.hp > a.maxHp*0.35) return { x:a.x, y:a.y };
+    const p = h.lpath;
+    if(p && p.length){
+      const i = Math.max(0, Math.min(p.length-1, (h.lwp|0) - 3));
+      return { x:p[i].x, y:p[i].y };
+    }
+    return { x:h.homeX, y:h.homeY };
+  }
+  // aiTrySkill covers the carry's blink and the tank's rocket; the heal is cast
+  // out of updateIdleAI in a Match, which the arena does not run.
+  function survHeroSkill(h, dt){
+    if(h.type !== 'support'){ aiTrySkill(h, dt); return; }
+    const s = HERO_STATS.support;
+    if(h.skillCd<=0 && h.mana>=s.skillManaCost && healNeeded(h, IDLE_HEAL_RANGE)){
+      h.skillCd = s.skillCd; h.mana -= s.skillManaCost;
+      spawnHealWave(h, IDLE_HEAL_RANGE);
+    }
+  }
+  function survHeroPush(h, dt){
+    tickDwell(h, dt); tickTask(h, dt);
+    h.pushing = true;                       // in the arena there is nothing else to be doing
+    const bx = h.x, by = h.y;
+    // Giving ground outranks everything, and it is never rolled back by the
+    // pacing below — a hero held in formation while it is being killed is a
+    // hero that dies in formation.
+    h._backT = Math.max(0, (h._backT||0) - dt);
+    if(survWantsBack(h)) h._backT = SURV_BACK_HOLD;
+    if(h._backT > 0){
+      const rp = survFallBack(h);
+      moveHeroToward(h, rp.x, rp.y, heroSpeed(h)*1.05, dt, true);
+      survHeroSkill(h, dt);
+      tryAutoAttack(h);
+      return;
+    }
+    // The healer's ally comes before the road, and it stays until they are
+    // whole: breaking off at seventy percent only means walking back.
+    if(h.type === 'support'){
+      if(h._healT && (!h._healT.alive || h._healT.hp >= h._healT.maxHp*0.97)) h._healT = null;
+      if(!h._healT){
+        let worst = null, wf = HEAL_CALL_HP;
+        for(const a of enemyTeam){
+          if(!a.alive || a === h) continue;
+          const f = a.hp / a.maxHp;
+          if(f < wf){ wf = f; worst = a; }
+        }
+        h._healT = worst;
+      }
+      const keep = h._healT || survAnchor(h);
+      const near = h._healT ? HEAL_STAND : SUPPORT_ESCORT;
+      if(keep && dist(h.x, h.y, keep.x, keep.y) > near){
+        moveHeroToward(h, keep.x, keep.y, heroSpeed(h)*1.06, dt);
+        survHeroSkill(h, dt);
+        tryAutoAttack(h);
+        survPace(h, bx, by);
+        return;
+      }
+    }
+    // laneSeekTarget reads h.lpath, which is the road this hero walked in on —
+    // so "in my lane" means "on the road" here, and a player who steps off it
+    // into the trees is not something the arena chases.
+    const foe = laneSeekTarget(h);
+    h.siegeT = (foe && foe.main !== undefined) ? foe : null;
+    if(foe){
+      const want = attackRange(h)*LANE_STANDOFF + (foe.r || 0);
+      if(shouldApproach(h, dist(h.x,h.y,foe.x,foe.y), want, foe))
+        moveHeroToward(h, foe.x, foe.y, heroSpeed(h), dt);
+    } else {
+      walkLane(h, dt);                      // which also holds it out of an unshielded tower
+    }
+    survHeroSkill(h, dt);
+    tryAutoAttack(h);
+    survPace(h, bx, by);
+  }
+  // The formation, applied after the fact: work out how far in this hero is
+  // allowed to be, and if the step it just took took it past that, take the
+  // step back. Only forward progress is ever undone — a hero backing off is
+  // doing the one thing none of these rules should argue with.
+  function survPace(h, bx, by){
+    const now = survDepth(h.x, h.y), was = survDepth(bx, by);
+    if(now >= was) return;
+    let floor = 0;                          // the deepest this hero may stand
+    // Lead the pack, do not leave it. Counted against the leading mob of this
+    // hero's own road; once that road is empty there is nothing to keep pace
+    // with and it goes in alone.
+    let front = null;
+    for(const c of enemyCreeps){
+      if(c.hp <= 0 || c.lane !== h.laneIdx) continue;
+      const d = survDepth(c.x, c.y);
+      if(front === null || d < front) front = d;
+    }
+    if(front !== null) floor = Math.max(floor, front - SURV_LEAD_AHEAD);
+    const anchor = survAnchor(h);
+    if(anchor) floor = Math.max(floor,
+      survDepth(anchor.x, anchor.y) + (h.type === 'support' ? SUPPORT_SHELTER : CARRY_SHELTER));
+    // Stage four: the three of them stop being a chain of escorts and become a
+    // column. Nobody is more than SURV_GROUP_LEAD ahead of the rearmost, so
+    // they arrive together instead of one at a time.
+    if(survHeroStage(survWave) >= SURV_HERO_ORDER.length + 1){
+      let rear = null;
+      for(const a of enemyTeam){
+        if(!a.alive || a === h) continue;
+        const d = survDepth(a.x, a.y);
+        if(rear === null || d > rear) rear = d;
+      }
+      if(rear !== null) floor = Math.max(floor, rear - SURV_GROUP_LEAD);
+    }
+    if(now < floor){ h.x = bx; h.y = by; }
   }
   function updateEnemyCarryAI(dt){
     tickTask(enemyTeam[0], dt);
@@ -11783,7 +12153,27 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     for(const h of playerTeam){ if(!h.alive) continue; p=mp(h.x,h.y); ctx.fillStyle=HERO_STATS[h.type].colorPlayer; ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill(); }
-    for(const h of enemyTeam){ if(!h.alive || !isVisible(h.x,h.y,h.r)) continue; p=mp(h.x,h.y); ctx.fillStyle=HERO_STATS[h.type].colorEnemy; ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,7); ctx.fill(); }
+    // An arena hero is part of the wave, and the wave is all on the map — the
+    // whole reason the mobs are drawn unscouted is that a wave has to be
+    // cleared before the next one marches, and a hero is the hardest thing in
+    // it to find.
+    //
+    // A size up and a dark outline was not enough, and the picture said so: the
+    // enemy tank's colour is within a few points of a mob's on all three
+    // channels, the whole panel is 75 pixels across, and a wave arriving reads
+    // as ONE dark red smudge with the hero somewhere inside it. So the ring is
+    // the panel's own cream, which nothing else out on the field is, and it is
+    // drawn wide enough to see at that size.
+    for(const h of enemyTeam){
+      if(!h.alive) continue;
+      if(gameMode!=='survival' && !isVisible(h.x,h.y,h.r)) continue;
+      p=mp(h.x,h.y);
+      ctx.fillStyle=HERO_STATS[h.type].colorEnemy;
+      ctx.beginPath(); ctx.arc(p.x,p.y, gameMode==='survival' ? 4.6 : 3.2, 0,7); ctx.fill();
+      if(gameMode==='survival'){
+        ctx.strokeStyle='#FFF3D6'; ctx.lineWidth=2; ctx.stroke();
+      }
+    }
 
     const vTL=mp(camera.x,camera.y), vBR=mp(camera.x+W,camera.y+H);
     ctx.strokeStyle='rgba(90,62,27,.55)'; ctx.lineWidth=1.3;
@@ -11980,8 +12370,17 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!h.alive) continue;
       if(!onScreen(h.x,h.y,h.r+220) || !isVisible(h.x,h.y,h.r)) continue;
       const isCarryAI = h===enemyTeam[0];
-      h.lookX = isCarryAI&&enemyLookTarget ? enemyLookTarget.x : h.x-200;
-      h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : h.y;
+      // Facing is only written when a hero swings or shoots, so the rest of the
+      // time this is what points it: in a Match the enemy always walks left, in
+      // the arena it always walks IN, and looking left there had the tank
+      // marching down the eastern road with its back to where it was going.
+      let lx = h.x-200, ly = h.y;
+      if(gameMode==='survival'){
+        const a = Math.atan2(WORLD_H/2-h.y, WORLD_W/2-h.x);
+        lx = h.x + Math.cos(a)*200; ly = h.y + Math.sin(a)*200;
+      }
+      h.lookX = isCarryAI&&enemyLookTarget ? enemyLookTarget.x : lx;
+      h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : ly;
       ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
     }
     // Loot hides the way a hero does, and for the same two reasons. The foliage
@@ -13501,11 +13900,14 @@ window.addEventListener('DOMContentLoaded', function(){
       resetHero(playerTeam[0], cx+140, cy);
       resetHero(playerTeam[1], cx-60, cy-120);
       resetHero(playerTeam[2], cx-60, cy+120);
-      // No enemy heroes in the arena. Leaving them permanently dead keeps every
-      // alive-check in the codebase working without special-casing the team.
+      // The arena opens with no enemy heroes on it: the first waves are mobs
+      // only, and survDeployHeroes walks them in from wave SURV_HERO_FROM. They
+      // start dead and at level 1, which is also what a round restart has to
+      // undo — a wave-20 tank must not carry its build into the next round.
       for(const h of enemyTeam){
         resetHero(h, WORLD_W-130, BASE_Y);
         h.alive=false; h.hp=0; h.respawnTimer=Infinity;
+        h._healT=null; h.pushing=false;
       }
     } else {
       resetHero(playerTeam[0], 130, BASE_Y);
