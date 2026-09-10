@@ -42,9 +42,15 @@ four, and each shows as four letters under the hero's portrait:
 | `YOU` | the hero you are driving |
 
 Orders are given by dragging a hero — from his body on the field or from his
-portrait — with the right mouse button, or with a finger on touch. Where he
-lands decides which order it is: a half of the minimap is a lane, a team-mate is
-an escort, open ground is a posting.
+portrait — with either mouse button, or with a finger on touch. Where he lands
+decides which order it is: a half of the minimap is a lane, a team-mate is an
+escort, open ground is a posting.
+
+The left button is also the trigger, so a left press on a hero only becomes an
+order once it travels 16 screen pixels; short of that it is the shot it always
+was, and the hero you are DRIVING cannot be picked up with it at all — he stands
+under the cursor in every brawl. Use his portrait or a right-drag for him. The
+right button has no such conflict and grabs any hero at once.
 
 **Taking a hero over cancels his order.** Focus him and the walk, the lane and
 the dotted line all end there; switch away again and he holds that ground rather
