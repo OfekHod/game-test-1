@@ -16192,8 +16192,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // scripts that have to prove a log actually banked.
   window.__laneWood = ()=>woodBanked;
   // Same reason as __laneWood: the screenshot scripts need to know a hero
-  // death actually dropped HP coins before they can go looking for one.
+  // death actually dropped HP coins before they can go looking for one, and
+  // whether the drop landed somewhere the camera can actually see.
   window.__laneHpOrbs = ()=>hpOrbs.length;
+  window.__laneHpOrbOnScreen = ()=>hpOrbs.some(o=>onScreen(o.x,o.y,30) && isVisible(o.x,o.y,ORB_SIGHT_R));
   window.__laneLoaded = true;
 })();
 </script>
