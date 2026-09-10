@@ -8369,8 +8369,21 @@ window.addEventListener('DOMContentLoaded', function(){
   // just felled the tree, wherever they scattered, instead of the far one
   // crawling in at the shared magnet's slowest speed; the multiplier is what
   // turns the rest of the tail into a flick.
-  const WOOD_MAGNET_RADIUS = 220;
+  //
+  // The reach also has to cover WOOD_THROW. Worst case is a tree felled at the
+  // very end of the tank's reach: 123 of reach plus the trunk's own radius puts
+  // him about 145 out, the throw adds 42 more and the pop can carry a log 35
+  // further still — 222, so 260 leaves a margin. A log that lands outside this
+  // is not collected at all until the player walks back to it, and with a 30s
+  // TTL it would simply rot.
+  const WOOD_MAGNET_RADIUS = 260;
   const WOOD_MAGNET_MULT = 2.2;
+  // How far past the trunk the logs are thrown, along the line the blow came in
+  // on, so they land on the FAR side of the tree from whoever swung. They used
+  // to drop on the stump, which is where the chopper is already standing, and a
+  // pickup that lands at your feet is not a pickup — it is a number going up.
+  // Given somewhere to travel from, the draw-in reads as collecting them.
+  const WOOD_THROW = 42;
   const CHIP_COLORS = ['#C99A5F','#8A6236','#E0BB84','#5C401F'];
   function woodChips(x, y, ang, n){
     for(let i=0;i<n;i++){
@@ -8419,7 +8432,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // had not done anything. WHEN they are collected is a separate clock and is
     // unchanged: the hold below is the whole fall, so the 0.4s of clear time
     // still starts when the trunk has finished fading.
-    spawnWood(t.x, t.y + t.r*TREE_SINK, WOOD_PER_TREE, TREE_FALL_TIME);
+    const al = Math.max(1, dist(h.x, h.y, t.x, t.y));
+    const ax = (t.x - h.x)/al, ay = (t.y - h.y)/al;
+    spawnWood(t.x + ax*WOOD_THROW, t.y + t.r*TREE_SINK + ay*WOOD_THROW,
+              WOOD_PER_TREE, TREE_FALL_TIME);
     if(h.side === 'player') shake = Math.max(shake, 0.22);
   }
   function updateTrees(dt){
