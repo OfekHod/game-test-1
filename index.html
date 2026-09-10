@@ -6603,19 +6603,125 @@ window.addEventListener('DOMContentLoaded', function(){
   function riverPoly(rv){
     if(rv.poly) return rv;
     const p = rv.pts, half = rv.w/2;
-    rv.left = []; rv.right = [];
+    rv.left = []; rv.right = []; rv.leftIn = []; rv.rightIn = [];
     for(let i=0;i<p.length;i++){
       const a = p[Math.max(0,i-1)], b = p[Math.min(p.length-1,i+1)];
       let nx = -(b.y-a.y), ny = (b.x-a.x);
       const nl = Math.max(1, Math.sqrt(nx*nx+ny*ny)); nx/=nl; ny/=nl;
       rv.left.push({ x:p[i].x+nx*half, y:p[i].y+ny*half });
       rv.right.push({ x:p[i].x-nx*half, y:p[i].y-ny*half });
+      // A lake scallops its foam four units inside the shoreline, not on it, so
+      // the puffs sit in the water and lap at the sand. Same here.
+      rv.leftIn.push({ x:p[i].x+nx*(half-4), y:p[i].y+ny*(half-4) });
+      rv.rightIn.push({ x:p[i].x-nx*(half-4), y:p[i].y-ny*(half-4) });
     }
     rv.poly = rv.left.concat(rv.right.slice().reverse());
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
     for(const q of rv.poly){ x0=Math.min(x0,q.x); y0=Math.min(y0,q.y); x1=Math.max(x1,q.x); y1=Math.max(y1,q.y); }
     rv.cx=(x0+x1)/2; rv.cy=(y0+y1)/2; rv.ext=Math.max(x1-x0,y1-y0)/2+40;
     return rv;
+  }
+  // A lake reads better than a river did, and the reason is its middle: one
+  // radial gradient carries it from a deep core out to a shallow rim, so there
+  // is no line anywhere you can point at. A river was two hard concentric
+  // strokes over a flat fill — three flat colours with two visible seams. It
+  // cannot use a gradient, because a gradient has a centre and a river bends,
+  // so it walks the same ramp the lake's gradient walks, across the channel
+  // instead of around a point. u is 1 at the bank and 0 in the deepest thread.
+  function mixHex(a, b, t){
+    const A = parseInt(a.slice(1),16), B = parseInt(b.slice(1),16);
+    const r = Math.round((A>>16)    + ((B>>16)    - (A>>16))*t);
+    const g = Math.round((A>>8&255) + ((B>>8&255) - (A>>8&255))*t);
+    const c = Math.round((A&255)    + ((B&255)    - (A&255))*t);
+    return 'rgb('+r+','+g+','+c+')';
+  }
+  function waterRamp(u){
+    return u >= 0.5 ? mixHex(WATER_MID, WATER_SHALLOW, (u-0.5)*2)
+                    : mixHex(WATER_DEEP, WATER_MID, u*2);
+  }
+  // The ramp as a stack of strokes, bank width down to a thread. Fourteen steps
+  // across a 150-unit channel is one step of colour every five units, which the
+  // eye reads as a gradient and not as bands — the two seams it replaces were
+  // 30 and 45 units apart. Widths and colours depend only on rv.w, so this is
+  // built once per river and then re-stroked against the cached Path2D.
+  // A lake's gradient runs from 0.06r to 1.15r, so its visible rim never gets
+  // all the way to WATER_SHALLOW and its core sits just short of WATER_DEEP —
+  // which is most of why a lake looks like water and not like a light blue
+  // shape. Walking the same stretch of the ramp, and not the whole of it, is
+  // what puts a river's banks the colour a lake's shore is.
+  const RIVER_BANDS = 14;
+  const RIVER_EDGE = 1/1.15, RIVER_CORE = 0.06/1.15;
+  function riverBands(rv){
+    if(rv._bands) return rv._bands;
+    const out = [];
+    for(let i=1;i<=RIVER_BANDS;i++){
+      const u = 1 - i/(RIVER_BANDS+1);
+      out.push({ lw: rv.w*u, col: waterRamp(RIVER_CORE + u*(RIVER_EDGE-RIVER_CORE)) });
+    }
+    rv._bands = out;
+    return out;
+  }
+  // Arc lengths, so something travelling the river moves at a steady speed
+  // instead of hurrying through the short segments and dawdling in the long
+  // ones. riverAt returns the point a fraction of the way down and the unit
+  // tangent there; the normal is (-ty, tx).
+  function riverArc(rv){
+    if(rv._arc) return rv._arc;
+    const p = rv.pts, cum = [0];
+    for(let i=1;i<p.length;i++)
+      cum.push(cum[i-1] + dist(p[i-1].x, p[i-1].y, p[i].x, p[i].y));
+    rv._arc = { cum, len: cum[cum.length-1] || 1 };
+    return rv._arc;
+  }
+  function riverAt(rv, t){
+    const a = riverArc(rv), p = rv.pts;
+    const s = Math.max(0, Math.min(a.len, t*a.len));
+    let i = 1;
+    while(i < a.cum.length-1 && a.cum[i] < s) i++;
+    const seg = a.cum[i]-a.cum[i-1] || 1, f = (s-a.cum[i-1])/seg;
+    const A = p[i-1], B = p[i];
+    return { x: A.x+(B.x-A.x)*f, y: A.y+(B.y-A.y)*f,
+             tx: (B.x-A.x)/seg,  ty: (B.y-A.y)/seg };
+  }
+  // Which way the water is going. The old answer was a dashed line down the
+  // centre — 120-unit dashes 30 units thick — and at that size you read the
+  // dashes, not the current. These are small instead, and there are a lot of
+  // them: specks scattered across the whole channel, quicker mid-stream than at
+  // the banks, swaying a little as they go, each fading in and out over its
+  // stretch so none of them pops into being. Each is drawn twice, a wide faint
+  // halo under a thin core, which is what stops a two-pixel mark reading as a
+  // scratch. The river is cut into stretches and the specks shared out between
+  // them, so a long river carries the cue along its whole length rather than
+  // only where one loop happens to be.
+  const FLOW_N = 52;          // specks per river
+  const FLOW_STRETCH = 4;     // stretches they are shared out between
+  const FLOW_SPEED = 64;      // units a second, mid-stream
+  function hash1(n){ const s = Math.sin(n*127.1)*43758.5453; return s - Math.floor(s); }
+  function drawFlow(rv, now){
+    const half = rv.w*0.5, seg = 1/FLOW_STRETCH;
+    const trip = riverArc(rv).len/FLOW_SPEED;
+    for(let i=0;i<FLOW_N;i++){
+      const r1 = hash1(i+1), r2 = hash1(i+31.4), r3 = hash1(i+77.7);
+      const u  = (r1*2-1)*0.82;                     // where across the channel
+      const sp = 0.42 + 0.58*(1-u*u) + r2*0.14;     // mid-stream runs faster
+      const ph = ((now/trip)*sp*FLOW_STRETCH + r3) % 1;
+      const q  = riverAt(rv, (i % FLOW_STRETCH)*seg + ph*seg);
+      const off = u*half + Math.sin(now*0.5 + i*1.7)*half*0.03;
+      const x = q.x - q.ty*off, y = q.y + q.tx*off;
+      const L = rv.w*(0.09 + 0.07*r2)*(0.5 + sp*0.5);
+      const a = Math.sin(Math.PI*ph) * (0.36 + 0.64*(1-Math.abs(u)));
+      // Halo over the whole streak, core over the leading half: the speck ends
+      // up with a bright head and a tail that thins out behind it, which is the
+      // shape that says which way it is going without anything drawing an arrow.
+      ctx.beginPath();
+      ctx.moveTo(x - q.tx*L, y - q.ty*L); ctx.lineTo(x, y);
+      ctx.strokeStyle = 'rgba(255,255,255,'+(a*0.14).toFixed(3)+')';
+      ctx.lineWidth = 1.8 + 3.6*r2; ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - q.tx*L*0.55, y - q.ty*L*0.55); ctx.lineTo(x, y);
+      ctx.strokeStyle = 'rgba(255,255,255,'+(a*0.44).toFixed(3)+')';
+      ctx.lineWidth = 1.0 + 1.2*r2; ctx.stroke();
+    }
   }
   // The signature cue: two crossing families of wavy light lines. Drawn as
   // repeating patterns rather than live strokes — stroking these cost ~33,000
@@ -6698,25 +6804,27 @@ window.addEventListener('DOMContentLoaded', function(){
       const rpath = riverPath(rv), rpoly = polyPath(rv.poly);
       ctx.lineWidth = rv.w+30; ctx.strokeStyle = WATER_SAND; ctx.stroke(rpath);
       ctx.fillStyle = WATER_SHALLOW; ctx.fill(rpoly);
-      ctx.lineWidth = rv.w*0.78; ctx.strokeStyle = WATER_MID;  ctx.stroke(rpath);
-      ctx.lineWidth = rv.w*0.4;  ctx.strokeStyle = WATER_DEEP; ctx.stroke(rpath);
 
+      // Clipped to the shoreline like a lake's gradient is, so the deep water
+      // stops where the bank does instead of a round cap poking past the mouth.
       ctx.save(); ctx.clip(rpoly);
+      for(const b of riverBands(rv)){
+        ctx.lineWidth = b.lw; ctx.strokeStyle = b.col; ctx.stroke(rpath);
+      }
       drawCaustics(visibleBox(rv.cx-rv.ext, rv.cy-rv.ext, rv.cx+rv.ext, rv.cy+rv.ext), now, 0.8);
-      ctx.setLineDash([120,150]); ctx.lineDashOffset = -now*52;
-      ctx.strokeStyle='rgba(255,255,255,.17)'; ctx.lineWidth=rv.w*0.2;
-      ctx.stroke(rpath);
-      ctx.setLineDash([]);
+      drawFlow(rv, now);
       ctx.restore();
 
-      drawFoam(rv.left, now, 1.2, 4.5, 0.42);
-      drawFoam(rv.right, now, 3.4, 4.5, 0.42);
+      drawFoam(rv.leftIn, now, 1.2, 5, 0.5);
+      drawFoam(rv.rightIn, now, 3.4, 5, 0.5);
       ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke(rpoly);
-      for(let i=0;i<5;i++){
-        const t = ((now*0.05 + i/5) % 1);
-        const k = Math.min(rv.pts.length-1, Math.floor(t*(rv.pts.length-1)));
+      // Scattered across the channel rather than filed down the centreline —
+      // seven in a row down the middle was the one place a lake never puts them.
+      for(let i=0;i<7;i++){
+        const q = riverAt(rv, (now*0.05 + i/7) % 1);
+        const off = (hash1(i*3.7+2)*2-1)*rv.w*0.34;
         const tw = 0.5+0.5*Math.sin(now*2.4 + i*2.1);
-        drawGlintStar(rv.pts[k].x, rv.pts[k].y - rv.w*0.18, 2.5+tw*3, tw*0.6);
+        drawGlintStar(q.x - q.ty*off, q.y + q.tx*off, 2.5+tw*3, tw*0.6);
       }
     }
 
@@ -11722,7 +11830,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // back with getImageData would also force it, and would cost the canvas
       // its hardware acceleration for the rest of the match, so draw instead.
       ctx.drawImage(bgCanvas, 0, 0, 1, 1, 0, 0, 1, 1);
-      for(const rv of rivers){ const r = riverPoly(rv); riverPath(r); polyPath(r.poly); }
+      for(const rv of rivers){ const r = riverPoly(rv); riverPath(r); polyPath(r.poly); riverBands(r); riverArc(r); }
       for(const l of lakes){ lakePath(l, 15); lakePath(l, 0); lakePath(l, -4); }
     }
     catch(err){ console.error('warmRoundCaches failed', err); }
