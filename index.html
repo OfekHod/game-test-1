@@ -741,26 +741,33 @@
     .hud-right{gap:8px;font-size:12.5px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
-    /* Same card, same nameplate, at the width a phone has. That width is the
-       whole constraint here: the row shares the top of the screen with the
-       scoreboard, and a 390px phone leaves it about 200 pixels — three 58px
-       cards and the gaps between them, and no room at all for a fourth column.
-       So the ASSEMBLE button drops out of the row and becomes a bar underneath, which
-       is a better target for a thumb than the sliver it had shrunk to. 58 also
-       keeps the row clear of the scoreboard on a 375px screen. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;padding-bottom:39px;}
-    .pchip{width:58px;border-width:2px;border-radius:9px;}
-    .plevel{top:-7px;left:-6px;font-size:9.5px;width:17px;height:17px;line-height:17px;}
-    .pkey{top:-7px;right:-6px;font-size:9.5px;width:16px;height:16px;line-height:16px;}
-    .pcard{border-radius:7px 7px 0 0;}
-    .pmeter{padding:5px 5px 5px;border-radius:0 0 7px 7px;}
-    .pbar{height:4px;border-radius:2px;margin-top:2px;}
-    .pstat{font-size:9.5px;letter-spacing:.25px;margin-top:3px;}
-    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;height:34px;
-      flex-direction:row;gap:7px;border-radius:9px;}
-    .asmIcon{width:15px;height:15px;margin:0;border-width:2px;}
-    .asmIcon::before{width:5px;height:5px;}
-    .asmLabel{font-size:11px;letter-spacing:.5px;}
+    /* HALF THE SIZE ON A PHONE. 58px wide became 29, and the card, the plate,
+       the bars and the badge all halved with it, so the picture keeps its 246/364
+       and the chip keeps its shape — it is the same object at half the scale.
+       Two things could not go all the way down with it. Type has a floor: the
+       status at half of 9.5px is five pixels and reads as a smudge, so it and
+       the level badge stop at the smallest size that is still a word and a
+       number. And the ASSEMBLE button climbs back INTO the row, because the
+       reason it was ever a bar underneath was that three 58px cards filled every
+       pixel the scoreboard left; three 29px cards do not, and the row costs the
+       party forty fewer pixels of height than the bar did. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:3px;}
+    .pchip{width:29px;border-width:1.5px;border-radius:5px;}
+    .plevel{top:-5px;left:-4px;font-size:7.5px;width:13px;height:13px;line-height:13px;}
+    .pkey{top:-5px;right:-4px;font-size:7.5px;width:12px;height:12px;line-height:12px;}
+    .pcard{border-radius:3.5px 3.5px 0 0;}
+    .pmeter{padding:3px 2px 3px;border-radius:0 0 3.5px 3.5px;}
+    .pbar{height:2px;border-radius:1px;margin-top:1px;}
+    .pstat{font-size:7.5px;letter-spacing:.1px;margin-top:2px;}
+    /* min-width off: the desktop floor is 76px, which beside a 29px card made
+       the button the widest thing in the row by a factor of two and a half. The
+       word sizes it on its own instead — and `width` has to be restated here,
+       because .pchip's 29px is later in the sheet than the .asmBtn rule that
+       says auto and beats it on nothing but order. */
+    .asmBtn{width:auto;min-width:0;padding:0 7px;border-radius:5px;}
+    .asmIcon{width:11px;height:11px;margin:0 auto 3px;border-width:1.5px;}
+    .asmIcon::before{width:4px;height:4px;}
+    .asmLabel{font-size:8px;letter-spacing:.2px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -785,12 +792,7 @@
     .skillName{display:none;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
-    /* A phone on its side has width to spare and no height at all, so the ASSEMBLE
-       button climbs back into the row rather than costing the party another
-       forty pixels down a 390px-tall screen. */
-    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));padding-bottom:0;}
-    .asmBtn{position:static;width:auto;height:auto;flex-direction:column;gap:0;}
-    .asmIcon{margin:0 auto 5px;}
+    .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
     .waveBanner b{font-size:52px;}
