@@ -623,23 +623,35 @@
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
      height is measured in JS, because the HUD is a percentage of a stage whose
-     height nothing here knows. Transparent to input except its own buttons, so
-     a tap that lands on it still shoots. */
+     height nothing here knows.
+
+     It shows a twenty-word lead and nothing else; tapping it unfolds the rest
+     and the two controls. That costs it the one thing it used to have — it was
+     transparent to input, so a tap that landed on it still shoots — and buys
+     back much more than it costs, because folded it is a third of the height it
+     was. On a phone the card is the bottom of the screen. */
   .tutCard{position:absolute;left:50%;bottom:14px;z-index:6;width:min(560px,88%);
     background:rgba(74,52,22,.95);border:3px solid var(--panel-border);border-radius:14px;
-    padding:9px 14px 7px;color:#FFF3D6;font-size:13.5px;line-height:1.45;
-    box-shadow:0 10px 26px rgba(0,0,0,.35);pointer-events:none;
+    padding:7px 12px 6px;color:#FFF3D6;font-size:13.5px;line-height:1.4;
+    box-shadow:0 10px 26px rgba(0,0,0,.35);pointer-events:auto;cursor:pointer;
     opacity:0;transform:translate(-50%,10px);transition:opacity .22s ease,transform .22s ease;}
   .tutCard.show{opacity:1;transform:translate(-50%,0);}
   .tutCard.hidden{display:none;}
   .tutCard.touchPad{padding-right:98px;}
-  .tutStep{font:800 10px/1 monospace;letter-spacing:.7px;color:#D9A85C;}
-  .tutTitle{display:block;color:#FFD54F;font-size:16px;font-weight:800;margin:3px 0 2px;}
+  /* Step counter and title share a line: two lines of chrome over a two-line
+     card is most of the card. */
+  .tutHead{display:flex;align-items:baseline;gap:7px;}
+  .tutStep{font:800 10px/1 monospace;letter-spacing:.7px;color:#D9A85C;flex:none;}
+  .tutTitle{color:#FFD54F;font-size:15px;font-weight:800;line-height:1.15;}
+  .tutMore{font:800 10px/1 monospace;letter-spacing:.6px;color:#0a3a4a;
+    background:#D9A85C;border-radius:5px;padding:2px 5px;margin-left:5px;
+    white-space:nowrap;vertical-align:1px;}
   .tutBody b{color:#FFD54F;}
   .tutBody k{font-style:normal;font-weight:800;color:#9FE3FF;background:rgba(0,0,0,.3);border-radius:5px;padding:0 5px;}
-  .tutGoal{display:block;margin-top:5px;font-size:12px;font-weight:700;color:#9FE3FF;}
+  .tutGoal{display:block;margin-top:3px;font-size:12px;font-weight:700;color:#9FE3FF;}
   .tutGoal.hit{color:#8CE39B;}
   .tutRow{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;pointer-events:auto;}
+  .tutRow.hidden{display:none;}
   .tutRow button{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:12.5px;cursor:pointer;
     border:none;border-radius:9px;padding:6px 13px;background:rgba(255,243,214,.16);color:#FFF3D6;}
   .tutRow button.go{background:#5AC8E8;color:#0a3a4a;}
@@ -647,13 +659,25 @@
   .tutRow button:active{transform:translateY(2px);}
   @keyframes tutPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,213,79,0);}50%{box-shadow:0 0 0 5px rgba(255,213,79,.5);}}
   .tutPulse{animation:tutPulse 1.15s ease-in-out infinite;border-radius:10px;}
+  /* The arrow that points at whatever the step is asking you to press. The
+     pulse alone says "this corner matters"; the arrow says "that one, there". */
+  .tutPointer{position:absolute;z-index:9;width:0;height:0;pointer-events:none;
+    border-left:12px solid transparent;border-right:12px solid transparent;
+    filter:drop-shadow(0 0 1px rgba(60,34,10,.9)) drop-shadow(0 2px 3px rgba(0,0,0,.5));}
+  .tutPointer.up{border-bottom:17px solid #FFC02E;animation:tutPointUp 1.05s ease-in-out infinite;}
+  .tutPointer.down{border-top:17px solid #FFC02E;animation:tutPointDown 1.05s ease-in-out infinite;}
+  @keyframes tutPointUp{0%,100%{transform:translateY(6px);}50%{transform:translateY(0);}}
+  /* The down arrow bobs INTO its target, never away from it: the dock stacks the
+     stat strip a few pixels above the skill button, and an upward bob would put
+     the arrow's tail on a stat chip. */
+  @keyframes tutPointDown{0%,100%{transform:translateY(0);}50%{transform:translateY(6px);}}
 
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
   @media (max-width: 700px), (max-height: 560px){
-    .tutCard{font-size:11.5px;padding:6px 10px 5px;width:min(520px,94%);}
+    .tutCard{font-size:11.5px;padding:5px 9px 5px;width:min(520px,94%);}
     .tutCard.touchPad{padding-right:80px;}
-    .tutTitle{font-size:13.5px;}
+    .tutTitle{font-size:12.5px;}
     .tutGoal{font-size:10.5px;}
     .tutRow button{font-size:11px;padding:5px 10px;}
     .skillBtn{width:64px;height:64px;bottom:24%;right:4%;}
@@ -765,12 +789,12 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="skillBtn" id="skillBtn"><div class="cdRing" id="skillBtnCd"></div><div class="skillIcon skill-dash" id="skillBtnIcon"></div></div>
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · circle: skill</div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b></div>
+    <div class="tutPointer hidden" id="tutPointer"></div>
     <div class="tutCard hidden" id="tutCard">
-      <span class="tutStep" id="tutStep"></span>
-      <b class="tutTitle" id="tutTitle"></b>
-      <span class="tutBody" id="tutBody"></span>
+      <div class="tutHead"><span class="tutStep" id="tutStep"></span><b class="tutTitle" id="tutTitle"></b></div>
+      <span class="tutBody" id="tutBody"></span><span class="tutMore" id="tutMore"></span>
       <span class="tutGoal" id="tutGoal"></span>
-      <div class="tutRow">
+      <div class="tutRow hidden" id="tutRow">
         <button id="tutSkipBtn">Skip step</button>
         <button id="tutQuitBtn">Exit</button>
         <button class="go hidden" id="tutGoBtn">Got it</button>
@@ -816,7 +840,7 @@ window.addEventListener('DOMContentLoaded', function(){
         </div>
         <div class="hud-abilities">
           <div class="ability"><div class="orb"></div><div class="cd" id="cdFill"></div><span class="key">LMB</span></div>
-          <div class="ability"><div class="skillIcon skill-dash" id="skillIcon"></div><div class="cd" id="dashCdFill"></div><span class="key">SPACE</span></div>
+          <div class="ability" id="skillAbility"><div class="skillIcon skill-dash" id="skillIcon"></div><div class="cd" id="dashCdFill"></div><span class="key">SPACE</span></div>
           <span class="skillName" id="skillNameLabel">Dash</span>
           <span class="hint">1/2/3 or Tab to switch · 0 to assemble · click to fire · space for skill · drag a hero to order him · right-click: move</span>
         </div>
@@ -7730,6 +7754,13 @@ window.addEventListener('DOMContentLoaded', function(){
     isMouseDown = false;          // it is a drag now, not a held trigger
   }
   window.addEventListener('mousemove', e=>{
+    // Aim follows the cursor even across a panel that swallows the event. The
+    // canvas listener below cannot see those, and the tutorial card is now one
+    // of them — an aim that freezes whenever the mouse crosses the card is a
+    // worse bug than the one the card was solving.
+    const cr = canvas.getBoundingClientRect();
+    mouse.x = (e.clientX-cr.left) * (W/cr.width);
+    mouse.y = (e.clientY-cr.top) * (H/cr.height);
     if(scout){
       const c = toCanvasCoords(e.clientX, e.clientY);
       scout = minimapToWorld(c.x, c.y);          // keep panning while held
@@ -12165,6 +12196,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // about is the one surprise the opening cannot afford.
     holdCamps:true, arena:true, holdDrops:true,
     dashWindow:false,          // true only while a blink's damage sweep resolves
+    // The card folds: `lead` is what is on screen, `full` what a tap unfolds.
+    open:false, full:'', lead:'', rest:'',
     rings:[], mark:null, watch:[], nudge:'', nudgeT:0, hl:null, _goal:null, _hit:null
   };
 
@@ -12173,6 +12206,10 @@ window.addEventListener('DOMContentLoaded', function(){
   const tutTitleEl = document.getElementById('tutTitle');
   const tutBodyEl  = document.getElementById('tutBody');
   const tutGoalEl  = document.getElementById('tutGoal');
+  const tutPointerEl   = document.getElementById('tutPointer');
+  const skillAbilityEl = document.getElementById('skillAbility');
+  const tutMoreEl  = document.getElementById('tutMore');
+  const tutRowEl   = document.getElementById('tutRow');
   const tutGoBtn   = document.getElementById('tutGoBtn');
   const tutSkipBtn = document.getElementById('tutSkipBtn');
   const tutQuitBtn = document.getElementById('tutQuitBtn');
@@ -12183,6 +12220,25 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutTouch(){ return isTouchDevice || usedTouch; }
   function tutPick(desk, phone){ return tutTouch() ? phone : desk; }
   function tutHero(){ return playerTeam[activePlayerIdx]; }
+
+  // Is that hero yours yet? Either you switched to him while the phase was
+  // running, or you were already driving him when it began — in which case no
+  // focusHero ever fires and the 'switch' note never lands.
+  function tutDriving(type){
+    if(tut.p && tut.p.seen && tut.p.seen[type]) return true;
+    const h = tutHero();
+    return !!h && h.type === type;
+  }
+  // The two-order phases: take a hero over, then cast his skill. Card, goal and
+  // arrow all move together the moment he is yours — the arrow off his portrait
+  // and onto the button that fires the thing.
+  function tutSkillStage(type, chip){
+    const stage = tutDriving(type) ? 1 : 0;
+    if(stage === tut.p.stage) return;
+    tut.p.stage = stage;
+    tutHighlight(stage ? tutSkillEl() : chip);
+    tutPaint();
+  }
 
   // Drives the enemy carry for the step that introduces him, in place of his
   // real AI: close to arm's length, hold there, and fire on a slow count.
@@ -12431,10 +12487,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // teaching as much as the text is.
     text(){
       const i = tut.p.done || 0;
-      if(i === 1) return 'The water is <b>shallow</b>. Wade straight through &mdash; it slows you while you are in it and that is all it does. The next ring is on the far bank.';
-      if(i === 2) return 'Trees are <b>solid</b>. They stop you, they stop your shots, and they block what you can see &mdash; both ways. <b>Go around</b>.';
+      if(i === 1) return 'The water is <b>shallow</b> &mdash; wade straight through. It slows you while you are in it, and that is all it does.';
+      if(i === 2) return 'Trees are <b>solid</b>: they stop you, your shots and your sight, both ways. <b>Go around</b>.';
       return tutPick(
-        '<k>W A S D</k> or the arrow keys to walk. Your hero always faces the mouse, so you can back away from something and still be aiming at it.',
+        '<k>W A S D</k> or the arrow keys to walk. You always face the mouse, so you can back away from something and still be aiming at it.',
         '<k>Drag anywhere</k> on the screen &mdash; a stick appears under your thumb and your hero walks that way.');
     },
     goal:()=>'Follow the arrow into the rings — '+(tut.p.done||0)+' / '+TUT_ROUTE.length,
@@ -12458,8 +12514,8 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Shooting',
     text:()=>tutPick(
-      'A forest mob has wandered out. Aim with the mouse and <k>hold left click</k> to fire. Nothing is shooting it for you here &mdash; a shot goes exactly where you point it, and your range is how far it carries.',
-      'A forest mob has wandered out. <k>Tap</k> where you want to shoot. Nothing is shooting it for you here &mdash; a shot goes exactly where you tap, and your range is how far it carries.'),
+      'A forest mob has wandered out. Aim with the mouse, <k>hold left click</k> to fire. Nothing is shooting it for you here, and a shot only carries as far as your range.',
+      'A forest mob has wandered out. <k>Tap</k> where you want to shoot. Nothing is shooting it for you here, and a shot only carries as far as your range.'),
     goal:()=>'Kill the forest mob',
     enter(){
       // Out past your own reach, so you have to close on it, and with the
@@ -12474,8 +12530,8 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'The blink',
     text:()=>tutPick(
-      '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. Anything that dies as you pass refunds the cooldown instantly.',
-      'The <k>circle button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. Anything that dies as you pass refunds the cooldown instantly.'),
+      '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.',
+      'The <k>circle button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.'),
     goal:()=>'Kill this one with the blink alone',
     enter(){
       tut.noAuto = true;
@@ -12500,7 +12556,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Experience and mana',
-    text:()=>'A kill leaves behind what it was carrying: gold <b>experience orbs</b> and blue <b>mana orbs</b>. Nobody is handed either &mdash; you walk over them, and the first hero to reach one keeps it. Clear these five and collect what they leave.',
+    text:()=>'A kill drops gold <b>experience orbs</b> and blue <b>mana orbs</b>. Nobody is handed either &mdash; the first hero to walk over one keeps it. Clear these five and collect what they leave.',
     goal(){
       const left = tut.p.pack ? tut.p.pack.filter(tutAlive).length : 0;
       if(left > 0) return 'Clear the mobs — '+(TUT_PACK-left)+' / '+TUT_PACK;
@@ -12534,8 +12590,8 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Levels and stats',
-    text:()=>'That is what the orbs were for. Every level gives you <b>three points</b>. Spend them in the strip above the health bar: <b>AGI</b> for move speed, <b>HP</b> and <b>MP</b> for the bars, <b>HPR</b> and <b>MPR</b> for how fast they refill, <b>RNG</b> for reach. Every shot costs mana, so <b>MPR</b> is the one that decides how long you can keep firing. '
-      + tutPick('Hover a stat to see exactly what it buys.', 'Tap a stat to see exactly what it buys.'),
+    text:()=>'That is what the orbs were for. Every level gives <b>three points</b>, spent in the strip above your health bar: <b>AGI</b> speed, <b>HP</b> and <b>MP</b> bars, <b>HPR</b> and <b>MPR</b> refill, <b>RNG</b> reach. Shots cost mana, so <b>MPR</b> decides how long you can keep firing. '
+      + tutPick('Hover a stat to see what it buys.', 'Tap a stat to see what it buys.'),
     goal:()=>'Spend a point with a + button',
     hl:()=>statStripEl,
     enter(){
@@ -12546,13 +12602,18 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Your squad',
-    text:()=>'Two more heroes are walking out of your base: a <b>tank</b> who takes the hits and a <b>support</b> who heals. You drive one at a time; the other two think for themselves. '
-      + tutPick('<k>1</k> <k>2</k> <k>3</k> or <k>Tab</k> to switch.', '<k>Tap a portrait</k>, top left, to take one over.'),
-    goal:()=>{
-      const s = tut.p.seen || {};
-      return 'Take control of the tank and the support — '+((s.tank?1:0)+(s.support?1:0))+' / 2';
+    // One hero, one skill, in that order — and the arrow moves with the ask:
+    // from the tank's portrait to the skill button the moment he is yours.
+    // Asking for both heroes and then both skills put four things in the air at
+    // once, and left the pointer nothing more specific than the whole party bar.
+    text(){
+      if(tutDriving('tank'))
+        return 'His skill is a <b>rocket</b>: it flies far, the view goes with it, and it explodes where it lands. Everything caught is frozen and takes <b>double damage</b> until it comes round. Press again in flight to set it off early.';
+      return 'A <b>tank</b> and a <b>support</b> are walking out of your base. You drive one at a time; the other two think for themselves. '
+        + tutPick('<k>1</k> <k>2</k> <k>3</k> or <k>Tab</k> switches.', '<k>Tap a portrait</k>, top left, to take one over.');
     },
-    hl:()=>partyEl,
+    goal:()=>tutDriving('tank') ? '2 · Fire his rocket' : '1 · Take over the tank',
+    hl:()=>pchips[1],
     enter(){
       const h = tutHero();
       partyEl.classList.remove('hidden');
@@ -12570,28 +12631,33 @@ window.addEventListener('DOMContentLoaded', function(){
         // through a tutorial reads as a punishment for switching.
         for(let g=0; g<MAX_LEVEL && a.level < h.level; g++) grantXP(a, a.xpToNext - a.xp + 1);
       }
+      // Something for the rocket to land on. Two of them, close enough together
+      // that the blast takes both, which is what the blast is for.
+      const a = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE+0.22);
+      tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
+      tut.p.stage = 0;
     },
-    done:()=>{ const s = tut.p.seen || {}; return !!(s.tank && s.support); }
+    tick(){ tutSkillStage('tank', pchips[1]); },
+    done:()=>!!(tut.p.cast && tut.p.cast.tank)
   },
   {
-    title:'Rocket and heal',
-    text:()=>'Each hero has his own skill on the same '+tutPick('<k>Space</k>','circle button')+'. The tank fires a <b>rocket</b> that explodes where it lands, hitting everything in the blast and freezing it &mdash; and anything frozen takes double damage until it comes round. It flies a long way and the view goes with it; press again while it is up to set it off early. The support sweeps out a <b>ring of light</b> that heals every friendly it passes over.',
-    goal:()=>{
-      const c = tut.p.cast || {};
-      return 'Fire a rocket, then cast a heal — '+((c.tank?1:0)+(c.support?1:0))+' / 2';
+    title:'Your support',
+    text(){
+      if(tutDriving('support'))
+        return 'His skill sweeps out a <b>ring of light</b> that heals every friendly it passes over &mdash; him, you, and the creeps walking with you.';
+      return 'The other one. The <b>support</b> heals rather than trades, which is what keeps a push standing once a tower starts shooting at it.';
     },
-    enter(){
-      const h = tutHero();
-      const a = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE-0.5), b = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE+0.5);
-      tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
-    },
-    done:()=>{ const c = tut.p.cast || {}; return !!(c.tank && c.support); }
+    goal:()=>tutDriving('support') ? '2 · Cast his healing ring' : '1 · Take over the support',
+    hl:()=>pchips[2],
+    enter(){ tut.p.stage = 0; },
+    tick(){ tutSkillStage('support', pchips[2]); },
+    done:()=>!!(tut.p.cast && tut.p.cast.support)
   },
   {
     title:'Orders',
     text:()=>tutPick(
-      '<k>Drag a team-mate</k> &mdash; either mouse button, from his body on the field or from his portrait &mdash; somewhere to detach him and post him there. He holds that ground and fights whatever comes to him, and you take over one of the others. Drop him <b>on a team-mate</b> instead and he follows that hero around. The hero you are driving goes by his portrait or a right-drag.',
-      '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; somewhere to post him there. He holds that ground and fights whatever comes to him, and you take over one of the others. Drop him <b>on a team-mate</b> instead and he follows that hero around.'),
+      '<k>Drag a team-mate</k> &mdash; either mouse button, from the field or from his portrait &mdash; onto ground to post him there. He holds it and fights what comes to him. Drop him <b>on a team-mate</b> instead and he follows that hero. The one you are driving goes by his portrait or a right-drag.',
+      '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; onto ground to post him there. He holds it and fights what comes to him. Drop him <b>on a team-mate</b> instead and he follows that hero.'),
     goal:()=>'Post a hero on the marked spot',
     enter(){
       // The practice targets from the shooting steps have done their job. Clear
@@ -12611,8 +12677,8 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'Assemble',
     text:()=>tutPick(
-      '<k>0</k>, or the <b>ALL</b> button beside the portraits, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
-      'The <b>ALL</b> button beside the portraits drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
+      '<k>0</k>, or <b>ALL</b> beside the portraits, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.',
+      '<b>ALL</b>, beside the portraits, drops every order and pulls both other heroes onto whoever you are driving. Ten second cooldown, so it is a commitment.'),
     goal:()=>'Call the squad back to you',
     hl:()=>assembleBtn,
     done:()=>!!tut.p.assemble
@@ -12627,9 +12693,9 @@ window.addEventListener('DOMContentLoaded', function(){
     // not a shortcut, and the copy says so.
     text(){
       const leg = tut.p.leg || 0;
-      if(leg === 1) return 'Water runs one way, and this river runs <b>south</b> &mdash; the specks drifting on the surface are going where it is going. Go <b>with</b> it, down to the next ring, and it carries you at <b>half again</b> your speed. Fight it or cut across it and you are wading at two thirds, which is what you did on the way in. Follow the bend round as it turns: the push is only there while you are pointed the way the water is.';
-      if(leg >= 2) return 'Out of the water and <b>east</b>. The camp is in the trees: <b>neutral</b>, soft, worth experience, and ringed thickly enough that you will not see it until you are in it.';
-      return 'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. The line goes by way of the river, which is the long way round and worth walking once.';
+      if(leg === 1) return 'This river runs <b>south</b> &mdash; the specks drifting on it show which way. Go <b>with</b> it and it carries you at <b>half again</b> your speed; fight it or cut across and you wade at two thirds. Follow the bend round: the push is only there while you point the way the water goes.';
+      if(leg >= 2) return 'Out of the water and <b>east</b>. The camp is in the trees, ringed thickly enough that you will not see it until you are in it.';
+      return 'Now the woods. Trees block movement, shots and sight &mdash; your team shares one pool of vision and the rest is fog, both ways. <b>Neutral camps</b> sit between the lanes: soft, worth experience, hidden until you walk in. The line goes by the river, which is the long way and worth walking once.';
     },
     goal(){
       const leg = tut.p.leg || 0;
@@ -12690,7 +12756,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Your base',
-    text:()=>'The building you lose the game by losing. A tower outranges every hero by design, so it always gets the first shot &mdash; never walk into one without your own creeps in front of you to hold its attention. It is also where you mend: inside the ring your health and mana come back <b>three times as fast</b>, so a hero on a sliver walks home rather than dying on the next wave.',
+    text:()=>'The building you lose the game by losing. A tower outranges every hero, so it always shoots first &mdash; never walk into one without your own creeps in front of you. It is also where you mend: inside the ring health and mana come back <b>three times as fast</b>, so a hero on a sliver walks home rather than dying to the next wave.',
     goal:()=>'Stand inside your tower’s range to mend',
     enter(){
       const t = mainTower(playerTowers);
@@ -12704,21 +12770,21 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'The map',
-    text:()=>'Your base is the left edge of the minimap, theirs the right. Two lanes run between them with two outposts each, and the camps sit in the woods in between. '
-      + tutPick('<k>Hold the left mouse button on the minimap</k> to look somewhere else &mdash; let go and the view snaps back to your hero.',
-                '<k>Hold a finger on the minimap</k> to look somewhere else &mdash; let go and the view snaps back to your hero.'),
+    text:()=>'Your base is the minimap’s left edge, theirs the right: two lanes between them, two outposts each, camps in the woods in between. '
+      + tutPick('<k>Hold left click on the minimap</k> to look elsewhere &mdash; let go and the view snaps back to your hero.',
+                '<k>Hold a finger on the minimap</k> to look elsewhere &mdash; lift it and the view snaps back to your hero.'),
     goal:()=>'Scout with the minimap',
     done:()=>(tut.p.scout||0) > 0.5
   },
   {
     title:'Pushing a lane',
-    text:()=>'Drag a hero onto the <b>top or bottom half of the minimap</b> and he walks that lane on his own for the rest of the round &mdash; advancing with his wave rather than out in front of it, which is what keeps him alive.',
+    text:()=>'Drag a hero onto the <b>top or bottom half of the minimap</b> and he walks that lane on his own for the rest of the round &mdash; advancing with his wave rather than ahead of it, which is what keeps him alive.',
     goal:()=>'Send a hero to a lane',
     done:()=>!!tut.p.lane
   },
   {
     title:'The enemy',
-    text:()=>'Their carry has walked over to meet you. He is holding back for this &mdash; one shot every couple of seconds, where a real one fires five times that from under his own tower. A hero kill is worth <b>30 points</b> and a heap of experience, and puts him out of the round for twelve seconds. That window is what you actually win fights with.',
+    text:()=>'Their carry has come to meet you, and he is holding back &mdash; one shot every couple of seconds where a real one fires five times that. A hero kill is worth <b>30 points</b>, a heap of experience, and twelve seconds with him out of the round. That window is what you win fights with.',
     goal:()=>'Land a hit on the enemy carry',
     enter(){
       const h = tutHero();
@@ -12745,7 +12811,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(tut.p.heroHit && !tut.sparFlee){
         tut.sparFlee = true;
         tut.mark = null;                 // stop sending you after him
-        tut.nudge = 'Landed. That is all this step wanted &mdash; he has broken off and is running for his own side.';
+        tut.nudge = 'Landed. He has broken off and is running for his own side.';
         tut.nudgeT = 4;
         tutPaint();
       }
@@ -12762,9 +12828,9 @@ window.addEventListener('DOMContentLoaded', function(){
     // they are three gestures; taught together they are how a round is won.
     text(){
       const p = tut.p;
-      if(!p.assemble) return 'Your base is now sending a <b>wave</b> down each lane every twenty seconds &mdash; one big creep leading three small ones. A lane is taken by a squad walking behind one of those, never by a hero on his own. For this one their team has pulled back to their base and their waves have stopped, so the lane is yours. Start by <b>pulling your three together</b>.';
-      if(!p.lane) return 'Now point them down the <b>' + p.laneName + ' lane</b>: drag the hero you are driving onto the <b>' + p.laneName + ' half of the minimap</b>. The other two are following him, so all three go and they arrive together.';
-      return 'Walk in <b>behind your creeps</b>. A tower outranges every hero and hits harder than anything else on the map, so let the wave get there first and hold its attention while the three of you cut the outpost down. It is worth <b>200 points</b>.';
+      if(!p.assemble) return 'Your base now sends a <b>wave</b> down each lane every twenty seconds &mdash; one big creep leading three small. A lane is taken by a squad walking behind one, never by a hero alone. Their team has pulled back and their waves have stopped, so this lane is yours. <b>Pull your three together</b> first.';
+      if(!p.lane) return 'Now point them down the <b>' + p.laneName + ' lane</b>: drag the hero you are driving onto the <b>' + p.laneName + ' half of the minimap</b>. The other two are following him, so all three go together.';
+      return 'Walk in <b>behind your creeps</b>. A tower outranges every hero and hits harder than anything on the map, so let the wave hold its attention while the three of you cut the outpost down. Worth <b>200 points</b>.';
     },
     goal(){
       const p = tut.p;
@@ -12817,7 +12883,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // standing in the base under a goal that says "destroy the outpost".
       if(p.lane && !p.assemble){
         p.lane = false;
-        tut.nudge = 'Pull them <b>together</b> first &mdash; assembling now would call him straight back.';
+        tut.nudge = 'Pull them <b>together</b> first &mdash; assembling now calls him straight back.';
         tut.nudgeT = 4;
         tutPaint();
         return;
@@ -12835,7 +12901,7 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'How a round is won',
-    text:()=>'Destroy the enemy base and you win outright. If the clock runs out with both bases standing, <b>points</b> settle it: forest mob <b>1</b>, creep <b>2</b>, big creep <b>3</b>, hero <b>30</b>, tower <b>200</b>. The scoreboard is top right, and the clock is about to start.',
+    text:()=>'Destroy the enemy base and you win outright. If the clock runs out with both standing, <b>points</b> settle it: forest mob <b>1</b>, creep <b>2</b>, big creep <b>3</b>, hero <b>30</b>, tower <b>200</b>. Scoreboard top right; the clock starts now.',
     goal:()=>'',
     button:'Play a Match',
     act(){ tutLaunchMatch(); },
@@ -12865,19 +12931,132 @@ window.addEventListener('DOMContentLoaded', function(){
     if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse');
     tut.hl = el || null;
     if(tut.hl) tut.hl.classList.add('tutPulse');
+    tutAimPointer();
+  }
+  // The arrow that sits next to the highlighted control. It goes on whichever
+  // side has the screen: a chip in the top-left corner gets an arrow underneath
+  // pointing up, a button in the dock gets one above pointing down. Re-aimed
+  // every frame because the party bar and the dock are laid out in percentages
+  // and move whenever the stage does.
+  function tutAimPointer(){
+    const el = tut.hl;
+    if(!el || el.classList.contains('hidden') || !el.offsetParent){
+      tutPointerEl.classList.add('hidden');
+      return;
+    }
+    const r = el.getBoundingClientRect(), s = stageEl.getBoundingClientRect();
+    if(!r.width || !r.height){ tutPointerEl.classList.add('hidden'); return; }
+    const up = r.top + r.height/2 < s.top + s.height/2;
+    tutPointerEl.classList.remove('hidden');
+    tutPointerEl.classList.toggle('up', up);
+    tutPointerEl.classList.toggle('down', !up);
+    // The tip rests ON the control's edge rather than floating clear of it. The
+    // dock stacks the stat strip directly above the skill button, so an arrow
+    // with air under it points at the row above the one it means.
+    tutPointerEl.style.left = (r.left - s.left + r.width/2 - 12) + 'px';
+    tutPointerEl.style.top  = up ? (r.bottom - s.top - 3) + 'px'
+                                 : (r.top - s.top - 14) + 'px';
+  }
+  // Where "press the skill" points. The round button only exists on touch; on a
+  // desktop the same skill is the SPACE slot in the dock.
+  function tutSkillEl(){
+    return (isTouchDevice && skillBtnEl.style.display !== 'none') ? skillBtnEl : skillAbilityEl;
+  }
+  // How much of a card is on screen before you ask for the rest. Cards carry
+  // markup, so the cut is made on parsed nodes rather than on the string: a
+  // substring lands inside a <b> as often as not, and counting words in the
+  // source counts `&mdash;` as one. An inline run — <b>double damage</b>, a
+  // <k>W A S D</k> — is taken whole rather than split, which overshoots by a
+  // word or two and reads better for it.
+  const TUT_LEAD_WORDS = 20;
+  // …and a full stop before that mark is a better place to stop than the mark
+  // itself. Twenty words into "Drag a team-mate — either mouse button, from the
+  // field or from his portrait — onto ground to post him there. He holds" is a
+  // lead ending on "He holds", which reads as a bug rather than as a fold. So
+  // the budget takes the last sentence that ends at or before twenty words, and
+  // counts to twenty only when there is none far enough in to be a lead.
+  const TUT_LEAD_MIN = 9;
+  // A dash or a stray "." between two tags is not a word. Both passes have to
+  // agree on that or they cut in different places: the budget counts on the
+  // decoded text, where "orbs." is one token, and the split counts node by
+  // node, where the "." after a </b> is a token of its own.
+  const TUT_WORD = /[\p{L}\p{N}]/u;
+  function tutWords(s){ return (s.match(/\S+/g) || []).filter(t => TUT_WORD.test(t)); }
+  function tutLeadBudget(text){
+    const w = tutWords(text);
+    let best = 0;
+    for(let i = TUT_LEAD_MIN; i <= Math.min(w.length, TUT_LEAD_WORDS); i++)
+      if(/[.!?][”"’']?$/.test(w[i-1])) best = i;
+    return best || TUT_LEAD_WORDS;
+  }
+  function tutSplitLead(html){
+    const src = document.createElement('div'); src.innerHTML = html;
+    const limit = tutLeadBudget(src.textContent);
+    const lead = document.createElement('div'), rest = document.createElement('div');
+    let words = 0, cutting = false;
+    for(const node of Array.from(src.childNodes)){
+      if(cutting){ rest.appendChild(node); continue; }
+      if(node.nodeType === 3){
+        const toks = node.data.split(/(\s+)/);
+        let head = '', tail = '';
+        for(const t of toks){
+          if(cutting){ tail += t; continue; }
+          if(TUT_WORD.test(t)){
+            if(words >= limit){ cutting = true; tail += t; continue; }
+            words++;
+          }
+          head += t;
+        }
+        if(head) lead.appendChild(document.createTextNode(head));
+        if(tail.trim()) rest.appendChild(document.createTextNode(tail));
+      } else {
+        if(words >= limit){ cutting = true; rest.appendChild(node); continue; }
+        words += tutWords(node.textContent).length;
+        lead.appendChild(node);
+      }
+    }
+    // A card a few words over budget is not worth folding: hiding "shooting at
+    // it." behind a tap buys no height and costs the reader the end of a
+    // sentence.
+    if(tutWords(rest.textContent).length < 6) return { lead:html, rest:'' };
+    return { lead:lead.innerHTML.trim(), rest:rest.innerHTML.trim() };
+  }
+  // Folded or unfolded, from whatever tut.full is holding. The two controls
+  // live in the unfolded half: folded, the card is a title, a line of text and
+  // the task, which is all it needs to be while you are playing.
+  function tutSyncCard(){
+    const ph = TUT_PHASES[tut.i];
+    tutBodyEl.innerHTML = tut.open ? tut.full : tut.lead;
+    // The chip is up even on a card with nothing held back, because unfolding
+    // is also how you reach Skip step and Exit.
+    tutMoreEl.textContent = tut.open ? 'LESS' : 'MORE';
+    tutRowEl.classList.toggle('hidden', !tut.open && !(ph && ph.button));
+    tutSkipBtn.classList.toggle('hidden', !tut.open);
+    tutQuitBtn.classList.toggle('hidden', !tut.open);
+    tutPlaceCard();
+  }
+  function tutToggleCard(){
+    if(!tut.on) return;
+    tut.open = !tut.open;
+    tutSyncCard();
   }
   function tutPaint(){
     const ph = TUT_PHASES[tut.i];
-    tutStepEl.textContent = 'STEP ' + (tut.i+1) + ' / ' + TUT_PHASES.length;
+    tutStepEl.textContent = (tut.i+1) + '/' + TUT_PHASES.length;
     tutTitleEl.textContent = ph.title;
-    tutBodyEl.innerHTML = (tut.nudgeT > 0 && tut.nudge) ? tut.nudge : ph.text();
+    tut.full = (tut.nudgeT > 0 && tut.nudge) ? tut.nudge : ph.text();
+    const s = tutSplitLead(tut.full);
+    tut.lead = s.lead; tut.rest = s.rest;
+    // New text, so the fold starts closed: what you unfolded a card ago is not
+    // what this card says.
+    tut.open = false;
     tut._goal = ph.goal ? ph.goal() : '';
     tutGoalEl.textContent = tut._goal;
     tutGoalEl.classList.remove('hit');
     tut._hit = false;
     tutGoBtn.textContent = ph.button || 'Got it';
     tutGoBtn.classList.toggle('hidden', !ph.button);
-    tutSkipBtn.classList.toggle('hidden', !!ph.button);
+    tutSyncCard();
     tutShow();
   }
   function tutShow(){
@@ -12970,6 +13149,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const ph = TUT_PHASES[tut.i];
     if(!ph) return;
     tut.t += dt;
+    if(tut.hl) tutAimPointer();        // the dock and the party bar move with the stage
     if(scout) tut.p.scout = (tut.p.scout || 0) + dt;     // the minimap phase watches for this
     if(tut.nudgeT > 0){
       tut.nudgeT -= dt;
@@ -13105,6 +13285,11 @@ window.addEventListener('DOMContentLoaded', function(){
     el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
   }
   bindTap(tutQuitBtn, ()=>{ if(tut.on) tutQuit(); else tutHide(); });
+  // Anywhere on the card folds and unfolds it, except the buttons, which have
+  // their own jobs. The card now swallows the touch, so it has to be stopped
+  // here too or the same press also starts the movement stick underneath.
+  tutCardEl.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
+  bindTap(tutCardEl, e=>{ if(!e.target.closest('.tutRow')) tutToggleCard(); });
   window.addEventListener('resize', ()=>{ if(!tutCardEl.classList.contains('hidden')) tutPlaceCard(); });
 
   let lastMode = 'regular';
