@@ -3557,8 +3557,12 @@ window.addEventListener('DOMContentLoaded', function(){
     triggerAssembleFX(anchor, mates);
     if(tut.on) tutNote('assemble');
   }
+  // Match has two straight lanes; Survival has two arena roads. Same count
+  // today, but the array that actually holds them differs by mode.
+  function laneCount(){ return gameMode==='survival' ? SURV_PATHS.length : LANE_YS.length; }
   function setLanePath(h){
-    h.lpath = lanePath(h.laneIdx % LANE_YS.length, h.side);
+    h.laneIdx = h.laneIdx % laneCount();
+    h.lpath = lanePath(h.laneIdx, h.side);
     h.lwp = 1;
   }
   // A laning hero walks its lane until something is worth hitting, then closes
@@ -4266,6 +4270,11 @@ window.addEventListener('DOMContentLoaded', function(){
       const want = attackRange(h)*LANE_STANDOFF + (foe.r || 0);
       if(shouldApproach(h, dist(h.x,h.y,foe.x,foe.y), want, foe))
         moveHeroToward(h, foe.x, foe.y, heroSpeed(h), dt);
+    } else if(gameMode==='survival'){
+      // No ally wave ever exists on an arena road, so frontX is always null here
+      // — there is nothing to trail behind or rally back to. Just walk out to
+      // the hold point lanePath() already cut the road off at, and stay there.
+      walkLane(h, dt);
     } else if(frontX === null){
       // Our wave in this lane is dead. Standing out here alone is how you get
       // caught by the next enemy wave with nothing in front of you — walk back
@@ -8664,7 +8673,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // replaces the standing follow, and he holds that spot once he arrives.
   // Puts a hero back into the lane-pushing mode it starts the round in. This is
   // the order you cannot otherwise give: everything else posts a hero to a spot.
-  function laneOrder(h, laneIdx){
+  function laneOrder(h, half){
     if(!h || !h.alive) return;
     squadTogether = false;
     // HAND HIM OVER FIRST, then write the order. focusHero deliberately cancels
@@ -8678,10 +8687,16 @@ window.addEventListener('DOMContentLoaded', function(){
         if(focusHero((activePlayerIdx+step) % playerTeam.length)) break;
       }
     }
-    h.mode = 'lane'; h.laneIdx = laneIdx % LANE_YS.length; setLanePath(h);
+    // Match's two lanes run top/bottom, so the half you drop on is the lane. The
+    // arena's two roads run south-west/north-east instead, and SURV_PATHS[0] is
+    // the south-west one — the BOTTOM half of the minimap — so half 0 (dropped
+    // on top) has to flip to road 1 or "top half" would push the road that is
+    // actually drawn along the bottom.
+    const idx = gameMode==='survival' ? 1-half : half;
+    h.mode = 'lane'; h.laneIdx = idx % laneCount(); setLanePath(h);
     h.moveTarget = null; h.followTarget = null; h.standX = null; h.standY = null;
     if(tut.on) tutNote('lane');
-    addFloater(h.x, h.y - h.r - 46, laneIdx===0 ? 'TOP LANE' : 'BOTTOM LANE', '#8FD6FF', true);
+    addFloater(h.x, h.y - h.r - 46, half===0 ? 'TOP LANE' : 'BOTTOM LANE', '#8FD6FF', true);
   }
   function soloOrder(h, wx, wy){
     if(tut.on) tutNote('solo', wx, wy);
@@ -9360,7 +9375,15 @@ window.addEventListener('DOMContentLoaded', function(){
       levelGlow:0, glowCol:null, lane:lane|0, atkT:0 };
   }
   // Both sides pour out of the one base and fan into their lane.
+  // Survival has no far base to walk in from — a road runs plaza-outwards for
+  // everyone, player and scripted arena wave alike — and a hero sent to push it
+  // holds at the far outpost rather than marching the whole road out to the
+  // edge of the map, which is where the road's OWN wave spawns.
   function lanePath(l, side){
+    if(gameMode==='survival'){
+      const p = SURV_PATHS[l];
+      return p.slice(0, survPathIndexAt(p, SURV_OUTPOST_FAR)+1);
+    }
     return side==='player' ? LANE_PATHS[l] : LANE_PATHS[l].slice().reverse();
   }
   // One wave per lane per side: a big creep out in front with three escorts
@@ -13082,7 +13105,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Dragging a hero over the minimap: light up the half under the cursor and
     // say what dropping there will do.
     const hoverDrag = shownDrag();
-    if(hoverDrag && gameMode!=='survival'){
+    if(hoverDrag){
       const lane = minimapLane(hoverDrag.sx, hoverDrag.sy);
       if(lane !== null){
         const hy = mmY + (lane===0 ? 0 : mmH/2);
