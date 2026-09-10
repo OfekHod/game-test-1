@@ -741,26 +741,28 @@
     .hud-right{gap:8px;font-size:12.5px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
-    /* Same card, same nameplate, at the width a phone has. That width is the
-       whole constraint here: the row shares the top of the screen with the
-       scoreboard, and a 390px phone leaves it about 200 pixels — three 58px
-       cards and the gaps between them, and no room at all for a fourth column.
-       So the ASSEMBLE button drops out of the row and becomes a bar underneath, which
-       is a better target for a thumb than the sliver it had shrunk to. 58 also
-       keeps the row clear of the scoreboard on a 375px screen. */
-    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:5px;padding-bottom:39px;}
-    .pchip{width:58px;border-width:2px;border-radius:9px;}
-    .plevel{top:-7px;left:-6px;font-size:9.5px;width:17px;height:17px;line-height:17px;}
-    .pkey{top:-7px;right:-6px;font-size:9.5px;width:16px;height:16px;line-height:16px;}
-    .pcard{border-radius:7px 7px 0 0;}
-    .pmeter{padding:5px 5px 5px;border-radius:0 0 7px 7px;}
-    .pbar{height:4px;border-radius:2px;margin-top:2px;}
-    .pstat{font-size:9.5px;letter-spacing:.25px;margin-top:3px;}
-    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;height:34px;
-      flex-direction:row;gap:7px;border-radius:9px;}
-    .asmIcon{width:15px;height:15px;margin:0;border-width:2px;}
-    .asmIcon::before{width:5px;height:5px;}
-    .asmLabel{font-size:11px;letter-spacing:.5px;}
+    /* Same card, same nameplate, at the width a phone has. 46px is four fifths
+       of the 58 this row started at and a bit over half again the 29 it was cut
+       to: the card at 58 crowded the screen, the card at 29 stopped being a
+       picture, and every length here is the 58 version times 0.8 so the chip is
+       that same object at the size in between.
+       The ASSEMBLE button stays a bar underneath rather than a fourth column,
+       which is a better target for a thumb and is what let the cards have the
+       width in the first place — the row shares the top of the screen with the
+       scoreboard, and a 390px phone leaves it about 200 pixels. */
+    .party{top:calc(8px + var(--sat));left:calc(8px + var(--sal));gap:4px;padding-bottom:32px;}
+    .pchip{width:46px;border-width:1.5px;border-radius:7px;}
+    .plevel{top:-6px;left:-5px;font-size:8px;width:14px;height:14px;line-height:14px;}
+    .pkey{top:-6px;right:-5px;font-size:8px;width:13px;height:13px;line-height:13px;}
+    .pcard{border-radius:5.5px 5.5px 0 0;}
+    .pmeter{padding:4px 4px 4px;border-radius:0 0 5.5px 5.5px;}
+    .pbar{height:3px;border-radius:1.5px;margin-top:1.5px;}
+    .pstat{font-size:8px;letter-spacing:.2px;margin-top:2.5px;}
+    .asmBtn{position:absolute;left:0;right:0;bottom:0;width:auto;height:28px;
+      flex-direction:row;gap:6px;border-radius:7px;}
+    .asmIcon{width:12px;height:12px;margin:0;border-width:1.5px;}
+    .asmIcon::before{width:4px;height:4px;}
+    .asmLabel{font-size:9px;letter-spacing:.35px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
