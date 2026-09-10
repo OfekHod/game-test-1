@@ -6486,7 +6486,7 @@ window.addEventListener('DOMContentLoaded', function(){
     carry:   { w:128, h:118, walk:20, atk:0, scale:4.834, foot:0.95, dirs:2, stride:16,
                bob:2.5, bobSteps:4, enemyWash:'#FF9A88',
                idle:12, idleFps:3.6,
-               breath:{ from:2, rise:44, hip:88, lift:3.2, sway:0.9 } },
+               breath:{ from:4, rise:44, hip:88, lift:3.2, sway:0.9 } },
     // The tank is a horned Viking behind a round shield: five drawings of a
     // run, five of an axe swing, five of him standing there breathing, in that
     // order across one row of the sheet.
@@ -6571,10 +6571,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // stuck in to begin with, and the narrowest are passing poses, standing him
   // on one leg with the other knee thrown forward of its own boot.
   //
-  // The stand is the narrowest frame he still has both feet DOWN on. Frame 2 is
-  // it: one boot a boot's length ahead of the other, the back one two source
-  // pixels off the floor -- under a screen pixel at the size he is drawn -- and
-  // both knees hanging over a foot that is under them.
+  // What picks the frame is the SOLES, not the boots: how many columns of each
+  // foot lie flat on the floor, within a pixel of the lowest row he reaches. By
+  // that measure the sheet has exactly one frame that could be a stand. Frame 4
+  // puts both soles down -- sixteen columns of the back one and eight of the
+  // front -- nine pixels apart, and the two legs stay a single silhouette all
+  // the way to the ankles, which is what a man standing side-on looks like. A
+  // foot that is merely NEAR the floor is not the same thing and does not read
+  // the same: frame 2's back boot is two pixels up, and those two pixels are a
+  // heel raised behind him, mid push-off.
   // Standing is not standing still, though, so the stand is breathed.
   //
   // A breath is NOT a bob. Lifting the whole sprite slides his boots over the
