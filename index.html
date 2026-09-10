@@ -6245,7 +6245,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const HERO_STRIDE = 22;        // world distance travelled per walk frame
   const GHOST_GAP = 0.045, GHOST_LIFE = 0.24, GHOST_MAX = 3, GHOST_ALPHA = 0.2;
   const DUST_STEP = 30;          // world distance between footfall puffs
-  const SPLASH_STEP = 26;        // a touch tighter than dust: steps in water are shorter
+  const SPLASH_STEP = 30;        // ~12px of travel between footfalls in water
   let ripples = [];
   const STUN_TIME = 5.0;
   // A stunned unit is not just frozen, it is open: everything that lands on it
@@ -6456,7 +6456,9 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.restore();
   }
   function addRipple(x, y, r0, life){
-    ripples.push({ x, y, r0, life:0, maxLife:life || rand(1.1,1.6) });
+    // Shorter than the old 1.1-1.6s. Now that a ring can actually be seen, a
+    // long one means a dozen of them alive at once under a walking man.
+    ripples.push({ x, y, r0, life:0, maxLife:life || rand(0.85,1.15) });
   }
   function updateRipples(dt){
     for(let i=ripples.length-1;i>=0;i--){
@@ -6465,28 +6467,67 @@ window.addEventListener('DOMContentLoaded', function(){
       if(p.life >= p.maxLife) ripples.splice(i,1);
     }
   }
-  function drawRipples(){
-    for(const p of ripples){
-      const t = p.life/p.maxLife;
-      // expands quickly then eases, fading as it goes — one ring, no fuss
-      const r = p.r0 + (1 - Math.pow(1-t, 2.6)) * 38;
-      ctx.save();
-      ctx.globalAlpha = (1-t) * 0.5;
-      ctx.strokeStyle = '#EAF7FF';
-      ctx.lineWidth = 2.2 * (1-t) + 0.6;
-      ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r*0.42, 0, 0, 7); ctx.stroke();
-      ctx.restore();
-    }
+  // One footfall's worth of surface. A single stroked ring read as a stamped
+  // circle — a shape that appeared rather than water that moved. Three things
+  // instead, all small: a soft bloom of white right where the foot went in and
+  // gone within the first third, then two rings out of it, the inner one a beat
+  // behind so the pair reads as one disturbance spreading rather than two
+  // drawn at once. The fade is a quarter-sine rather than a straight ramp, so
+  // the last frames thin out instead of the ring blinking off still visible.
+  // SIZES HERE ARE WORLD UNITS AND THE CAMERA IS NOT 1:1. VIEW_ZOOM puts about
+  // 3200 units across a stage of maybe 1250 CSS pixels, so a world unit is a bit
+  // under four tenths of a pixel on screen and a hero's sprite — the only
+  // yardstick that matters — is around 65 units wide. That is what made the old
+  // single ring invisible rather than subtle: a 2.2-unit stroke is a NINE TENTHS
+  // OF A PIXEL hairline, and no alpha will save a line thinner than the pixel it
+  // has to land in. Anything meant to be seen needs ~2.6 units per pixel wanted.
+  const RIPPLE_LAG = 0.13;      // seconds the inner ring trails the outer one
+  const RIPPLE_REACH = 26;      // units the outer ring travels: ~11px at the far end
+  function drawRippleRing(p, t, reach, alpha){
+    const r = p.r0 + (1 - Math.pow(1-t, 2.6)) * reach;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 4.6 * (1-t) + 1.8;      // 2.5px down to 0.7px
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r*0.42, 0, 0, 7); ctx.stroke();
   }
-  // A step in water: a ring on the surface plus a few droplets thrown up.
+  function drawRipples(){
+    ctx.save();
+    ctx.strokeStyle = '#EAF7FF';
+    for(const p of ripples){
+      if(!onScreen(p.x, p.y, p.r0 + RIPPLE_REACH + 8)) continue;
+      const t = p.life/p.maxLife;
+      const bt = p.life/(p.maxLife*0.38);
+      if(bt < 1){
+        // ~11px across at its widest: half the width of the man standing in it
+        const br = 9 + bt*19, ba = (1-bt)*(1-bt)*0.62;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, br);
+        g.addColorStop(0,   'rgba(255,255,255,'+ba.toFixed(3)+')');
+        g.addColorStop(0.55,'rgba(214,241,255,'+(ba*0.66).toFixed(3)+')');
+        g.addColorStop(1,   'rgba(214,241,255,0)');
+        ctx.globalAlpha = 1; ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y, br, br*0.55, 0, 0, 7); ctx.fill();
+      }
+      drawRippleRing(p, t, RIPPLE_REACH, Math.sin((1-t)*Math.PI*0.5) * 0.78);
+      const t2 = (p.life - RIPPLE_LAG)/p.maxLife;
+      if(t2 > 0) drawRippleRing(p, t2, RIPPLE_REACH*0.58, Math.sin((1-t2)*Math.PI*0.5) * 0.42);
+    }
+    ctx.restore();
+  }
+  // A step in water: a ring on the surface plus a few droplets thrown up. The
+  // droplets go UP and OUT in a fan no wider than 60 degrees off vertical —
+  // thrown around a full circle, half of them set off sideways along the
+  // surface, which is the one direction water kicked by a boot does not go.
+  // pr is in world units like everything else, so 5 to 8 is a droplet of two to
+  // three PIXELS. Dust is 4 units, which is a pixel and a half, and that is the
+  // size the splash used to borrow.
   function splashAt(x, y, power){
     addRipple(x, y, 3);
-    const n = 2 + Math.round(power*2);
+    const n = 3 + Math.round(power*3);
     for(let i=0;i<n;i++){
-      const a = rand(0, Math.PI*2);
-      particles.push({ x:x+rand(-4,4), y:y+rand(-2,2),
-        vx:Math.cos(a)*rand(14,40)*power, vy:-rand(34,74)*power,
-        life:0, maxLife:rand(0.5,0.8), color:i%3 ? '#CFEFFF' : '#FFFFFF', grav:210 });
+      const a = rand(-1.05, 1.05), sp = rand(46,92)*power;
+      particles.push({ x:x+rand(-6,6), y:y+rand(-2,2),
+        vx:Math.sin(a)*sp, vy:-Math.cos(a)*sp - rand(14,34)*power,
+        life:0, maxLife:rand(0.40,0.66), pr:rand(5,8),
+        color:i%3 ? '#CFEFFF' : '#FFFFFF', grav:260 });
     }
   }
   const HERO_ATK_ANIM = 0.42;    // how long an attack animation plays
@@ -6955,6 +6996,12 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     const feetY = h.y + h.r*0.75;
     const wet = inWater(h.x, feetY);
+    // The step that puts him in the water gets its own splash, whatever the
+    // stride counter was up to. Without it the bank is where the effect is
+    // WEAKEST — he could take three strides into the river before the counter
+    // came round — when it is the moment you most want to see him go in.
+    if(wet && !h.wasWet){ splashAt(h.x, feetY, 1.25); h.dustAt = h.animDist; }
+    h.wasWet = wet;
     if(h.moving>0 && h.animDist - h.dustAt > (wet ? SPLASH_STEP : DUST_STEP)){
       h.dustAt = h.animDist;
       if(wet){
@@ -11904,7 +11951,9 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const pt of particles){
       if(pt.loot && !isVisible(pt.x,pt.y,4)) continue;   // a hidden coin's trail
       const a=1-pt.life/pt.maxLife;
-      ctx.beginPath(); ctx.arc(pt.x,pt.y,4*a,0,7);
+      // pr for anything that wants to be smaller than a scuff of dust — a
+      // water droplet at four units across is a pebble
+      ctx.beginPath(); ctx.arc(pt.x,pt.y,(pt.pr||4)*a,0,7);
       ctx.fillStyle=pt.color; ctx.globalAlpha=a; ctx.fill(); ctx.globalAlpha=1;
     }
     for(const s of sparkles){ if(onScreen(s.x,s.y,24)) drawSparkle(s); }
