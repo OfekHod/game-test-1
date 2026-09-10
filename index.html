@@ -7557,6 +7557,16 @@ window.addEventListener('DOMContentLoaded', function(){
   const TOWER_FRAME_W = 150, TOWER_FRAME_H = 237;
   const TOWER_SPRITE_SCALE = 2.05;   // drawn width, in units of TOWER_R
   const TOWER_FOOT = 0.8;            // where the base sits, in units of TOWER_R
+  // An outpost drew at its own hitbox radius (58) next to a main tower drawn at
+  // its (82), so it read as a toy beside the tower that actually matters — and
+  // at TOWER_FOOT's 0.8 its foot sat 46 units below the lane's centreline, more
+  // than half of LANE_HALF's 90, so it looked shoved toward the bottom edge of
+  // the road instead of standing in it. Both are purely how big it is DRAWN:
+  // TOWER_R stays 58 for range and collision, nothing balance-relevant moves.
+  const TOWER_OUTPOST_VIS_R = 76;
+  const TOWER_OUTPOST_FOOT = 0.15;   // its foot sits close to the anchor, not near it
+  function towerVisR(t){ return t.main ? t.r : TOWER_OUTPOST_VIS_R; }
+  function towerFootFrac(t){ return t.main ? TOWER_FOOT : TOWER_OUTPOST_FOOT; }
   const towerImg = new Image();
   let towerReady = false, towerSheets = null, towerFlash = null;
   towerImg.onload = ()=>{
@@ -12349,16 +12359,19 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function drawTower(t, mainColor, coreColor){
+    // Drawn size and foot position only — t.r itself (range, collision) is
+    // untouched, see TOWER_OUTPOST_VIS_R above.
+    const vr = towerVisR(t), footFrac = towerFootFrac(t);
     if(t.hp<=0){
-      ctx.save(); ctx.globalAlpha=0.3; ctx.beginPath(); ctx.arc(t.x,t.y,t.r*0.6,0,7); ctx.fillStyle='#8a7a6a'; ctx.fill(); ctx.restore();
+      ctx.save(); ctx.globalAlpha=0.3; ctx.beginPath(); ctx.arc(t.x,t.y,vr*0.6,0,7); ctx.fillStyle='#8a7a6a'; ctx.fill(); ctx.restore();
       return;
     }
     ctx.save(); ctx.translate(t.x,t.y);
-    let barTop = -t.r-18;
+    let barTop = -vr-18;
     if(towerReady){
-      const sw = t.r*TOWER_SPRITE_SCALE, sh = sw*(TOWER_FRAME_H/TOWER_FRAME_W);
-      const foot = t.r*TOWER_FOOT;
-      ctx.beginPath(); ctx.ellipse(0, foot, t.r*0.95, t.r*0.3, 0,0,7);
+      const sw = vr*TOWER_SPRITE_SCALE, sh = sw*(TOWER_FRAME_H/TOWER_FRAME_W);
+      const foot = vr*footFrac;
+      ctx.beginPath(); ctx.ellipse(0, foot, vr*0.95, vr*0.3, 0,0,7);
       ctx.lineWidth=3; ctx.strokeStyle=mainColor; ctx.stroke();
       ctx.drawImage(towerSheets[t.side] || towerImg, -sw/2, foot-sh, sw, sh);
       if(t.flash>0 && towerFlash){
@@ -12368,14 +12381,14 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       barTop = foot - sh - 14;
     } else {
-      ctx.beginPath(); ctx.arc(0,0,t.r,0,7);
+      ctx.beginPath(); ctx.arc(0,0,vr,0,7);
       ctx.fillStyle = t.flash>0?'#ffffff':mainColor; ctx.fill();
       ctx.lineWidth=3; ctx.strokeStyle='rgba(90,62,27,.4)'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(0,0,t.r*0.5,0,7); ctx.fillStyle=coreColor; ctx.fill();
+      ctx.beginPath(); ctx.arc(0,0,vr*0.5,0,7); ctx.fillStyle=coreColor; ctx.fill();
     }
     ctx.restore();
     if(t.flash>0) t.flash-=1/60;
-    const w=t.r*2.2;
+    const w=vr*2.2;
     drawBar(t.x-w/2, t.y+barTop, w, 7, t.hp/t.maxHp, t.hpLag, HP_COLOR);
   }
 
@@ -13019,7 +13032,10 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const e of ground){
       const o = e.o;
       if(e.k===2){
-        if(o.hp>0) softShadow(ctx, o.x, o.y + o.r*0.62, o.r*1.3, o.r*0.54);
+        if(o.hp>0){
+          const vr = towerVisR(o), foot = vr*towerFootFrac(o);
+          softShadow(ctx, o.x, o.y + foot, vr*0.95, vr*0.32);
+        }
       } else if(e.k===3){
         softShadow(ctx, o.x, o.y + o.r*0.62, o.r*(mobReady?1.22:1.15), o.r*0.5);
       } else if(e.k===4){
