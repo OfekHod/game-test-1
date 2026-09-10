@@ -4812,6 +4812,31 @@ window.addEventListener('DOMContentLoaded', function(){
   function generateForest(){
     layOutForest();
     generateDecor();
+    if(tutMap) placeTutStartAccent();
+  }
+  // Everything else the tutorial's jungle owns keeps out of the practice box
+  // (see tutOutsideArena below), which is correct for the box as a whole but
+  // left the very first frame standing in a field with nothing on it at all —
+  // the nearest tree, rock or lake was outside HERO_VISION, so none of them
+  // actually rendered lit. This is a small hand-placed exception to that rule,
+  // the same way the hedge and the camp are: a stand of trees and a couple of
+  // rocks tucked behind and to the side of the walk-in, off every lesson's
+  // path, close enough to TUT_START to be lit rather than a shape under fog.
+  const TUT_ACCENT = { x: TUT_START.x-250, y: TUT_START.y-200 };
+  function placeTutStartAccent(){
+    const c = TUT_ACCENT;
+    for(const [dx,dy] of [[110,50],[-90,80],[0,0]]){
+      const t = makeTree(c.x+dx, c.y+dy);
+      sizeTree(t);
+      trees.push(t);
+    }
+    const rock = (dx,dy,fi) => {
+      const f = ROCK_FRAMES[fi];
+      const w = f[4]*DECOR_SCALE, h = w*(f[3]/f[2]);
+      props.push({ x:c.x+dx, y:c.y+dy, kind:'rock', f, w, h, flip:false });
+    };
+    rock(200,-60,0);
+    rock(-260,60,1);
   }
   function layOutForest(){
     trees = []; camps = [];
