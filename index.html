@@ -3043,7 +3043,12 @@ window.addEventListener('DOMContentLoaded', function(){
   let isMouseDown = false;
   let camera = { x: 0, y: 0 };
   let activePlayerIdx = 0;
-  let camSnap = 0;
+  // The eased slide the camera is part way through, or null when it is merely
+  // following its subject around. See updateCamera.
+  let camGlide = null;
+  // What the camera actually did last frame, in view units per second. Measured
+  // rather than read off the curve, so a rocket the camera is chasing counts too.
+  let camVX = 0, camVY = 0, camSpeed = 0;
   let gameMode = 'regular';       // 'regular' | 'survival'
   let survWave = 0;            // waves started this round; also the wave you are fighting
   let survBreak = 0;           // seconds left of the lull before the next wave marches
@@ -7635,7 +7640,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const c0 = toCanvasCoords(e.clientX, e.clientY);
     if(state==='playing' && overMinimap(c0.x, c0.y)){
       scout = minimapToWorld(c0.x, c0.y);
-      camSnap = 0.35;
+      glideCam(0.75);                            // out to the spot you pointed at
       return;                                    // scouting, not shooting
     }
     isMouseDown = true;
@@ -7691,7 +7696,7 @@ window.addEventListener('DOMContentLoaded', function(){
     armLeftDrag(e.clientX, e.clientY);
   });
   window.addEventListener('mouseup', e=>{
-    if(scout){ scout = null; camSnap = 0.45; }   // release: snap back to the hero
+    if(scout){ scout = null; glideCam(0.8); }    // release: slide back to the hero
     isMouseDown = false;
     if(orderDrag && !orderDrag.id){
       const d = orderDrag;
@@ -7886,7 +7891,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(scoutTouch === null && overMinimap(ctm.x, ctm.y)){
         scoutTouch = t.identifier;
         scout = minimapToWorld(ctm.x, ctm.y);
-        camSnap = 0.35;
+        glideCam(0.75);
         continue;
       }
       const wpt = toWorld(t.clientX, t.clientY);
@@ -7958,7 +7963,7 @@ window.addEventListener('DOMContentLoaded', function(){
     let handled = false;
     for(const t of e.changedTouches){
       if(scoutTouch === t.identifier){
-        scoutTouch = null; scout = null; camSnap = 0.45;   // let go: snap back to your hero
+        scoutTouch = null; scout = null; glideCam(0.8);    // let go: slide back to your hero
         handled = true;
         continue;
       }
@@ -9312,8 +9317,84 @@ window.addEventListener('DOMContentLoaded', function(){
   let rocketCamTail = null;    // {x,y} where it went off
   let rocketCamHold = 0;       // seconds the camera still sits on the blast
   const ROCKET_CAM_HOLD = 0.55;   // a touch longer than BLAST_TIME, so the fireball finishes
-  function rideRocket(p){ rocketCam = p; rocketCamTail = null; rocketCamHold = 0; camSnap = 0.35; }
+  function rideRocket(p){ rocketCam = p; rocketCamTail = null; rocketCamHold = 0; glideCam(0.8); }
   function dropRocketCam(){ rocketCam = null; rocketCamTail = null; rocketCamHold = 0; }
+
+  // ---------- the focus glide ----------
+  // Every change of subject — switching hero, a finger on the minimap and
+  // letting go of it, the camera taking a rocket and handing it back, a corpse
+  // reappearing at the far end of the map — is a SLIDE: it leaves slowly,
+  // gathers speed across the middle, and settles slowly onto the new subject.
+  //
+  // What it replaces was an exponential chase on a boosted rate, which has
+  // exactly the wrong shape: all of its speed is at the START, so the view
+  // threw itself off the mark the instant you pressed 2 and then crawled the
+  // last two hundred units for the better part of a second. Nothing about where
+  // it was going was readable, and the arrival never quite finished.
+  //
+  // The curve is smootherstep, 6u^5-15u^4+10u^3: velocity AND acceleration are
+  // both zero at each end, so neither the departure nor the arrival has an edge
+  // on it, and the fastest part is the middle where there is nothing to read.
+  const camEase = u => u*u*u*(u*(u*6-15)+10);
+  // Time is bought by distance: a hop between two heroes standing together is
+  // over in well under half a second, and only a jump clear across the map
+  // spends the full budget on the ease.
+  const CAM_GLIDE_MIN = 0.38;     // seconds for a slide of no distance at all
+  const CAM_GLIDE_MAX = 0.82;     // ...and for one the width of CAM_GLIDE_SPAN
+  const CAM_GLIDE_SPAN = 2600;
+  // Arm a glide. The point it is going to is NOT known here — callers set the
+  // new subject around this call, and focusHero sets it afterwards — so the
+  // shape is worked out on the next frame, by armGlide, once updateCamera has
+  // asked where the camera is wanted. `pace` scales the duration: under 1 is a
+  // quicker slide for the moments that want to feel like a whip.
+  function glideCam(pace){ camGlide = { pace: pace || 1, dur: 0, t: 0, x0: 0, y0: 0 }; }
+  // A hard cut, for when the world under the camera has been rebuilt and there
+  // is nothing to slide across. Kills the blur with it: nothing moved, it jumped.
+  function camCut(){ camGlide = null; camVX = camVY = 0; camSpeed = 0; }
+
+  function armGlide(dx, dy){
+    const g = camGlide;
+    const d = dist(camera.x, camera.y, dx, dy);
+    g.dur = (CAM_GLIDE_MIN + Math.min(1, d/CAM_GLIDE_SPAN)*(CAM_GLIDE_MAX-CAM_GLIDE_MIN)) * g.pace;
+    g.x0 = camera.x; g.y0 = camera.y; g.t = 0;
+    if(d < 1 || camSpeed < 1) return;
+    // Interrupting a glide that is already moving — switching heroes twice in a
+    // second, or grabbing the minimap mid-slide — must not stop the camera dead
+    // and start it again from rest. So enter the curve at the phase whose speed
+    // the camera ALREADY has, and pull the notional start point back far enough
+    // that that phase lands exactly where the camera is now.
+    //
+    // Only the part of the old velocity that points at the new subject counts:
+    // a slide sent back the way it came really should start from rest, or the
+    // camera turns a corner at full speed.
+    const m = Math.sqrt(camVX*camVX+camVY*camVY) || 1;
+    const align = Math.max(0, (camVX*(dx-camera.x) + camVY*(dy-camera.y)) / (m*d));
+    const v = camSpeed*align;
+    // The derivative of smootherstep is 30u^2(1-u)^2, so matching a speed is
+    // closed form: with k the speed as a fraction of d/dur, s=sqrt(k/30) and
+    // u=(1-sqrt(1-4s))/2 on the rising half. The span the curve covers is
+    // d/(1-e), not d, and e is what is being solved for — hence the three
+    // passes; it settles long before the third.
+    //
+    // k is capped well under the curve's own peak of 1.875, because entering
+    // late means the curve is fitted to a longer notional span and so peaks
+    // FASTER than an unhurried slide of the same length would. At 1.2 the
+    // interrupted slide tops out around 15% above the ordinary one, which reads
+    // as carrying its speed through; matching an entry of 1.8 puts it 50% above,
+    // which reads as the camera being fired out of a gun. A camera that was
+    // going faster than the cap simply eases down to it, which is what turning
+    // towards a new subject should look like anyway.
+    let u0 = 0, e0 = 0;
+    for(let i=0;i<3;i++){
+      const k = Math.min(1.2, v*g.dur*(1-e0)/d);
+      const s = Math.sqrt(k/30);
+      u0 = (1-Math.sqrt(Math.max(0,1-4*s)))/2;    // the rising half, so u0<=0.5
+      e0 = camEase(u0);                           // ...so e0<=0.5 and 1-e0 is never small
+    }
+    g.t = u0*g.dur;
+    g.x0 = (camera.x - dx*e0)/(1-e0);
+    g.y0 = (camera.y - dy*e0)/(1-e0);
+  }
 
   function updateCamera(dt){
     const h = playerTeam[activePlayerIdx];
@@ -9327,7 +9408,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     if(rocketCamHold > 0){
       rocketCamHold = Math.max(0, rocketCamHold - dt);
-      if(rocketCamHold === 0){ rocketCamTail = null; camSnap = 0.55; }   // whip home to the tank
+      if(rocketCamHold === 0){ rocketCamTail = null; glideCam(0.85); }   // slide home to the tank
     }
     const ride = rocketCam || rocketCamTail;
     // Scouting still wins: a finger on the minimap is you asking for the view,
@@ -9336,20 +9417,44 @@ window.addEventListener('DOMContentLoaded', function(){
     const fy = scout ? scout.y : (ride ? ride.y : (h?h.y:0));
     const desiredX = Math.min(WORLD_W-W, Math.max(0, fx - W/2));
     const desiredY = Math.min(WORLD_H-H, Math.max(0, fy - H/2));
-    if(camSnap>0) camSnap = Math.max(0, camSnap-dt);
-    // A drift rate of 4 leaves a 380-unit shell 95 units behind the middle of
-    // the screen and falling further back every time the view clamps at a world
-    // edge; 9 keeps it in the frame it is supposed to be the subject of.
-    const rate = camSnap>0 ? 13 : (rocketCam ? 9 : 4);   // whip across on a switch, drift while following
-    camera.x += (desiredX-camera.x)*Math.min(1,dt*rate);
-    camera.y += (desiredY-camera.y)*Math.min(1,dt*rate);
+    const px = camera.x, py = camera.y;
+    if(camGlide && camGlide.dur === 0) armGlide(desiredX, desiredY);
+    if(camGlide){
+      const g = camGlide;
+      g.t += dt;
+      const u = Math.min(1, g.t/g.dur);
+      // Re-aimed at the LIVE target every frame rather than at a point fixed
+      // when the slide began, so a slide onto a hero who is walking, or onto a
+      // shell that is still in the air, arrives on him and not on his shadow.
+      // At u=1 the ease is exactly 1, so the hand-off below starts with no error.
+      const e = camEase(u);
+      camera.x = g.x0 + (desiredX-g.x0)*e;
+      camera.y = g.y0 + (desiredY-g.y0)*e;
+      if(u >= 1) camGlide = null;
+    } else {
+      // Not a change of focus: the subject is simply moving and the camera is
+      // keeping up with him. A drift rate of 4 leaves a 380-unit shell 95 units
+      // behind the middle of the screen and falling further back every time the
+      // view clamps at a world edge; 9 keeps it in the frame it is supposed to
+      // be the subject of.
+      const rate = rocketCam ? 9 : 4;
+      camera.x += (desiredX-camera.x)*Math.min(1,dt*rate);
+      camera.y += (desiredY-camera.y)*Math.min(1,dt*rate);
+    }
+    if(dt > 0){
+      camVX = (camera.x-px)/dt; camVY = (camera.y-py)/dt;
+      const raw = Math.sqrt(camVX*camVX+camVY*camVY);
+      // Lightly smoothed: at a low frame rate the per-frame delta is noisy
+      // enough to make the smear it feeds flicker.
+      camSpeed += (raw-camSpeed)*Math.min(1, dt*20);
+    }
   }
 
   // Every switch goes through here so the camera always knows one happened.
   function focusHero(i){
     if(i<0 || i>=playerTeam.length || !playerTeam[i].alive) return false;
     if(i!==activePlayerIdx){
-      camSnap = 0.5;
+      glideCam();
       dropRocketCam();   // you asked for a different hero; the shell keeps flying without the camera
       // The hero you were driving holds where you left him instead of quietly
       // resuming a lane you never told him to push. Drag him to the minimap to
@@ -10844,6 +10949,10 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function respawnHero(h){
+    // The hero you are driving has just reappeared at the other end of the map.
+    // That is a change of focus like any other, so the view slides after him
+    // instead of trailing home at the rate meant for a man on foot.
+    if(h === playerTeam[activePlayerIdx]) glideCam(0.9);
     h.alive=true; h.hp=h.maxHp; h.mana=h.maxMana;
     h.x=h.homeX; h.y=h.homeY; h.vx=0; h.vy=0; h.invuln=0.5; h.kt=0; h.dashing=false;
     h.standX=null; h.standY=null; h.siegeT=null; h.backoffT=0;
@@ -11476,6 +11585,42 @@ window.addEventListener('DOMContentLoaded', function(){
     updateStatStrip();
   }
 
+  // The glide blurs the view a little at speed, and only at speed. It is a
+  // directional smear rather than a true blur: the world layer is composited
+  // back over itself a step or two along the camera's own travel, which is
+  // where that image was a moment ago, so what comes out is a short tail in the
+  // direction of motion. Two taps at a low alpha is enough to take the hard
+  // edge off a fast pan, and it costs two blits on the frames that have one.
+  //
+  // Deliberately small. It starts well above the speed a hero walks at, so
+  // ordinary play never sees it at all, and at the fastest a glide ever goes
+  // the tail is under half a percent of the screen's width — enough to feel the
+  // speed, not enough to lose anything you were reading.
+  const CAM_BLUR_ON = 0.30;      // screens per second at which the smear starts
+  const CAM_BLUR_FULL = 2.0;     // ...and at which it stops growing
+  const CAM_BLUR_MAX = 0.0045;   // the longest tap, as a fraction of the view width
+  function drawCamBlur(){
+    const spd = camSpeed / W;                       // screens per second
+    if(spd <= CAM_BLUR_ON) return;
+    const k = Math.min(1, (spd-CAM_BLUR_ON)/(CAM_BLUR_FULL-CAM_BLUR_ON));
+    const len = CAM_BLUR_MAX*W * k*k*(3-2*k);       // eased, so it has no threshold to it
+    if(len < 0.4) return;
+    const m = Math.sqrt(camVX*camVX+camVY*camVY);
+    if(m < 1) return;
+    // A world point sits at (x - camera.x), so a camera moving +v slides
+    // everything on screen by -v: the image was LAST at +v from where it is now,
+    // and that is where the tail goes.
+    const ox = camVX/m*len, oy = camVY/m*len;
+    ctx.save();
+    ctx.globalAlpha = 0.30;
+    ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, ox, oy, W, H);
+    // The second tap samples what the first one just laid down, so the fall-off
+    // it gives is smoother than two independent copies of the sharp frame.
+    ctx.globalAlpha = 0.18;
+    ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, ox*2.1, oy*2.1, W, H);
+    ctx.restore();
+  }
+
   // Reused between frames: the pass rebuilds it every frame and it is the only
   // per-frame array in render(), so it is not worth handing the collector a new
   // one sixty times a second.
@@ -11836,6 +11981,11 @@ window.addEventListener('DOMContentLoaded', function(){
     }
 
     ctx.restore();
+
+    // Here and nowhere else: the canvas holds the world and only the world at
+    // this point, so the smear catches the field and leaves the fog, the
+    // minimap, the drag line and the rest of the overlay untouched.
+    drawCamBlur();
 
     drawFog(shakeX, shakeY);
     ctx.save();
@@ -12727,6 +12877,7 @@ window.addEventListener('DOMContentLoaded', function(){
     activePlayerIdx = 0;
     camera.x = Math.min(WORLD_W-W, Math.max(0, sx - W/2));
     camera.y = Math.min(WORLD_H-H, Math.max(0, sy - H/2));
+    camCut();                       // a new map behind a curtain: placed, not slid to
     partyEl.classList.add('hidden');
     const shud = document.getElementById('scoreHud');
     if(shud) shud.classList.add('hidden');
@@ -12937,7 +13088,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // "just been wiped", and started a 15s respawn. The forest was empty for
     // the whole opening and nobody could farm. Restock after the wipe, not before.
     resetCamps();
-    camera.x=0; camera.y=0; activePlayerIdx=0;
+    // The opening is a focus change like any other: the view starts on the
+    // corner of the map and eases onto your hero as the clouds pull apart,
+    // rather than throwing itself at him and then creeping the last stretch.
+    // update() is held until the curtain parts, so the slide is armed here and
+    // does not begin until there is something to watch it against. A tutorial
+    // cuts this again in tutStart, where the camera is placed by hand.
+    camera.x=0; camera.y=0; activePlayerIdx=0; camCut(); glideCam(1.15);
     if(gameMode==='survival'){
       const cx=WORLD_W/2, cy=WORLD_H/2;
       resetHero(playerTeam[0], cx+140, cy);
