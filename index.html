@@ -12896,6 +12896,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // fireBasic it one-shot a low-level ally standing between him and you. He
   // still walks up and holds the line with the other two; he just never gets
   // to swing at this range, which is the truth of a melee hero anyway.
+  //
+  // Each one's stand is a fixed point set once, at `enter`, not a live offset
+  // off wherever you currently are: chasing your position every frame reads
+  // as backing off the instant you close in on them, since the target itself
+  // retreats by exactly however far you just advanced. Set once, they walk to
+  // it and stop — you come to them, they do not renegotiate the distance.
   function tutSparAI(dt){
     const h = tutHero();
     if(!h || !h.alive) return;
@@ -12904,7 +12910,6 @@ window.addEventListener('DOMContentLoaded', function(){
     // — through the hold below and into the siege phase's own homeward walk —
     // rather than vanishing partway and reappearing at the base later.
     if(tut.sparFlee){ tutEnemiesHome(dt); return; }
-    const hold = attackRange(h) + TUT_SPAR_GAP;
     tut.sparCd -= dt;
     const canFire = [];
     for(const e of enemyTeam){
@@ -12912,9 +12917,12 @@ window.addEventListener('DOMContentLoaded', function(){
       // gone. Without pinning the respawn he strolls back in on his real AI,
       // which is the same hero hunting you that the flee is for.
       if(!e.alive){ e.respawnTimer = Infinity; continue; }
-      const tx = h.x + Math.cos(e._sparBearing)*hold, ty = h.y + Math.sin(e._sparBearing)*hold;
-      if(dist(e.x, e.y, tx, ty) > 30) moveHeroToward(e, tx, ty, heroSpeed(e)*0.7, dt);
-      e.facing = Math.atan2(h.y-e.y, h.x-e.x);
+      if(dist(e.x, e.y, e._sparTX, e._sparTY) > 20){
+        moveHeroToward(e, e._sparTX, e._sparTY, heroSpeed(e)*0.7, dt);
+        e.facing = Math.atan2(e._sparTY-e.y, e._sparTX-e.x);
+      } else {
+        e.facing = Math.atan2(h.y-e.y, h.x-e.x);   // arrived: just watch you
+      }
       if(!HERO_STATS[e.type].melee && dist(e.x, e.y, h.x, h.y) < attackRange(e) &&
          e.mana >= HERO_STATS[e.type].basicManaCost) canFire.push(e);
     }
@@ -12937,8 +12945,17 @@ window.addEventListener('DOMContentLoaded', function(){
       e.standX = null; e.standY = null; e.pushing = false; e.siegeT = null;
       const d = dist(e.x, e.y, e.homeX, e.homeY);
       if(d > 24){
-        moveHeroToward(e, e.homeX, e.homeY, heroSpeed(e), dt);
-        e.facing = Math.atan2(e.homeY-e.y, e.homeX-e.x);
+        // A tower in range outranks the walk home: peel away from it first
+        // rather than cross back through its ring for the sake of a straight
+        // line — the whole point of sending them home is that they stop
+        // taking hits, not that they take one more on the way out.
+        let danger = null;
+        for(const t of playerTowers){
+          if(t.hp > 0 && dist(e.x, e.y, t.x, t.y) < TUT_SPAR_TOWER_SAFE){ danger = t; break; }
+        }
+        const to = danger ? tutClearOwnTower(e.x, e.y) : { x:e.homeX, y:e.homeY };
+        moveHeroToward(e, to.x, to.y, heroSpeed(e), dt);
+        e.facing = Math.atan2(to.y-e.y, to.x-e.x);
       } else {
         e.facing = Math.PI;              // home, and watching the way you come
       }
@@ -12963,6 +12980,27 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutNearFoeTower(x, y, pad){
     for(const t of enemyTowers){ if(t.hp > 0 && dist(x, y, t.x, t.y) < pad) return true; }
     return false;
+  }
+  // The reverse berth, for the enemy team the sparring step puts on the field:
+  // THEIR own building never hurts them, but YOURS fires on anything hostile
+  // in range — escorted or not, and enraged when it is not — so a spot or a
+  // walk that drifts inside your tower's reach hands it a free kill on a hero
+  // that is supposed to be sparring, not dying. Pushes the point radially
+  // clear of whichever tower is too close, rather than refusing it outright:
+  // there is no ring search to fall back to mid-walk the way `tutOpenSpot`
+  // has one at setup time.
+  const TUT_SPAR_TOWER_SAFE = TOWER_RANGE + 60;
+  function tutClearOwnTower(x, y){
+    for(const t of playerTowers){
+      if(t.hp <= 0) continue;
+      const d = dist(x, y, t.x, t.y);
+      if(d < TUT_SPAR_TOWER_SAFE){
+        const ang = d > 1 ? Math.atan2(y - t.y, x - t.x) : TUT_SHOW_ANGLE;
+        x = t.x + Math.cos(ang) * (TUT_SPAR_TOWER_SAFE + 20);
+        y = t.y + Math.sin(ang) * (TUT_SPAR_TOWER_SAFE + 20);
+      }
+    }
+    return { x, y };
   }
 
   // Standing clear of a trunk is not the same thing as being VISIBLE, and a
@@ -13439,12 +13477,15 @@ window.addEventListener('DOMContentLoaded', function(){
     enter(){
       const h = tutHero();
       macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
+      const hold = attackRange(h) + TUT_SPAR_GAP;
       enemyTeam.forEach((e, i)=>{
         respawnHero(e);
         // In front of you and in the open, not four screens away under their
         // outposts. Walking to him used to mean walking into a tower. Fanned
         // out by index so the three of them arrive as a line, not a stack.
-        const s = tutOpenSpot(h.x, h.y, 700 + i*60, TUT_SHOW_ANGLE + (i-1)*0.5);
+        const bearing = TUT_SHOW_ANGLE + (i-1)*0.5;
+        const spot = tutOpenSpot(h.x, h.y, 700 + i*60, bearing);
+        const s = tutClearOwnTower(spot.x, spot.y);
         e.x = s.x; e.y = s.y;
         e.animPrevX = e.x; e.animPrevY = e.y;
         e.mode = 'idle'; e.moveTarget = null; e.standX = null; e.standY = null;
@@ -13453,9 +13494,12 @@ window.addEventListener('DOMContentLoaded', function(){
         // about meeting the enemy is worth nothing if they are corpses before
         // you have looked at them.
         e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
-        // The angle each one holds relative to you, fixed at arrival — the
-        // formation that keeps them from converging on the same spot.
-        e._sparBearing = Math.atan2(e.y - h.y, e.x - h.x);
+        // Where each one stands, fixed once — see `tutSparAI` for why it is
+        // not recomputed off your position every frame — and clear of your
+        // own tower's reach, or the step that introduces the enemy team hands
+        // your tower a free kill on one of them before you ever get there.
+        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
+        e._sparTX = stand.x; e._sparTY = stand.y;
       });
       tut.spar = true; tut.sparCd = 1.5;
       tut.sparFlee = false;
