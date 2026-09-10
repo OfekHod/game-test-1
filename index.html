@@ -12357,11 +12357,24 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.beginPath(); ctx.arc(p.x,p.y,rad,0,7); ctx.stroke();
     ctx.restore();
   }
+  // A tower or base square is centred on its world point, so a point within
+  // half a square's side of the panel's edge would draw partway outside it —
+  // the two bases are exactly that close, sitting only 90 world units in from
+  // a 4000-unit-wide map. Pull the drawing point in by the square's own half
+  // width so the square's edge, not its centre, is what respects the border.
+  function clampToPanel(p, half, mmX, mmY, mmW, mmH){
+    p.x = Math.min(mmX+mmW-half, Math.max(mmX+half, p.x));
+    p.y = Math.min(mmY+mmH-half, Math.max(mmY+half, p.y));
+    return p;
+  }
   function drawMinimap(){
     const mmW=MM_W, mmH=MM_H, mmX=W-mmW-MM_RIGHT, mmY=mmTop();
     ctx.save();
-    ctx.fillStyle='rgba(255,243,214,.88)';
-    ctx.strokeStyle='rgba(217,168,92,.9)'; ctx.lineWidth=2;
+    // Light grass green, like the field itself, rather than the parchment tan
+    // the panel used before — the brown lanes now do the job of reading as
+    // roads against ground instead of against a road-colored panel.
+    ctx.fillStyle='rgba(198,230,170,.92)';
+    ctx.strokeStyle='rgba(122,150,84,.9)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.rect(mmX,mmY,mmW,mmH); ctx.fill(); ctx.stroke();
     function mp(wx,wy){ return { x: mmX+(wx/WORLD_W)*mmW, y: mmY+(wy/WORLD_H)*mmH }; }
 
@@ -12387,7 +12400,11 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
-    ctx.strokeStyle='rgba(200,160,90,.45)'; ctx.lineWidth=3; ctx.lineJoin='round';
+    // The real road is LANE_HALF*2 world units wide out of a WORLD_W-wide map;
+    // drawn at that same proportion of the panel's own width, rather than a
+    // fixed few pixels, the lane reads as the same fraction of the map here
+    // as it is on the field — thick enough to see it is a road, not a line.
+    ctx.strokeStyle=ROAD_FILL; ctx.lineWidth=Math.max(2, LANE_HALF*2*(mmW/WORLD_W)); ctx.lineJoin='round';
     // The arena's roads go on the minimap too. With two snaking lanes instead of
     // four spokes, which way a wave is coming is no longer obvious from the
     // shape of the map, so the map has to say.
@@ -12398,10 +12415,13 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.stroke();
     }
     let p;
+    // A dark rim, not just the fill, now that the panel behind it is grass
+    // green too rather than a tan that already set the camp's green apart.
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(30,50,20,.55)';
     for(const c of camps){
       p=mp(c.x,c.y);
       ctx.fillStyle = c.alive>0 ? '#6FA05A' : 'rgba(110,150,90,.3)';
-      ctx.beginPath(); ctx.arc(p.x,p.y,MM_CAMP_R,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x,p.y,MM_CAMP_R,0,7); ctx.fill(); ctx.stroke();
     }
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = 'rgba(40,26,14,.65)';
@@ -12409,15 +12429,15 @@ window.addEventListener('DOMContentLoaded', function(){
     // moves, so its mark can afford to say "structure" at a glance rather than
     // matching the round camp/hero marks.
     for(const t of playerTowers){
-      p=mp(t.x,t.y);
-      ctx.fillStyle = t.hp>0?'#C68958':'#8a7a6a';
       const s = t.main?MM_TOWER_R_MAIN:MM_TOWER_R;
+      p=clampToPanel(mp(t.x,t.y), s, mmX, mmY, mmW, mmH);
+      ctx.fillStyle = t.hp>0?'#C68958':'#8a7a6a';
       ctx.beginPath(); ctx.rect(p.x-s,p.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
     }
     for(const t of enemyTowers){
-      p=mp(t.x,t.y);
-      ctx.fillStyle = t.hp>0?'#B5482D':'#8a7a6a';
       const s = t.main?MM_TOWER_R_MAIN:MM_TOWER_R;
+      p=clampToPanel(mp(t.x,t.y), s, mmX, mmY, mmW, mmH);
+      ctx.fillStyle = t.hp>0?'#B5482D':'#8a7a6a';
       ctx.beginPath(); ctx.rect(p.x-s,p.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
     }
 
