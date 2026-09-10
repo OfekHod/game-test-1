@@ -66,7 +66,12 @@ function frame(c, phase){
   c.clearRect(0,0,W,H);
   const th = phase*Math.PI*2;
   const ct = Math.cos(th), st = Math.sin(th);
-  const halfLen = L*0.5*Math.abs(ct), capX = R*Math.abs(st);
+  // halfLen is a LENGTH, so it takes |cos|. axHalf is the signed projection of
+  // the axis, and it is what tells the two ends apart: past a quarter turn cos
+  // goes negative and the ends swap sides. Taking |cos| for the cap as well was
+  // the bug that made the log turn 180 degrees and then unwind back the way it
+  // came instead of carrying on round.
+  const halfLen = L*0.5*Math.abs(ct), axHalf = L*0.5*ct, capX = R*Math.abs(st);
   const cy = H/2;
 
   c.save();
@@ -106,8 +111,12 @@ function frame(c, phase){
   c.restore();
 
   // ---- the cut face, at whichever end is nearer the camera
+  //
+  // The end at world X = -sign(sin)*L/2 is the near one, and its screen x is
+  // that X times cos. So the face sits left, right, left, right on the four
+  // quarter turns — which is the whole difference between a spin and a wobble.
   if(capX > 0.4){
-    const ex = -Math.sign(st)*halfLen;
+    const ex = -Math.sign(st)*axHalf;
     c.save();
     c.translate(ex, cy);
     c.beginPath(); c.ellipse(0,0,capX,R,0,0,7);
