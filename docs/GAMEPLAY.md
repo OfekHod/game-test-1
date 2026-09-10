@@ -122,8 +122,8 @@ Time ran out with both bases standing and the scoreboard settled it: 1169 to
 
 ## Survival
 
-No enemy heroes, no enemy base: just our tower in the middle of the arena and
-mobs arriving in growing numbers.
+No enemy base: just our tower in the middle of the arena, mobs arriving in
+growing numbers, and — from wave 4 — the enemy team walking in behind them.
 
 ### How a wave works
 
@@ -139,6 +139,29 @@ after, up to forty — and from wave 3 there is a big one in front, one more eve
 second wave. Past the size cap a wave stops getting wider and keeps getting
 heavier: the big count goes on climbing under it. The whole wave shows on the
 minimap, because a wave you have to clear is a wave you have to be able to find.
+
+### The enemy team
+
+The first three waves are mobs and mobs only. From wave 4 an enemy player joins
+every third wave, and the banner says so under the number when one does:
+
+| from wave | who | how they travel |
+|---|---|---|
+| 4 | the **tank** | at the head of a mob pack, never more than a stride in front of it |
+| 7 | the **carry** | on the same road, sheltering behind the tank |
+| 10 | the **healer** | shadowing the carry, and topping up whoever is hurt |
+| 13 | all three | as one column, nobody outrunning the rearmost |
+
+They arrive at that wave's level and gain as the waves do — a wave-4 tank is
+about a level-4 player tank, and by wave 36 they are capped at 26. They push,
+and only push: they walk their road to your tower and hit what stands on it,
+they never farm a camp or chase you into the trees, and they hold outside an
+outpost until their own wave is closer to it than they are.
+
+There is no respawn timer on them. Kill one and it is gone until the next wave
+brings it back, at that wave's level and with full bars — which is what turning
+round to fight a hero instead of clearing the pack buys you. They are on the
+minimap the whole time, drawn a size up from the mobs.
 
 The end card reports the waves you held, with the clock and the loot under it.
 

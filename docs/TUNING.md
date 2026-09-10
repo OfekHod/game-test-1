@@ -103,3 +103,21 @@ games the band on a 90% rate is roughly ±9 points, which is wider than every
 effect measured here — three separate 40-game runs read 98%, 88% and 93% off
 builds that were doing the same thing. Nothing under 120 games says anything,
 and a claim of parity wants 240.
+
+## The arena's enemy players
+
+| constant | value | note |
+|---|---|---|
+| `SURV_HERO_FROM` | 4 | the first wave an enemy player walks in with; waves 1-3 teach the arena's own shape first |
+| `SURV_HERO_EVERY` | 3 | waves between arrivals. **At 2 all three were on the field by wave 8 and an idle-player arena that reached wave 12 was overrun on wave 6** — that is a step, not a ramp |
+| `SURV_HERO_ORDER` | tank, carry, support | and each attaches to the one before it |
+| `SURV_HERO_LV_BASE` / `_STEP` | 4, +0.7/wave | the tank debuts at roughly a level-4 player tank (660hp), and the curve caps out at level 26 around wave 36 |
+| `SURV_HERO_SPAWN_R` | `SURV_SPAWN_R` − 160 | measured along the road, a little ahead of the mobs' own mark so the tank starts in front of its pack |
+| `SURV_LEAD_AHEAD` | 160 | how far ahead of its own front mob a hero may get. A hero walks half again as fast as a mob, so with no cap the tank arrives half a minute early and dies alone |
+| `SURV_GROUP_LEAD` | 280 | stage four only: nobody outruns the rearmost of the three by more |
+| `SURV_BACK_HOLD` | 1.5s | the arena's fall-back is a fresh question every frame, not `RETREAT_IN/OUT`'s latch — see `AI.md`, "Backing off" |
+
+Measured with the player idle and never moving, one run each: the arena reached
+wave 12 before this and wave 7 after, so an enemy player is worth roughly five
+waves to a defence that does nothing. An idle player never spends a stat point
+either, so treat it as the floor rather than as the difficulty.

@@ -66,3 +66,61 @@ Two corrections that mattered:
 A chase is abandoned 5 seconds after the last exchange of blows, counted as wall
 clock from when the chase began — accumulating only on frames where the hero
 happened to be hunting ran at half speed and a 5-second limit fired at ten.
+
+## The arena's enemy players
+
+Survival runs a **different** brain, not a smaller one. `survHeroAI` replaces the
+macro layer, `updateEnemyCarryAI` and the enemy half of `updateIdleAI` outright:
+the macro brain exists to pick which of two lanes to commit to and which of its
+own buildings to defend, and in the arena there is one road per hero and nothing
+of theirs to defend.
+
+What is left is the push and only the push. No camps, no orbs, no crossing the
+map to a team-mate's fight, no truce and no endgame. Targets come from
+`laneSeekTarget` with `h.lpath` set to the road the hero walked in on, so "in my
+lane" means "on the road" — a player who steps into the trees is not something
+the arena follows.
+
+### Arriving
+
+One joins every `SURV_HERO_EVERY` waves from `SURV_HERO_FROM`, in the order
+tank, carry, healer, and each attaches to the one before it. They walk in on the
+road, at that wave's level, built by the same `AI_BUILD` weights a match hero is
+built by — `survSetHeroLevel` runs grantXP's own loop with the experience left
+out. A hero still standing from the last wave is levelled where it is rather
+than re-spawned, and it keeps its road: newcomers join *its* road, or the carry
+walks in on the north lane while the tank it shelters behind came from the
+south.
+
+There is no respawn timer. Kill one and it is gone until the next wave brings it
+back — which is the whole reward for turning round to fight a hero instead of
+clearing the pack.
+
+### Pacing
+
+Three rules, all applied after the move and all written in distance from the
+plaza, which is monotonic along both roads. Each says how deep this hero may
+stand; only forward progress is ever undone.
+
+- **Lead the pack, do not leave it.** A hero walks half again as fast as a mob,
+  so the tank arrives half a minute ahead of the wave it is leading and dies
+  alone. It leads the front mob of its own road by `SURV_LEAD_AHEAD` and no
+  more, and only while that road still has mobs on it.
+- **Shelter.** The carry holds `CARRY_SHELTER` behind the tank and the healer
+  `SUPPORT_SHELTER` behind the carry — the same numbers a Match uses.
+- **The column**, from stage four: nobody is more than `SURV_GROUP_LEAD` ahead
+  of the rearmost, so the three of them arrive together rather than in order.
+
+### Backing off
+
+`wantsRetreat` is a latch that holds until the hero is back to 60% health,
+because in a Match it can walk to a base that mends it three times as fast. The
+arena gives an enemy player no base and no ring, so the latch means natural
+regeneration: measured, a hurt carry stood at the mouth of its road for **eighty
+seconds** while the wave it walked in with died without it, and twice in ten
+waves the whole enemy side was two heroes standing still.
+
+So the arena asks a fresh question every frame (`survWantsBack`) and the answer
+moves the hero back down its own road rather than off the map. A step behind the
+front rank is cover, and the pack walking past puts it back in the push without
+it having to decide anything. `SURV_BACK_HOLD` is the only stickiness it gets.
