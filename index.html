@@ -20,7 +20,19 @@
 <title>Lane — POC v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<!-- Loaded without blocking the parser. A plain rel="stylesheet" holds every
+     <script> in the document until it resolves — and when it cannot resolve,
+     that is the whole timeout: measured at 12.6s offline, during which not one
+     line of the game had run. media="print" makes it a non-matching sheet the
+     parser will not wait on, and onload promotes it once it lands.
+     &display=swap below only ever governed the font FILE; it could not help
+     with a blocked stylesheet fetch, which is why this stalled anyway.
+     Nothing bakes text into a cached canvas — every 'Baloo 2' draw is per
+     frame — and applyLayout() re-runs on a 400ms interval, so a font that
+     arrives late is picked up rather than frozen out. -->
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet"
+      media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet"></noscript>
 <style>
   :root{
     --panel:#FFF3D6; --panel-border:#D9A85C; --text-strong:#5A3E1B;
@@ -12778,11 +12790,33 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   let last = performance.now();
+  // Fast-forward for the screenshot harness. Headless renders at ~8-10fps and
+  // dt is capped at 0.05, so game time crawls at ~0.4x real: reaching a state
+  // 45s into a match costs 124s of waiting, and the median win at 214s costs
+  // the better part of ten minutes. At speed=8 that same 45s costs 20s.
+  // Stepping update() N times per rendered frame is what buys that — update
+  // is ~0.8ms against a ~100ms software-canvas frame, so the extra steps are
+  // nearly free. This is exactly how sim/harness.js already drives the game.
+  //
+  // file:// ONLY. The published build is served over https, where the flag is
+  // dead: a URL nobody can speed up is the whole point.
+  //
+  // update() runs N times per render, so anything paced by the render cadence
+  // — camera easing, particle spawn, a fade — resolves differently. Use it to
+  // REACH a state, never to photograph a transition.
+  // typeof-guarded like MUSIC_DEBUG below: sim/stub.js has no location, and
+  // the harness evaluates this very line under Node.
+  const FF = (typeof location !== 'undefined' && location.protocol === 'file:')
+    ? Math.max(1, Math.min(32, parseInt((/(?:^|[?&])speed=(\d+)/.exec(location.search || '') || [])[1] || '1', 10)))
+    : 1;
   function loop(now){
     const dt = Math.min(0.05,(now-last)/1000); last=now;
+    // The extra steps share the catch below on purpose: a crash in a
+    // fast-forwarded frame has to be as loud as a crash in a real one.
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
-    try { update(dt); render(); syncThemeColor(); if(roundHold) warmFrames++; }
+    try { for(let i=1;i<FF;i++) update(dt);
+          update(dt); render(); syncThemeColor(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
