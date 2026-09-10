@@ -88,7 +88,7 @@ drops you back to the menu.
 | 7 | **Rocket and heal** | A mob each for them | Casting both skills |
 | 8 | **Orders** | A marked spot on the ground | Posting a hero on it |
 | 9 | **Assemble** | The ALL button pulses | Calling the squad back |
-| 10 | **The forest** | The camp is stocked and ringed | Clearing it |
+| 10 | **The forest** | The camp is stocked and ringed, and two rings route you there down the river | Clearing it |
 | 11 | **Your base** | Your tower's range drawn | Standing inside it |
 | 12 | **The map** | — | Holding on the minimap to scout |
 | 13 | **Pushing a lane** | — | Dragging a hero to a minimap half |
@@ -109,7 +109,7 @@ Each obstacle sits in the *middle* of its leg, not at the end of it: 680 units
 of the second leg lie past the river and 350 of the third lie past the hedge.
 Crossing water with the ring already under your feet teaches nothing about
 water. The first ring is also placed clear of the west bank — the river wobbles
-55 either side of its line and is 130 wide, so its bank reaches further west
+30 either side of its line and is 130 wide, so its bank reaches further west
 than its centre suggests.
 
 This is also the only step whose copy has to be right on both devices. Desktop
@@ -172,6 +172,42 @@ infinite respawn timer rather than a zero one — a zero timer stocks the forest
 quietly, several steps before anything mentions it. Its `resetCamps()` empties
 `neutralCreeps` on the way, so nothing the earlier steps spawned can wake up and
 walk at you the moment the hold lifts.
+
+It is also the step that teaches the **current**, because the camp happens to sit
+east of the river and level with the bottom of it — so the way there can be
+routed into the water at the top, down the whole run, and only then east. Three
+legs and three cards, the way the walking step does it: *Wade into the river*,
+*Ride the current downstream* (which is where the rule is stated), *Clear the
+marked camp*. The camp marker is up from the first frame, so the detour reads as
+a detour rather than a mystery, and the card says outright that it is the long
+way round. There is no other honest place to put this lesson: a step that marks
+some water and asks you to stand in it teaches a fact, not a use.
+
+Two things had to give for the leg to be rideable. Ring positions come off the
+river's own centreline through `riverAt` rather than a guessed `x`, so they sit
+in the channel wherever the wobble put it; and a ring counts as reached if the
+current carries you **past** it while you are in the water, not only if you walk
+into its middle. You meet the first ring coming off the bank, so you clip its
+edge rather than its centre, and then ride the channel a half-width off the line
+the rings sit on — which was enough to sail straight past the second one down its
+western side. A waypoint that punishes doing the thing it asked teaches the
+player to distrust the line.
+
+The tutorial river's wobble also came down from 55 to 30. At 55 the channel
+snaked by 110 inside 130 of room, so walking dead downstream slid the river out
+from under you halfway along, which teaches that the current is unreliable rather
+than that it is directional. At 30 the whole meander fits inside the banks and
+one key held down the middle rides the entire run, and it still visibly bends.
+The Match and Survival rivers keep their bigger wobble — this is the water you
+learn on. Measured on the map: 920 units between the two rings, and all 61
+samples along it are in water and getting the full multiplier.
+
+**11 · Your base.** The step already walks you inside your own tower's ring, so
+it is where the game says out loud that the ring mends you: health and mana come
+back at `BASE_REGEN_MULT` times the usual rate inside it. The lesson and the
+mechanic are the same walk, and the circle it draws is the circle the bonus is
+measured against — `drawTowerRange` puts a faint version of it on the field in
+every mode, so nothing about it is tutorial-only.
 
 **14 · The enemy.** Their carry is driven by `tutSparAI` rather than by his own
 AI: he walks to arm's length, holds there, and fires once every two seconds
