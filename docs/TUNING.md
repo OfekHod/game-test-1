@@ -31,6 +31,9 @@ Values as shipped, with the evidence.
 | `EARLY_PEACE` | 20 | 120 was 40% of the match spent not fighting |
 | `BASE_REGEN_MULT` | 3 | health and mana come back three times as fast inside your own main tower's range. Symmetric, and 80 games with it off finish within noise of 80 with it on (see FINDINGS) |
 | `RIVER_MANA_MULT` | 2 | mana only, and only in a river (`inRiver`, not `inWater` — lakes are solid). Multiplies with `BASE_REGEN_MULT`, and the Match map's river does run into the player's base ring, so those strides pay x6. Two 80-game pairs put it within noise; a single pair claimed a 21s speed-up that the second pair refuted (see FINDINGS). Deliberately not taught anywhere in the game |
+| `WATER_SLOW` | 0.62 | wading: against the current, across it, or standing still in it. What the single number used to mean in every direction |
+| `WATER_WITH` | 1.5 | carried, going clearly downstream. The two together make a river directional terrain rather than a uniform tax, and the flow specks on the surface are what tell you which way that is |
+| `FLOW_COS_NONE` / `FLOW_COS_FULL` | cos 50° / cos 40° | the cone, measured against the tangent of the nearest stretch of river you are in, so it bends with the river. Nothing outside 50°, full push inside 40°, ramped between — crossing is 90° off and must never earn a penny of it. The ramp exists because the flow turns under you as the river bends, and a hard edge there strobes a hero between the two numbers. Taught by tutorial step 10 |
 
 ## AI shape
 

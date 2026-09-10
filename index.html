@@ -4083,14 +4083,30 @@ window.addEventListener('DOMContentLoaded', function(){
   let props = [];
   let camps = [];
   let lakes = [];     // solid, organic outline
-  let rivers = [];    // shallow: you can ford them, they just slow you
+  let rivers = [];    // shallow: you can ford them, and they have a direction
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
-  const WATER_SLOW = 0.62;   // movement multiplier while wading
+  // A river now has a direction, and wading it is not one number any more.
+  // Go with the water and it carries you; do anything else — fight it, or cross
+  // it — and you are wading, which is what the single number used to mean.
+  const WATER_SLOW = 0.62;   // against the current, across it, or standing in it
+  const WATER_WITH = 1.5;    // carried, going clearly downstream
+  // "Clearly downstream" is the whole point of the rule, so the cone is tight:
+  // nothing at all until you are within 50 degrees of the flow, and the full
+  // push only inside 40. Crossing a river is 90 degrees off and must never earn
+  // a penny of it. The ten degrees between the two are ramped rather than
+  // switched, because the flow direction changes as the river bends underneath
+  // you, and a hard edge there would strobe a hero between 0.62 and 1.5.
+  const FLOW_COS_NONE = Math.cos(50*Math.PI/180);
+  const FLOW_COS_FULL = Math.cos(40*Math.PI/180);
   // Standing in a river doubles mana regen. Rivers already cost you speed and
   // stand between the lanes, so the trade is real: the ground that gets your
   // mana back fastest outside your own base is also the ground you are slowest
   // to leave. Lakes are solid and cannot be stood in, so this is inRiver, not
   // inWater. Health is untouched — a river is not a base.
+  //
+  // The current does not change that trade, it sharpens it: the mana is paid
+  // for by standing still, and standing still is the one heading that never
+  // earns the push.
   const RIVER_MANA_MULT = 2;
   // Lakes are three times the radius they used to be. A 165-unit pond was
   // scenery you clipped the corner of on the way past; at 495 it is a piece of
@@ -4217,9 +4233,18 @@ window.addEventListener('DOMContentLoaded', function(){
     return false;
   }
   function inWater(x,y){ return inLake(x,y) || inRiver(x,y); }
-  function makeRiver(x0,y0,x1,y1,w,steps,wob){
+  // The centreline is a sine, which is smooth; the river was not, because it was
+  // only sampled at a dozen points and every one of them became a corner in both
+  // banks. The curve is unchanged — t still runs 0..1 whatever the sample count
+  // — it is just read finely enough that the corners fall below anything the eye
+  // can pick out. One point every RIVER_STEP units puts a river's banks at the
+  // same resolution a lake's shoreline has always had, which also lands its foam
+  // at the lake's spacing instead of a puff every two hundred units.
+  const RIVER_STEP = 45;      // world units between centreline samples
+  function makeRiver(x0,y0,x1,y1,w,wob){
     const pts=[], nx=-(y1-y0), ny=(x1-x0);
     const nl=Math.max(1,Math.sqrt(nx*nx+ny*ny));
+    const steps=Math.max(12, Math.round(nl/RIVER_STEP));
     for(let i=0;i<=steps;i++){
       const t=i/steps, s=Math.sin(t*Math.PI*2.1)*wob;
       pts.push({ x: x0+(x1-x0)*t + (nx/nl)*s, y: y0+(y1-y0)*t + (ny/nl)*s });
@@ -4243,6 +4268,51 @@ window.addEventListener('DOMContentLoaded', function(){
         if(pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y) < rv.w*0.5) return true;
     }
     return false;
+  }
+  // How much of the current a unit at (x,y) is getting while moving along
+  // (dx,dy): -1 if it is not in a river at all, 0 for anything that is not
+  // clearly downstream, up to 1 for dead on. The flow is the tangent of the
+  // nearest stretch of the river you are standing in, so it bends with the
+  // river — walking a bend means steering to keep the push.
+  //
+  // The same rv.w*0.5 test inRiver uses, so the water that carries you is
+  // exactly the water you are drawn wading in. Standing still short-circuits to
+  // that test alone, which is what heroSpeed asks for thirty times a frame; the
+  // walk over segments only happens for something actually in the water.
+  function flowAlign(x, y, dx, dy){
+    const l = Math.sqrt(dx*dx + dy*dy);
+    if(l < 1e-6) return inRiver(x,y) ? 0 : -1;
+    for(const rv of rivers){
+      riverBox(rv);
+      if(x<rv.bx0 || x>rv.bx1 || y<rv.by0 || y>rv.by1) continue;
+      const p = rv.pts;
+      let best = 1e18, bi = -1;
+      for(let i=0;i<p.length-1;i++){
+        const d = pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y);
+        if(d < best){ best = d; bi = i; }
+      }
+      if(bi < 0 || best >= rv.w*0.5) continue;
+      const a = p[bi], b = p[bi+1];
+      const sx = b.x-a.x, sy = b.y-a.y, sl = Math.sqrt(sx*sx+sy*sy) || 1;
+      const dot = (dx*sx + dy*sy)/(l*sl);
+      if(dot <= FLOW_COS_NONE) return 0;
+      return Math.min(1, (dot - FLOW_COS_NONE)/(FLOW_COS_FULL - FLOW_COS_NONE));
+    }
+    return -1;
+  }
+  // The whole wading multiplier: 1 on dry land, WATER_SLOW to WATER_WITH in a
+  // river depending on which way you are pointed.
+  function wadeMul(x, y, dx, dy){
+    const a = flowAlign(x, y, dx, dy);
+    return a < 0 ? 1 : WATER_SLOW + (WATER_WITH - WATER_SLOW)*a;
+  }
+  // For movers that were handed a speed with the standing-still wading already
+  // in it — every AI path goes through moveHeroToward, which cannot know the
+  // heading until after the turn rate has had its say. This is the rest of the
+  // multiplier, so speed*flowAssist lands on exactly what wadeMul would give.
+  function flowAssist(x, y, dx, dy){
+    const a = flowAlign(x, y, dx, dy);
+    return a <= 0 ? 1 : (WATER_SLOW + (WATER_WITH - WATER_SLOW)*a)/WATER_SLOW;
   }
   function nearWater(x,y,pad){
     // Measured in the lake's round space and then charged the squash, so the
@@ -4324,7 +4394,14 @@ window.addEventListener('DOMContentLoaded', function(){
       // both lanes so no wave ever has to ford it. Step one walks you through
       // it on purpose: shallow water is a thing you should meet while nothing
       // is chasing you.
-      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 12, 55);
+      // Wobble kept under the half-width on purpose, which the match map's river
+      // does not do. This is the water you learn the current on, and at 55 the
+      // channel snaked by 110 inside 130 of room: walk dead downstream and the
+      // river slid out from under you halfway along, which teaches that the
+      // current is unreliable rather than that it is directional. At 30 the
+      // whole meander fits inside the banks, so holding one key down the middle
+      // rides the whole run — and it still visibly bends.
+      makeRiver(TUT_RIVER_X, BASE_Y-620, TUT_RIVER_X, BASE_Y+620, 130, 30);
       // The practice ground is the match map, so it gets the match map's lakes:
       // both sit in the jungle beyond the lanes, clear of the corridor the
       // tutorial keeps you in, so they are terrain you can see and learn the
@@ -4345,7 +4422,7 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const s of [0, Math.PI]){
         const a = gap.a + s, ca = Math.cos(a), sa = Math.sin(a);
         makeRiver(cx+ca*SURV_RIVER_IN, cy+sa*SURV_RIVER_IN,
-                  cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, 14, wob);
+                  cx+ca*SURV_RIVER_OUT, cy+sa*SURV_RIVER_OUT, 150, wob);
         survLake(a-0.66, 1340, 176*LAKE_SCALE);
         survLake(a+0.66, 1080, 158*LAKE_SCALE);
         // And one closer in, on the base's side of the wedge. It is the water a
@@ -4359,7 +4436,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // The river runs the length of the corridor between the lanes — right where
       // rotations happen, so you actually see it. It is shallow: crossing costs
       // you speed rather than being impossible, which keeps the map connected.
-      makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 16, 105);
+      makeRiver(560, BASE_Y, 3440, BASE_Y, 150, 105);
       makeMatchLakes();
     }
   }
@@ -5084,9 +5161,11 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   // ---------- stat / leveling helpers ----------
-  function heroSpeed(h){
-    const s = SPEED_BASE + h.stats.agi;
-    return inRiver(h.x, h.y) ? s*WATER_SLOW : s;   // wading costs you
+  // The heading is optional and most callers have none — they want the number
+  // for a stat readout or a "how long to walk there" estimate, and with no
+  // heading this is the wading speed it always returned.
+  function heroSpeed(h, dx, dy){
+    return (SPEED_BASE + h.stats.agi) * wadeMul(h.x, h.y, dx||0, dy||0);
   }
   function heroBasicDmg(h){ return FIXED_DMG[h.type]; }
   // 0 at level 1, 1 at max level — the single curve every skill ramps along.
@@ -5743,6 +5822,39 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOREST_BUSH_K = 1.02;                // drawn width, in units of r
   const treeImg = new Image(), bushImg = new Image(), rockImg = new Image();
   let treeImgReady = false, bushImgReady = false, rockImgReady = false;
+  // Seven of the frames above are packed tight enough that their rectangle
+  // clips a few pixels off the sprite NEXT to them on the sheet. Each stray
+  // sits hard against one edge of the frame with clear space between it and the
+  // sprite the frame is actually for — tree 12's is four rows tall with thirteen
+  // empty rows under it — so it does not read as part of the art. It reads as a
+  // small dark speck floating beside the tree. On grass it hides in the
+  // undergrowth; over a river, where there is nothing for a dark speck to hide
+  // in, it reads as a bug on the screen, because it is one.
+  //
+  // Trimming the frames would also fix it, but a frame's rectangle is what sets
+  // the sprite's drawn size and where it hangs over its own trunk, so trimming
+  // moves the art. Wiping the strays out of the sheets instead costs three
+  // canvases once at load and leaves every sprite exactly where it was: the
+  // boxes below were measured by walking every frame for opaque blobs that touch
+  // its edge and are not joined to the sprite's body, and each is checked to
+  // clear the stray whole while staying off the sprite.
+  const SHEET_BLEED = {
+    tree: [[165,21,4,8], [169,73,6,12], [285,56,6,15],
+           [473,189,5,7], [0,336,5,18], [6,395,8,6]],
+    bush: [],                 // checked and clean, listed so it reads as checked
+    rock: [[231,61,8,5]]
+  };
+  // Drawn from these from here on, not from the Image. A canvas is as good a
+  // source as an image to drawImage, and it is the only way to edit one.
+  let treeSheet = null, bushSheet = null, rockSheet = null;
+  function scrubSheet(img, rects){
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    if(rects) for(const b of rects) g.clearRect(b[0], b[1], b[2], b[3]);
+    return c;
+  }
   // The whole world canvas is baked once, so a decoded atlas means re-baking
   // it. Three atlases would mean three bakes of a 4000x4000 canvas at load, so
   // wait for the last one instead — and count a failure as arrived, or one
@@ -5750,9 +5862,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // procedural stand-ins.
   let decorPending = 3;
   function decorArrived(){ if(--decorPending === 0) drawBackground(); }
-  treeImg.onload = ()=>{ treeImgReady = true; decorArrived(); };
-  bushImg.onload = ()=>{ bushImgReady = true; decorArrived(); };
-  rockImg.onload = ()=>{ rockImgReady = true; decorArrived(); };
+  treeImg.onload = ()=>{ treeSheet = scrubSheet(treeImg, SHEET_BLEED.tree); treeImgReady = true; decorArrived(); };
+  bushImg.onload = ()=>{ bushSheet = scrubSheet(bushImg, SHEET_BLEED.bush); bushImgReady = true; decorArrived(); };
+  rockImg.onload = ()=>{ rockSheet = scrubSheet(rockImg, SHEET_BLEED.rock); rockImgReady = true; decorArrived(); };
   treeImg.onerror = bushImg.onerror = rockImg.onerror = decorArrived;
   // Deterministic per map so the ground looks identical every time you replay it.
   function mulberry(a){
@@ -5970,7 +6082,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function drawDecor(g, d){
     const rock = d.kind === 'rock';
-    const img = rock ? rockImg : bushImg, ready = rock ? rockImgReady : bushImgReady;
+    const img = rock ? rockSheet : bushSheet, ready = rock ? rockImgReady : bushImgReady;
     g.save(); g.translate(d.x, d.y);
     if(d.flip) g.scale(-1,1);
     if(ready) g.drawImage(img, d.f[0], d.f[1], d.f[2], d.f[3], -d.w/2, d.h*0.16-d.h, d.w, d.h);
@@ -6020,7 +6132,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function drawTree(gctx, t){
     const bush = t.bush !== undefined;
-    const img = bush ? bushImg : treeImg, ready = bush ? bushImgReady : treeImgReady;
+    const img = bush ? bushSheet : treeSheet, ready = bush ? bushImgReady : treeImgReady;
     gctx.save(); gctx.translate(t.x,t.y);
     // A chopped tree pivots on its STUMP, not on the middle of the sprite —
     // which is the whole difference between a tree going over and a tree
@@ -6979,22 +7091,152 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // A river as a real polygon, so it can be filled, clipped and outlined like a
   // lake instead of only stroked. Built once and cached.
+  // Half a circle across a mouth, from the left bank round to the right. The
+  // normal at angle 0 is the left bank and at PI the right, and the tangent term
+  // pushes the middle of the sweep out past the end of the centreline.
+  // Segments scaled to the mouth, not a fixed count: a 150-wide river's cap is a
+  // 75-unit arc and twelve flats across it are visible from a normal camera.
+  function capPoints(p, nx, ny, half, from){
+    const n = Math.max(10, Math.min(28, Math.round(half/4)));
+    const tx = ny, ty = -nx, out = [];
+    for(let k=1;k<n;k++){
+      const a = from + Math.PI*k/n, c = Math.cos(a), sn = Math.sin(a);
+      out.push({ x: p.x + (c*nx + sn*tx)*half, y: p.y + (c*ny + sn*ty)*half });
+    }
+    return out;
+  }
   function riverPoly(rv){
     if(rv.poly) return rv;
     const p = rv.pts, half = rv.w/2;
-    rv.left = []; rv.right = [];
+    rv.left = []; rv.right = []; rv.leftIn = []; rv.rightIn = [];
+    let n0x=0, n0y=0, n1x=0, n1y=0;
     for(let i=0;i<p.length;i++){
       const a = p[Math.max(0,i-1)], b = p[Math.min(p.length-1,i+1)];
       let nx = -(b.y-a.y), ny = (b.x-a.x);
       const nl = Math.max(1, Math.sqrt(nx*nx+ny*ny)); nx/=nl; ny/=nl;
+      if(i===0){ n0x=nx; n0y=ny; }
+      if(i===p.length-1){ n1x=nx; n1y=ny; }
       rv.left.push({ x:p[i].x+nx*half, y:p[i].y+ny*half });
       rv.right.push({ x:p[i].x-nx*half, y:p[i].y-ny*half });
+      // A lake scallops its foam four units inside the shoreline, not on it, so
+      // the puffs sit in the water and lap at the sand. Same here.
+      rv.leftIn.push({ x:p[i].x+nx*(half-4), y:p[i].y+ny*(half-4) });
+      rv.rightIn.push({ x:p[i].x-nx*(half-4), y:p[i].y-ny*(half-4) });
     }
-    rv.poly = rv.left.concat(rv.right.slice().reverse());
+    // The mouths were cut square, which put the only hard corners in the whole
+    // shape at both ends of it. Rounding them is also the shape inRiver has
+    // always tested — pointSegDist against the centreline is a capsule, round
+    // ends and all — so the water you can see is now the water you can wade in.
+    rv.poly = rv.left
+      .concat(capPoints(p[p.length-1], n1x, n1y, half, 0))
+      .concat(rv.right.slice().reverse())
+      .concat(capPoints(p[0], n0x, n0y, half, Math.PI));
     let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
     for(const q of rv.poly){ x0=Math.min(x0,q.x); y0=Math.min(y0,q.y); x1=Math.max(x1,q.x); y1=Math.max(y1,q.y); }
     rv.cx=(x0+x1)/2; rv.cy=(y0+y1)/2; rv.ext=Math.max(x1-x0,y1-y0)/2+40;
     return rv;
+  }
+  // A lake reads better than a river did, and the reason is its middle: one
+  // radial gradient carries it from a deep core out to a shallow rim, so there
+  // is no line anywhere you can point at. A river was two hard concentric
+  // strokes over a flat fill — three flat colours with two visible seams. It
+  // cannot use a gradient, because a gradient has a centre and a river bends,
+  // so it walks the same ramp the lake's gradient walks, across the channel
+  // instead of around a point. u is 1 at the bank and 0 in the deepest thread.
+  function mixHex(a, b, t){
+    const A = parseInt(a.slice(1),16), B = parseInt(b.slice(1),16);
+    const r = Math.round((A>>16)    + ((B>>16)    - (A>>16))*t);
+    const g = Math.round((A>>8&255) + ((B>>8&255) - (A>>8&255))*t);
+    const c = Math.round((A&255)    + ((B&255)    - (A&255))*t);
+    return 'rgb('+r+','+g+','+c+')';
+  }
+  function waterRamp(u){
+    return u >= 0.5 ? mixHex(WATER_MID, WATER_SHALLOW, (u-0.5)*2)
+                    : mixHex(WATER_DEEP, WATER_MID, u*2);
+  }
+  // The ramp as a stack of strokes, bank width down to a thread. Fourteen steps
+  // across a 150-unit channel is one step of colour every five units, which the
+  // eye reads as a gradient and not as bands — the two seams it replaces were
+  // 30 and 45 units apart. Widths and colours depend only on rv.w, so this is
+  // built once per river and then re-stroked against the cached Path2D.
+  // A lake's gradient runs from 0.06r to 1.15r, so its visible rim never gets
+  // all the way to WATER_SHALLOW and its core sits just short of WATER_DEEP —
+  // which is most of why a lake looks like water and not like a light blue
+  // shape. Walking the same stretch of the ramp, and not the whole of it, is
+  // what puts a river's banks the colour a lake's shore is.
+  const RIVER_BANDS = 14;
+  const RIVER_EDGE = 1/1.15, RIVER_CORE = 0.06/1.15;
+  function riverBands(rv){
+    if(rv._bands) return rv._bands;
+    const out = [];
+    for(let i=1;i<=RIVER_BANDS;i++){
+      const u = 1 - i/(RIVER_BANDS+1);
+      out.push({ lw: rv.w*u, col: waterRamp(RIVER_CORE + u*(RIVER_EDGE-RIVER_CORE)) });
+    }
+    rv._bands = out;
+    return out;
+  }
+  // Arc lengths, so something travelling the river moves at a steady speed
+  // instead of hurrying through the short segments and dawdling in the long
+  // ones. riverAt returns the point a fraction of the way down and the unit
+  // tangent there; the normal is (-ty, tx).
+  function riverArc(rv){
+    if(rv._arc) return rv._arc;
+    const p = rv.pts, cum = [0];
+    for(let i=1;i<p.length;i++)
+      cum.push(cum[i-1] + dist(p[i-1].x, p[i-1].y, p[i].x, p[i].y));
+    rv._arc = { cum, len: cum[cum.length-1] || 1 };
+    return rv._arc;
+  }
+  function riverAt(rv, t){
+    const a = riverArc(rv), p = rv.pts;
+    const s = Math.max(0, Math.min(a.len, t*a.len));
+    let i = 1;
+    while(i < a.cum.length-1 && a.cum[i] < s) i++;
+    const seg = a.cum[i]-a.cum[i-1] || 1, f = (s-a.cum[i-1])/seg;
+    const A = p[i-1], B = p[i];
+    return { x: A.x+(B.x-A.x)*f, y: A.y+(B.y-A.y)*f,
+             tx: (B.x-A.x)/seg,  ty: (B.y-A.y)/seg };
+  }
+  // Which way the water is going. The old answer was a dashed line down the
+  // centre — 120-unit dashes 30 units thick — and at that size you read the
+  // dashes, not the current. These are small instead, and there are a lot of
+  // them: specks scattered across the whole channel, quicker mid-stream than at
+  // the banks, swaying a little as they go, each fading in and out over its
+  // stretch so none of them pops into being. Each is drawn twice, a wide faint
+  // halo under a thin core, which is what stops a two-pixel mark reading as a
+  // scratch. The river is cut into stretches and the specks shared out between
+  // them, so a long river carries the cue along its whole length rather than
+  // only where one loop happens to be.
+  const FLOW_N = 104;         // specks per river
+  const FLOW_STRETCH = 8;     // stretches they are shared out between
+  const FLOW_SPEED = 64;      // units a second, mid-stream
+  function hash1(n){ const s = Math.sin(n*127.1)*43758.5453; return s - Math.floor(s); }
+  function drawFlow(rv, now){
+    const half = rv.w*0.5, seg = 1/FLOW_STRETCH;
+    const trip = riverArc(rv).len/FLOW_SPEED;
+    for(let i=0;i<FLOW_N;i++){
+      const r1 = hash1(i+1), r2 = hash1(i+31.4), r3 = hash1(i+77.7);
+      const u  = (r1*2-1)*0.82;                     // where across the channel
+      const sp = 0.42 + 0.58*(1-u*u) + r2*0.14;     // mid-stream runs faster
+      const ph = ((now/trip)*sp*FLOW_STRETCH + r3) % 1;
+      const q  = riverAt(rv, (i % FLOW_STRETCH)*seg + ph*seg);
+      const off = u*half + Math.sin(now*0.5 + i*1.7)*half*0.03;
+      const x = q.x - q.ty*off, y = q.y + q.tx*off;
+      const L = rv.w*(0.09 + 0.07*r2)*(0.5 + sp*0.5);
+      const a = Math.sin(Math.PI*ph) * (0.36 + 0.64*(1-Math.abs(u)));
+      // Halo over the whole streak, core over the leading half: the speck ends
+      // up with a bright head and a tail that thins out behind it, which is the
+      // shape that says which way it is going without anything drawing an arrow.
+      ctx.beginPath();
+      ctx.moveTo(x - q.tx*L, y - q.ty*L); ctx.lineTo(x, y);
+      ctx.strokeStyle = 'rgba(255,255,255,'+(a*0.14).toFixed(3)+')';
+      ctx.lineWidth = 1.8 + 3.6*r2; ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - q.tx*L*0.55, y - q.ty*L*0.55); ctx.lineTo(x, y);
+      ctx.strokeStyle = 'rgba(255,255,255,'+(a*0.44).toFixed(3)+')';
+      ctx.lineWidth = 1.0 + 1.2*r2; ctx.stroke();
+    }
   }
   // The signature cue: two crossing families of wavy light lines. Drawn as
   // repeating patterns rather than live strokes — stroking these cost ~33,000
@@ -7077,25 +7319,27 @@ window.addEventListener('DOMContentLoaded', function(){
       const rpath = riverPath(rv), rpoly = polyPath(rv.poly);
       ctx.lineWidth = rv.w+30; ctx.strokeStyle = WATER_SAND; ctx.stroke(rpath);
       ctx.fillStyle = WATER_SHALLOW; ctx.fill(rpoly);
-      ctx.lineWidth = rv.w*0.78; ctx.strokeStyle = WATER_MID;  ctx.stroke(rpath);
-      ctx.lineWidth = rv.w*0.4;  ctx.strokeStyle = WATER_DEEP; ctx.stroke(rpath);
 
+      // Clipped to the shoreline like a lake's gradient is, so the deep water
+      // stops where the bank does instead of a round cap poking past the mouth.
       ctx.save(); ctx.clip(rpoly);
+      for(const b of riverBands(rv)){
+        ctx.lineWidth = b.lw; ctx.strokeStyle = b.col; ctx.stroke(rpath);
+      }
       drawCaustics(visibleBox(rv.cx-rv.ext, rv.cy-rv.ext, rv.cx+rv.ext, rv.cy+rv.ext), now, 0.8);
-      ctx.setLineDash([120,150]); ctx.lineDashOffset = -now*52;
-      ctx.strokeStyle='rgba(255,255,255,.17)'; ctx.lineWidth=rv.w*0.2;
-      ctx.stroke(rpath);
-      ctx.setLineDash([]);
+      drawFlow(rv, now);
       ctx.restore();
 
-      drawFoam(rv.left, now, 1.2, 4.5, 0.42);
-      drawFoam(rv.right, now, 3.4, 4.5, 0.42);
+      drawFoam(rv.leftIn, now, 1.2, 5, 0.5);
+      drawFoam(rv.rightIn, now, 3.4, 5, 0.5);
       ctx.lineWidth = 3; ctx.strokeStyle = WATER_LINE; ctx.stroke(rpoly);
-      for(let i=0;i<5;i++){
-        const t = ((now*0.05 + i/5) % 1);
-        const k = Math.min(rv.pts.length-1, Math.floor(t*(rv.pts.length-1)));
+      // Scattered across the channel rather than filed down the centreline —
+      // seven in a row down the middle was the one place a lake never puts them.
+      for(let i=0;i<7;i++){
+        const q = riverAt(rv, (now*0.05 + i/7) % 1);
+        const off = (hash1(i*3.7+2)*2-1)*rv.w*0.34;
         const tw = 0.5+0.5*Math.sin(now*2.4 + i*2.1);
-        drawGlintStar(rv.pts[k].x, rv.pts[k].y - rv.w*0.18, 2.5+tw*3, tw*0.6);
+        drawGlintStar(q.x - q.ty*off, q.y + q.tx*off, 2.5+tw*3, tw*0.6);
       }
     }
 
@@ -9322,7 +9566,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(tut.on) tutNote('skill', h.type);
     }
     const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const spd = heroSpeed(h);
+    const spd = heroSpeed(h, dx, dy);          // the keys say which way: the current can read them
     const tvx=(dx/len)*spd, tvy=(dy/len)*spd;
     h.vx += (tvx-h.vx)*Math.min(1,dt*12);
     h.vy += (tvy-h.vy)*Math.min(1,dt*12);
@@ -9587,7 +9831,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function moveHeroTowardRaw(h,tx,ty,speed,dt){
     const dx=tx-h.x, dy=ty-h.y; const len=Math.sqrt(dx*dx+dy*dy)||1;
     if(len < 3) return;                       // already there; do not twitch
-    const step=Math.min(len, speed*dt);
+    const step=Math.min(len, speed*flowAssist(h.x,h.y,dx,dy)*dt);
     h.x += dx/len*step; h.y += dy/len*step;
     h.x=Math.min(WORLD_W-h.r-6,Math.max(h.r+6,h.x));
     h.y=Math.min(WORLD_H-h.r-6,Math.max(h.r+6,h.y));
@@ -10050,7 +10294,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(tgt){
         const td = dist(c.x,c.y,tgt.x,tgt.y);
         if(td > c.r + tgt.r + 4 && !isStunned(c)){
-          const cs = CREEP_SPEED*(inRiver(c.x,c.y)?WATER_SLOW:1)*dt;
+          const cs = CREEP_SPEED*wadeMul(c.x,c.y,tgt.x-c.x,tgt.y-c.y)*dt;
           c.x += (tgt.x-c.x)/td*cs;
           c.y += (tgt.y-c.y)/td*cs;
         }
@@ -10066,7 +10310,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const dx = (wp.x - (sy/sl)*off) - c.x, dy = (wp.y + (sx/sl)*off) - c.y;
       const d = Math.sqrt(dx*dx+dy*dy) || 1;
       if(d < 30 && c.wp < c.path.length-1){ c.wp++; continue; }
-      const cs = CREEP_SPEED*(inRiver(c.x,c.y)?WATER_SLOW:1)*dt;
+      const cs = CREEP_SPEED*wadeMul(c.x,c.y,dx,dy)*dt;
       if(isStunned(c)) continue;      // frozen: no advance, no chase
       c.x += dx/d*cs;
       c.y += dy/d*cs;
@@ -11709,6 +11953,13 @@ window.addEventListener('DOMContentLoaded', function(){
     const p = TUT_ROUTE[i];
     return { x:p.x, y:p.y, r:72, hit:false };
   }
+  // Where the two rings on the way to the camp sit, as fractions of the river's
+  // length: one above where the walking step had you cross it, one level with
+  // the camp. About nine hundred units of downstream in between — long enough to
+  // feel the push, short enough that the detour does not outstay its lesson.
+  // Two is enough because the tutorial's river keeps its meander inside its own
+  // banks; a river that snaked further than that would need one per bend.
+  const TUT_CAMP_RUN = [0.14, 0.88];
 
   // A forest mob, not a lane creep. 70 health against a lane creep's 320, so a
   // blink — 150 at level one — kills one outright, which is the thing step 3 is
@@ -11946,8 +12197,24 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'The forest',
-    text:()=>'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. Follow the line.',
-    goal:()=>'Clear the marked camp',
+    // Three legs, and the card changes with each one. The camp is east of the
+    // river and near the bottom of it, so the way there can be routed up the
+    // bank, into the water, and down the whole length of the run before it turns
+    // east — which is the only way a player finds out that water has a direction
+    // without being told to go and stand in some for no reason. It is a detour,
+    // not a shortcut, and the copy says so.
+    text(){
+      const leg = tut.p.leg || 0;
+      if(leg === 1) return 'Water runs one way, and this river runs <b>south</b> &mdash; the specks drifting on the surface are going where it is going. Go <b>with</b> it, down to the next ring, and it carries you at <b>half again</b> your speed. Fight it or cut across it and you are wading at two thirds, which is what you did on the way in. Follow the bend round as it turns: the push is only there while you are pointed the way the water is.';
+      if(leg >= 2) return 'Out of the water and <b>east</b>. The camp is in the trees: <b>neutral</b>, soft, worth experience, and ringed thickly enough that you will not see it until you are in it.';
+      return 'Now the woods. Trees block movement, shots and sight &mdash; your heroes, your creeps and your towers share one pool of vision and everything outside it is fog, which cuts both ways. In the corridor between the lanes sit <b>neutral camps</b>: soft, worth experience, ringed by trees so you cannot see one until you walk in. The line goes by way of the river, which is the long way round and worth walking once.';
+    },
+    goal(){
+      const leg = tut.p.leg || 0;
+      if(leg === 0) return 'Wade into the river';
+      if(leg < TUT_CAMP_RUN.length) return 'Ride the current downstream';
+      return 'Clear the marked camp';
+    },
     enter(){
       // The jungle has been empty until now on purpose. This is the step that
       // stocks it, so the first forest mob you meet is one you were sent to.
@@ -11960,6 +12227,37 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const c of camps){ const d = dist(h.x,h.y,c.x,c.y); if(c.alive>0 && d<bd){ bd = d; best = c; } }
       tut.p.camp = best;
       if(best) tut.mark = { x:best.x, y:best.y, r:110, col:'#8CE39B', label:'CAMP', mini:true };
+      tut.p.leg = 0;
+      // Placed off the river's own centreline rather than at a guessed x, so
+      // they sit in the channel wherever the wobble has put it, and a hero who
+      // walks into one is standing in the water by construction.
+      tut.rings = [];
+      const rv = rivers[0];
+      // The flow tangent rides along with each ring, so the tick below can tell
+      // when the current has carried you past one rather than only when you
+      // have walked into the middle of it.
+      if(rv) for(const t of TUT_CAMP_RUN){
+        const q = riverAt(rv, t);
+        tut.rings.push({ x:q.x, y:q.y, r:70, hit:false, tx:q.tx, ty:q.ty });
+      }
+    },
+    tick(){
+      const h = tutHero(), r = tut.rings[0];
+      if(!h || !r) return;
+      // Either walk into it, or be in the water and let the current carry you
+      // past it. You come at the first ring from the bank, so you clip its edge
+      // rather than its middle, and then ride the channel a half-width off the
+      // line the rings sit on — doing exactly what was asked while missing the
+      // next circle down one side. A waypoint that punishes that teaches the
+      // player to distrust the line.
+      const past = r.tx !== undefined && inRiver(h.x, h.y) &&
+                   (h.x - r.x)*r.tx + (h.y - r.y)*r.ty > 0;
+      if(past || dist(h.x,h.y,r.x,r.y) < r.r){
+        addPing(r.x, r.y, '#8CE39B', 20, 84, 0.5);
+        tut.rings.shift();
+        tut.p.leg = (tut.p.leg||0) + 1;
+        tutPaint();                      // the card says something new each leg
+      }
     },
     done(){
       const c = tut.p.camp;
@@ -12633,7 +12931,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // back with getImageData would also force it, and would cost the canvas
       // its hardware acceleration for the rest of the match, so draw instead.
       ctx.drawImage(bgCanvas, 0, 0, 1, 1, 0, 0, 1, 1);
-      for(const rv of rivers){ const r = riverPoly(rv); riverPath(r); polyPath(r.poly); }
+      for(const rv of rivers){ const r = riverPoly(rv); riverPath(r); polyPath(r.poly); riverBands(r); riverArc(r); }
       for(const l of lakes){ lakePath(l, 15); lakePath(l, 0); lakePath(l, -4); }
     }
     catch(err){ console.error('warmRoundCaches failed', err); }
