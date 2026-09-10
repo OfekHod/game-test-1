@@ -4065,6 +4065,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const TREE_BLOCK_FACTOR = 0.8;
   const TREE_COLLIDE_FACTOR = 0.62;
   const HERO_VISION = 700, CREEP_VISION = 380, TOWER_VISION = 520;
+  // The tank's shell scouts on its way out, a little wider than a creep. It has
+  // to: at 1400 units the throw crosses ground nothing on the team is standing
+  // in, and the camera rides it there, so without a light of its own the view
+  // pans out over fog and the shot is aimed blind. Wider than a creep because
+  // the shell is the middle of the screen while it flies, and a bubble smaller
+  // than the view reads as a hole rather than as sight.
+  const ROCKET_VISION = 420;
 
   const HP_COLOR = '#E8453C';
   const HP_LOST_COLOR = 'rgba(255,216,172,.92)';
@@ -4758,6 +4765,17 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const h of playerTeam){ if(h.alive) addVisionSource(h.x, h.y, HERO_VISION); }
     for(const c of allyCreeps) addVisionSource(c.x, c.y, CREEP_VISION);
     for(const t of playerTowers){ if(t.hp>0) addVisionSource(t.x, t.y, TOWER_VISION); }
+    // A shell in the air is one more thing the team can see out of, so it lights
+    // the ground it crosses and the fog closes behind it. Only a hero's: a tower
+    // fires one a second at something it can already see, and flashing every lane
+    // open sixty times a minute is noise rather than information.
+    for(const p of projectiles){
+      if(p.isRocket && p.owner === 'player' && p.attacker) addVisionSource(p.x, p.y, ROCKET_VISION);
+    }
+    // The camera holds on the blast for a beat after the shell has gone. The
+    // light has to stay for exactly that beat too, or the explosion you were
+    // kept there to watch goes off inside fog that closed a frame too early.
+    if(rocketCamTail && rocketCamHold > 0) addVisionSource(rocketCamTail.x, rocketCamTail.y, ROCKET_VISION);
   }
   // Pure draw-time reject. Anything outside the camera box gets clipped by the
   // canvas anyway, so testing it against every vision source first is wasted
@@ -5442,7 +5460,7 @@ window.addEventListener('DOMContentLoaded', function(){
       + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Grows every level.</i>';
     if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast. '
       + 'Whatever it catches is frozen, and while it is frozen everything you land on it hits for double. '
-      + 'The camera rides the shell out and comes back where it lands. Press the skill again while it is still in the air and it goes off there and then, for free &mdash; the only way to catch something that has moved since you fired.<br><i>'
+      + 'The shell sees for you on the way out and the camera rides along with it, coming back where it lands. Press the skill again while it is still in the air and it goes off there and then, for free &mdash; the only way to catch something that has moved since you fired.<br><i>'
       + Math.round(heroRocketDmg(h))+' damage (grows every level) in a '+ROCKET_SPLASH_RADIUS+' radius &middot; '
       + ROCKET_TRAVEL_MAX+' range &middot; '
       + STUN_TIME.toFixed(0)+'s stun, x'+STUN_DMG_MULT+' damage taken &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown</i>';
