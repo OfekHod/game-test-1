@@ -2795,6 +2795,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // Everything dropped rots. Loot you walked past is gone, so collecting is a
   // decision with a clock on it rather than a pile you sweep up later.
   const ORB_TTL = 15;
+  // What a dropped orb offers the eye. A coin is drawn COIN_DRAW wide, so half
+  // of that is the radius the fog and the trees are asked about: an orb with a
+  // sliver showing past a trunk still counts as seen.
+  const ORB_SIGHT_R = 12;
   // Doubled. Levels are what make a hero resilient enough to push, and the old
   // income left everyone three levels short of that.
   const XP_SMALL_CREEP = 6;
@@ -8139,8 +8143,13 @@ window.addEventListener('DOMContentLoaded', function(){
     p.trailT = (p.trailT||0) - dt;
     if(p.trailT <= 0){
       p.trailT = 0.055;
+      // The trail is the orb's position written in sparks, so it hides with the
+      // orb. The spark is still MADE, and made out of the same two rand() calls
+      // it always was — deciding here would put the player's fog inside the
+      // shared random sequence the damage rolls and the simulation run off, and
+      // sim/stub.js has no vision at all. It is the drawing that is skipped.
       particles.push({ x:p.x, y:p.y, vx:rand(-8,8), vy:rand(-14,-2),
-        life:0, maxLife:0.3, color:p.trailCol||'#FFE9A6' });
+        life:0, maxLife:0.3, color:p.trailCol||'#FFE9A6', loot:true });
     }
     return dd < PICKUP_COLLECT_RADIUS ? h : null;
   }
@@ -10383,6 +10392,25 @@ window.addEventListener('DOMContentLoaded', function(){
       h.lookY = isCarryAI&&enemyLookTarget ? enemyLookTarget.y : h.y;
       ground.push({ y:h.y, k:4, o:h, a:HERO_STATS[h.type].colorEnemy, b:true });
     }
+    // Loot hides the way a hero does, and for the same two reasons. The foliage
+    // has to actually BE in front of it: a coin lands at the foot of its own
+    // sprite like everything else on the field, so it sorts by y with the
+    // trees, the bushes and the rocks and goes behind the leaves it is behind.
+    // And what your side has no eyes on is not drawn at all — a coin sitting in
+    // the fog, or on the far side of a trunk, is not readable off the screen.
+    // The orb is still there either way: it rots on the same clock and is still
+    // yours the moment you walk into it. Finding it is the part that is now
+    // scouting. The tutorial needs no exception — its arena is already fenced
+    // against trees by over half a hero's vision (docs/TUTORIAL.md), so nothing
+    // there can cut the fog across the step that counts your pickups.
+    for(const c of xpOrbs){
+      if(!onScreen(c.x,c.y,30) || !isVisible(c.x,c.y,ORB_SIGHT_R)) continue;
+      ground.push({ y:c.y, k:5, o:c, b:false });
+    }
+    for(const m of manaOrbs){
+      if(!onScreen(m.x,m.y,30) || !isVisible(m.x,m.y,ORB_SIGHT_R)) continue;
+      ground.push({ y:m.y, k:5, o:m, b:true });
+    }
     ground.sort(byGroundY);
     for(const e of ground){
       const o = e.o;
@@ -10390,6 +10418,7 @@ window.addEventListener('DOMContentLoaded', function(){
       else if(e.k===1) drawDecor(ctx, o);
       else if(e.k===2) drawTower(o, e.a, e.b);
       else if(e.k===3) drawCreep(o, e.a, e.b);
+      else if(e.k===5){ if(e.b) drawManaOrb(o); else drawXpOrb(o); }
       else {
         drawHeroGhosts(o);
         drawHeroBody(o, e.a, e.b);
@@ -10415,9 +10444,6 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawLevelFxFront();
     drawFireBlasts();
-
-    for(const c of xpOrbs){ if(onScreen(c.x,c.y,30)) drawXpOrb(c); }
-    for(const m of manaOrbs){ if(onScreen(m.x,m.y,30)) drawManaOrb(m); }
 
     // A tracer drawn back along the velocity vector, not a string of stale dots.
     // It is continuous at any speed and any frame rate, because the length comes
@@ -10468,6 +10494,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     drawEmbers();
     for(const pt of particles){
+      if(pt.loot && !isVisible(pt.x,pt.y,4)) continue;   // a hidden coin's trail
       const a=1-pt.life/pt.maxLife;
       ctx.beginPath(); ctx.arc(pt.x,pt.y,4*a,0,7);
       ctx.fillStyle=pt.color; ctx.globalAlpha=a; ctx.fill(); ctx.globalAlpha=1;
