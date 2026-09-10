@@ -4910,13 +4910,26 @@ window.addEventListener('DOMContentLoaded', function(){
       fctx.save();
       fctx.globalAlpha = fade;
       fctx.fillStyle = '#ffffff';
+      // Two circles, ONE path and ONE fill: the mask is composited with
+      // 'lighter', so filling them separately would add the overlap to itself
+      // and leave a brighter lens down the trunk wherever fade is under 1.
+      fctx.beginPath();
       // The canopy stands ABOVE the trunk now, so the disc is the canopy's own
       // circle rather than a ring around t.r — but it is still cut a little
       // tighter than the leaves for the reason written above, so the wedge is
       // only ever seen coming out from behind them.
-      fctx.beginPath();
-      fctx.arc(t.x, t.y + t.r*TREE_SINK - t.dh*0.46,
-               Math.max(t.r, t.dw*0.5)*TREE_RELIT_R, 0, 7);
+      const cy = t.y + t.r*TREE_SINK - t.dh*0.46;
+      const cdr = Math.max(t.r, t.dw*0.5)*TREE_RELIT_R;
+      fctx.moveTo(t.x + cdr, cy);
+      fctx.arc(t.x, cy, cdr, 0, 7);
+      // And the foot it stands on. The canopy disc sits well clear of the
+      // ground, so on a tree lit from the north the wedge's apex landed across
+      // the wood of the trunk — the one place a tree's own shadow can never
+      // be. Lighting the blocking circle as well starts the wedge at the
+      // silhouette the tree actually casts from, so it comes out from behind
+      // the trunk instead of over it.
+      fctx.moveTo(t.x + cr, t.y);
+      fctx.arc(t.x, t.y, cr, 0, 7);
       fctx.fill();
       fctx.restore();
     }
