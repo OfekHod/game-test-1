@@ -42,24 +42,39 @@ four, and each shows as four letters under the hero's portrait:
 | `YOU` | the hero you are driving |
 
 Orders are given by dragging a hero — from his body on the field or from his
-portrait — with the right mouse button, or with a finger on touch. Where he
-lands decides which order it is: a half of the minimap is a lane, a team-mate is
-an escort, open ground is a posting.
+portrait — with either mouse button, or with a finger on touch. Where he lands
+decides which order it is: a half of the minimap is a lane, a team-mate is an
+escort, open ground is a posting.
+
+The left button is also the trigger, so a left press on a hero only becomes an
+order once it travels 16 screen pixels; short of that it is the shot it always
+was, and the hero you are DRIVING cannot be picked up with it at all — he stands
+under the cursor in every brawl. Use his portrait or a right-drag for him. The
+right button has no such conflict and grabs any hero at once.
 
 **Taking a hero over cancels his order.** Focus him and the walk, the lane and
 the dotted line all end there; switch away again and he holds that ground rather
 than resuming a march you had forgotten about. An assembled squad is the one
 order that survives a switch, because it re-forms on whoever you pick up.
 
+## Your base
+
+Standing inside your own base's ring — the faint circle its tower draws on the
+field — mends you three times as fast, health and mana both. Nowhere else on the
+map does, so a hero on a sliver walks home rather than dying to the next wave.
+While you are inside it the HPR and MPR buttons on the stat strip turn green and
+show the rate you are actually regenerating at.
+
 ## Chopping
 
 Point the tank at a tree with nothing hostile in front of him and swing: three
 hits fell it. From the first hit the tree wears what is left of the three as a
-bar; on the third it goes over away from him and leaves a stump and three logs.
-Walk over the logs and the wood is banked.
+bar; on the third it throws three logs clear and goes over away from him,
+leaving a stump. The logs arc out, land, and are yours a moment after the tree
+has finished falling.
 
-There is nothing to spend it on yet and nothing on screen that shows the count.
-The wood is kept so that there is something to build with when there is
+There is nothing to spend the wood on yet and nothing on screen that shows the
+count. It is kept so that there is something to build with when there is
 something to build.
 
 A swing looks at trees LAST — after enemy heroes, after creeps, after buildings
