@@ -6583,8 +6583,17 @@ window.addEventListener('DOMContentLoaded', function(){
     // Five frames a step means both legs come round twice before the loop
     // repeats, so 20 x 16 is a step every 80 world units -- the same step every
     // other hero takes -- at 8.8 frames a second.
+    // The sheet is twenty frames of walk and nothing else, so standing still
+    // held him on walk frame 0 -- the full stride, legs at their widest, the
+    // one pose in the cycle that reads as neither walking nor standing. `breath`
+    // is the idle block he never came with, baked out of the walk at load; see
+    // bakeBreath for what it does and why the numbers are what they are.
+    // Twelve frames at 3.6fps is a breath every 3.3 seconds, which is what a man
+    // standing still breathes at.
     carry:   { w:128, h:118, walk:20, atk:0, scale:4.834, foot:0.95, dirs:2, stride:16,
-               bob:2.5, bobSteps:4, enemyWash:'#FF9A88' },
+               bob:2.5, bobSteps:4, enemyWash:'#FF9A88',
+               idle:12, idleFps:3.6,
+               breath:{ from:4, rise:44, hip:88, lift:3.2, sway:0.9 } },
     // The tank is a horned Viking behind a round shield: five drawings of a
     // run, five of an axe swing, five of him standing there breathing, in that
     // order across one row of the sheet.
@@ -6659,19 +6668,128 @@ window.addEventListener('DOMContentLoaded', function(){
   // One sheet per hero type, plus a red repaint for the enemy copy and a white
   // silhouette for the hit flash. Both sides field the same three heroes now,
   // so colour is the only thing telling them apart.
+  // An idle for a sheet that shipped without one, baked out of its own walk.
+  //
+  // `from` is the walk frame that becomes the stand, and no frame of a walk
+  // actually is one. A cycle puts both boots on the ground only at full stride,
+  // and every frame where the feet come together has one of them in the air --
+  // that is what walking IS. So the two obvious picks are both wrong, and
+  // wrong in opposite directions: the widest frame is the splayed stride he was
+  // stuck in to begin with, and the narrowest are passing poses, standing him
+  // on one leg with the other knee thrown forward of its own boot.
+  //
+  // What picks the frame is the SOLES, not the boots: how many columns of each
+  // foot lie flat on the floor, within a pixel of the lowest row he reaches. By
+  // that measure the sheet has exactly one frame that could be a stand. Frame 4
+  // puts both soles down -- sixteen columns of the back one and eight of the
+  // front -- nine pixels apart, and the two legs stay a single silhouette all
+  // the way to the ankles, which is what a man standing side-on looks like. A
+  // foot that is merely NEAR the floor is not the same thing and does not read
+  // the same: frame 2's back boot is two pixels up, and those two pixels are a
+  // heel raised behind him, mid push-off.
+  // Standing is not standing still, though, so the stand is breathed.
+  //
+  // A breath is NOT a bob. Lifting the whole sprite slides his boots over the
+  // ground he is standing on; what a chest does is rise while the feet stay put.
+  // So the lift is a function of height up the cell rather than a constant:
+  // everything above `rise` — head, shoulders, arms, the rifle they hold — moves
+  // as one piece, nothing at or below `hip` moves at all, and the belt in
+  // between takes up the difference by stretching. Three source pixels spread
+  // over the forty-four between them is a 7% stretch at the waist and nothing
+  // an eye reads as a rubber man.
+  //
+  // `lift` is measured against the art it stands next to rather than guessed.
+  // The tank's hand-drawn idle carries the top of his helmet through 1.3 world
+  // units; 3.2 source pixels is 2.4, which is the right side of it — a warp
+  // moves a whole body smoothly where a drawing also swings an axe, so it needs
+  // a little more travel to say the same thing.
+  //
+  // `sway` is the same ramp applied sideways and a quarter cycle ahead of the
+  // lift, so he rises as he comes forward and settles as he goes back. That
+  // phase is the whole difference between a man shifting his weight and a
+  // sprite being pumped up and down. It is signed by ROW, not by column: row 1
+  // faces west, so forward for him is the other way.
+  //
+  // Sampling is bilinear on PREMULTIPLIED alpha. Interpolating straight RGBA
+  // across the sprite's edge mixes the colour of transparent pixels into it,
+  // and this art is cut out against black — every silhouette edge would come
+  // back with a dark fringe on the frames the offsets are fractional.
+  function bakeBreath(img, def, spec){
+    const cw = def.w, ch = def.h, n = def.idle, cols = def.walk + def.atk;
+    const rows = Math.round((img.naturalHeight || img.height)/ch);
+    const cv = document.createElement('canvas');
+    cv.width = (cols + n)*cw; cv.height = rows*ch;
+    const c = cv.getContext('2d');
+    c.drawImage(img, 0, 0);
+    // How much of the movement each row of the cell takes: 1 above the ribs,
+    // 0 from the hip down, smoothstepped between so nothing shears.
+    const ramp = new Array(ch);
+    for(let y=0;y<ch;y++){
+      const t = (spec.hip - y)/(spec.hip - spec.rise);
+      ramp[y] = t<=0 ? 0 : t>=1 ? 1 : t*t*(3-2*t);
+    }
+    let src;
+    try {
+      src = [];
+      for(let r=0;r<rows;r++) src.push(c.getImageData(spec.from*cw, r*ch, cw, ch));
+    } catch(e){
+      // Canvas read blocked. Better a frozen stand than an index off the end of
+      // the sheet, so give the idle block up and let heroFrame fall back to it.
+      def.idle = 0;
+      return null;
+    }
+    for(let r=0;r<rows;r++){
+      const sp = src[r].data, sgn = r ? -1 : 1;
+      for(let k=0;k<n;k++){
+        const p = k/n;
+        const lift = -spec.lift*(1-Math.cos(p*Math.PI*2))/2;
+        const sway = spec.sway*Math.sin(p*Math.PI*2)*sgn;
+        const out = c.createImageData(cw, ch), op = out.data;
+        for(let y=0;y<ch;y++){
+          const fy = y - lift*ramp[y], dx = -sway*ramp[y];
+          const y0 = Math.floor(fy), wy = fy - y0;
+          for(let x=0;x<cw;x++){
+            const fx = x + dx, x0 = Math.floor(fx), wx = fx - x0;
+            let rr=0, gg=0, bb=0, aa=0;
+            for(let j=0;j<2;j++){
+              const py = y0+j; if(py<0 || py>=ch) continue;
+              const wj = j?wy:1-wy; if(wj<=0) continue;
+              for(let i=0;i<2;i++){
+                const px = x0+i; if(px<0 || px>=cw) continue;
+                const w = wj*(i?wx:1-wx); if(w<=0) continue;
+                const o = (py*cw+px)*4, al = sp[o+3]/255;
+                rr += sp[o]*al*w; gg += sp[o+1]*al*w; bb += sp[o+2]*al*w; aa += al*w;
+              }
+            }
+            if(aa > 0.0015){
+              const o = (y*cw+x)*4;
+              op[o] = rr/aa; op[o+1] = gg/aa; op[o+2] = bb/aa; op[o+3] = aa*255;
+            }
+          }
+        }
+        c.putImageData(out, (cols+k)*cw, r*ch);
+      }
+    }
+    return cv;
+  }
   function loadHeroSheet(type, url){
     const def = heroSheets[type];
     const img = new Image();
     def.ready = false;
     img.onload = ()=>{
-      def.player = img;
-      def.enemy  = recolorSheet(img, 358, 0.9, 0.98, 0, 360);
+      // Everything below works off the BAKED sheet, not the file: the enemy
+      // repaint and the hit flash have to carry the idle cells too, or the carry
+      // would stand there breathing on your side of the river and freeze on the
+      // far one, and go back to the stride every time he was shot.
+      const sheet = (def.breath && bakeBreath(img, def, def.breath)) || img;
+      def.player = sheet;
+      def.enemy  = recolorSheet(sheet, 358, 0.9, 0.98, 0, 360);
       // recolorSheet only touches saturated pixels, so a hero whose armour is
       // grey comes back looking exactly like the player's copy. `enemyWash`
       // multiplies a red over the whole cell — shading survives, the side does
       // not stay ambiguous.
-      if(def.enemyWash) def.enemy = washSheet(def.enemy, img, def.enemyWash);
-      def.flash  = tintSheet(img, '#ffffff', 1);
+      if(def.enemyWash) def.enemy = washSheet(def.enemy, sheet, def.enemyWash);
+      def.flash  = tintSheet(sheet, '#ffffff', 1);
       def.ready  = true;
     };
     img.src = url;
@@ -6748,9 +6866,12 @@ window.addEventListener('DOMContentLoaded', function(){
   const MOB_DIE_TIME = 0.6, MOB_CORPSE_HOLD = 0.15, MOB_CORPSE_FADE = 0.5;
   // One grey sheet, washed per team at load. Without this both sides would
   // be the same monster and the lane would be unreadable.
+  // `img` is an Image for a sheet used as it shipped and a CANVAS for one that
+  // was built at load — a baked idle block, say — so the size comes from
+  // whichever pair of properties the source happens to carry.
   function tintSheet(img, color, alpha){
     const cv = document.createElement('canvas');
-    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height;
     const c = cv.getContext('2d');
     c.drawImage(img,0,0);
     c.globalCompositeOperation = 'source-atop';
@@ -6788,7 +6909,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function recolorSheet(img, hue, satMul, lightMul, hueLo, hueHi){
     const cv = document.createElement('canvas');
-    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height;
     const c = cv.getContext('2d');
     c.drawImage(img,0,0);
     try {
