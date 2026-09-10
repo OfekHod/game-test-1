@@ -14374,6 +14374,10 @@ window.addEventListener('DOMContentLoaded', function(){
       '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.',
       'The <k>square button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.'),
     goal:()=>'Kill this one with the blink alone',
+    // No take-over stage first — you are already driving him — so the arrow
+    // goes straight on the skill square, the same as the tank's rocket and
+    // the support's heal do once THEY reach their own skill stage.
+    hl:()=>tutSkillEl(),
     enter(){
       tut.noAuto = true;
       tut.p.spawn = ()=>{
@@ -14501,10 +14505,28 @@ window.addEventListener('DOMContentLoaded', function(){
         }
         tut.watch = p.pack;
         tutHighlight(null);        // a field problem, not a UI control to point at
+        // Taking the tank over just reassigned the other two to follow him —
+        // squadTogether does that on every switch, on purpose, so your squad
+        // stays with whoever you drive. Here it means the carry closes in
+        // right along with you and clears the pack on his own ranged hits
+        // before "one at a time" ever lands. Hold them where they are instead;
+        // they rejoin once the lesson is over.
+        squadTogether = false;
+        for(const a of playerTeam){
+          if(a === tankH) continue;
+          a.mode = 'idle'; a.followTarget = null; a.moveTarget = null;
+        }
         tutPaint();
       }
       if(p.pack && !p.splashDone && !p.pack.some(tutAlive)){
         p.splashDone = true;
+        // Pack's down — let the squad close up again for the rest of the
+        // tutorial, same as the moment you first took the tank over.
+        squadTogether = true;
+        for(const a of playerTeam){
+          if(a === tankH) continue;
+          a.mode = 'follow'; a.followTarget = tankH; a.moveTarget = null;
+        }
         // Something for the rocket to land on. Two of them, close enough
         // together that the blast takes both, which is what the blast is for.
         const a = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE+0.22);
