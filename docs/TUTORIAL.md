@@ -73,9 +73,9 @@ Authoring the ground is what finally made the opening quiet.
 ## The steps
 
 Each step is one card, one thing to learn, one condition that clears it. The
-card never blocks play — it is transparent to input except its own buttons, so a
-tap that lands on it still shoots. Every step has **Skip step**, and **Exit**
-drops you back to the menu.
+card **folds**: what is on screen while you play is a title, one line of about
+twenty words, and the task. Tapping it unfolds the rest of the copy and the two
+controls — **Skip step**, and **Exit**, which drops you back to the menu.
 
 | # | Step | What comes on | Cleared by |
 |---|---|---|---|
@@ -366,7 +366,44 @@ the dock are laid out in percentages of a stage that resizes.
 
 **The card** is a DOM panel above the bottom dock — the dock's height is measured
 in JS, because the HUD is a percentage of a stage whose height nothing in CSS
-knows. World-space marks are drawn after the fog, on purpose: a mark is what you
+knows.
+
+**And it folds.** A card is a lead of about twenty words, and a tap unfolds the
+rest of it along with Skip step and Exit. On a phone that takes the tallest card
+from 26% of the screen to 12%, and the shortest from 21% to 15%; on a desktop
+from 202px to 75–94px. Four things it has to get right:
+
+- **The cut is made on parsed nodes, not on the string.** Cards carry markup, so
+  a substring lands inside a `<b>` as often as not. An inline run — `<b>double
+  damage</b>`, a `<k>W A S D</k>` — is taken whole rather than split, which
+  overshoots by a word or two and reads better for it.
+- **A full stop at or before the twenty-word mark wins.** Twenty words into the
+  Orders card ends the lead on "He holds", which reads as a bug rather than as a
+  fold. `tutLeadBudget` takes the last sentence ending at or before twenty words
+  (and at least nine in, or it is not a lead), and counts to twenty only when
+  there is none. Half the cards now end their lead on a full stop.
+- **Both passes have to count words the same way**, or they cut in different
+  places: the budget counts on the decoded text, where `orbs.` is one token,
+  while the split counts node by node, where the `.` after a `</b>` is a token
+  of its own. `TUT_WORD` is the shared rule — a token is a word if it holds a
+  letter or a digit, so a stray `.` and an `&mdash;` are neither.
+- **A card a few words over budget does not fold at all.** Hiding "shooting at
+  it." behind a tap buys no height and costs the reader the end of a sentence.
+
+What it cost: the card **used to be transparent to input**, so a tap that landed
+on it still shot. It has to swallow the tap now to be the thing you tap, and it
+stops the touch from also raising the movement stick underneath. Folded it is a
+third of the height it was, so it takes far less of the screen than it did — but
+a tap on it is a tap spent on the card. The step counter moved onto the title's
+line for the same reason: two lines of chrome over a two-line card is most of
+the card.
+
+Desktop aim had to be moved for it. `mouse.x/y` was set only by the canvas's own
+`mousemove`, so it froze wherever a panel swallowed the event — over the party
+chips and the dock already, and now over the card. The window-level `mousemove`
+sets it too, so aim follows the cursor everywhere.
+
+World-space marks are drawn after the fog, on purpose: a mark is what you
 are being sent to find, so it must not be hidden by the fact that you have not
 found it yet. They are sized in world units to match the damage numbers, the only
 other text out there that reads at a glance.
@@ -437,6 +474,11 @@ are all fixes to things that were broken in every mode:
   cares whether the hero actually walks.
 - **The arrow keys move your hero**, in every mode.
 - **The stun freezes**, in every mode — see above.
+- **Aim no longer freezes under a panel**, in every mode. `mouse.x/y` was set
+  only by the canvas's own `mousemove`, so the hero kept pointing where he was
+  pointing whenever the cursor crossed the party chips or the dock. The
+  window-level handler sets it too now. The folding card is what forced it: the
+  card sits bottom-centre and swallows its own events.
 - **A few short lines of trees stand in the Match map's corridor.** Three or four
   trunks with gaps narrower than a hero, so a chase or a retreat through the
   middle is a choice of side rather than a straight line. They are kept off the

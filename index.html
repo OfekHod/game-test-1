@@ -623,23 +623,35 @@
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
      height is measured in JS, because the HUD is a percentage of a stage whose
-     height nothing here knows. Transparent to input except its own buttons, so
-     a tap that lands on it still shoots. */
+     height nothing here knows.
+
+     It shows a twenty-word lead and nothing else; tapping it unfolds the rest
+     and the two controls. That costs it the one thing it used to have — it was
+     transparent to input, so a tap that landed on it still shoots — and buys
+     back much more than it costs, because folded it is a third of the height it
+     was. On a phone the card is the bottom of the screen. */
   .tutCard{position:absolute;left:50%;bottom:14px;z-index:6;width:min(560px,88%);
     background:rgba(74,52,22,.95);border:3px solid var(--panel-border);border-radius:14px;
-    padding:9px 14px 7px;color:#FFF3D6;font-size:13.5px;line-height:1.45;
-    box-shadow:0 10px 26px rgba(0,0,0,.35);pointer-events:none;
+    padding:7px 12px 6px;color:#FFF3D6;font-size:13.5px;line-height:1.4;
+    box-shadow:0 10px 26px rgba(0,0,0,.35);pointer-events:auto;cursor:pointer;
     opacity:0;transform:translate(-50%,10px);transition:opacity .22s ease,transform .22s ease;}
   .tutCard.show{opacity:1;transform:translate(-50%,0);}
   .tutCard.hidden{display:none;}
   .tutCard.touchPad{padding-right:98px;}
-  .tutStep{font:800 10px/1 monospace;letter-spacing:.7px;color:#D9A85C;}
-  .tutTitle{display:block;color:#FFD54F;font-size:16px;font-weight:800;margin:3px 0 2px;}
+  /* Step counter and title share a line: two lines of chrome over a two-line
+     card is most of the card. */
+  .tutHead{display:flex;align-items:baseline;gap:7px;}
+  .tutStep{font:800 10px/1 monospace;letter-spacing:.7px;color:#D9A85C;flex:none;}
+  .tutTitle{color:#FFD54F;font-size:15px;font-weight:800;line-height:1.15;}
+  .tutMore{font:800 10px/1 monospace;letter-spacing:.6px;color:#0a3a4a;
+    background:#D9A85C;border-radius:5px;padding:2px 5px;margin-left:5px;
+    white-space:nowrap;vertical-align:1px;}
   .tutBody b{color:#FFD54F;}
   .tutBody k{font-style:normal;font-weight:800;color:#9FE3FF;background:rgba(0,0,0,.3);border-radius:5px;padding:0 5px;}
-  .tutGoal{display:block;margin-top:5px;font-size:12px;font-weight:700;color:#9FE3FF;}
+  .tutGoal{display:block;margin-top:3px;font-size:12px;font-weight:700;color:#9FE3FF;}
   .tutGoal.hit{color:#8CE39B;}
   .tutRow{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;pointer-events:auto;}
+  .tutRow.hidden{display:none;}
   .tutRow button{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:12.5px;cursor:pointer;
     border:none;border-radius:9px;padding:6px 13px;background:rgba(255,243,214,.16);color:#FFF3D6;}
   .tutRow button.go{background:#5AC8E8;color:#0a3a4a;}
@@ -663,9 +675,9 @@
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
   @media (max-width: 700px), (max-height: 560px){
-    .tutCard{font-size:11.5px;padding:6px 10px 5px;width:min(520px,94%);}
+    .tutCard{font-size:11.5px;padding:5px 9px 5px;width:min(520px,94%);}
     .tutCard.touchPad{padding-right:80px;}
-    .tutTitle{font-size:13.5px;}
+    .tutTitle{font-size:12.5px;}
     .tutGoal{font-size:10.5px;}
     .tutRow button{font-size:11px;padding:5px 10px;}
     .skillBtn{width:64px;height:64px;bottom:24%;right:4%;}
@@ -779,11 +791,10 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
     <div class="tutCard hidden" id="tutCard">
-      <span class="tutStep" id="tutStep"></span>
-      <b class="tutTitle" id="tutTitle"></b>
-      <span class="tutBody" id="tutBody"></span>
+      <div class="tutHead"><span class="tutStep" id="tutStep"></span><b class="tutTitle" id="tutTitle"></b></div>
+      <span class="tutBody" id="tutBody"></span><span class="tutMore" id="tutMore"></span>
       <span class="tutGoal" id="tutGoal"></span>
-      <div class="tutRow">
+      <div class="tutRow hidden" id="tutRow">
         <button id="tutSkipBtn">Skip step</button>
         <button id="tutQuitBtn">Exit</button>
         <button class="go hidden" id="tutGoBtn">Got it</button>
@@ -7596,6 +7607,13 @@ window.addEventListener('DOMContentLoaded', function(){
     isMouseDown = false;          // it is a drag now, not a held trigger
   }
   window.addEventListener('mousemove', e=>{
+    // Aim follows the cursor even across a panel that swallows the event. The
+    // canvas listener below cannot see those, and the tutorial card is now one
+    // of them — an aim that freezes whenever the mouse crosses the card is a
+    // worse bug than the one the card was solving.
+    const cr = canvas.getBoundingClientRect();
+    mouse.x = (e.clientX-cr.left) * (W/cr.width);
+    mouse.y = (e.clientY-cr.top) * (H/cr.height);
     if(scout){
       const c = toCanvasCoords(e.clientX, e.clientY);
       scout = minimapToWorld(c.x, c.y);          // keep panning while held
@@ -11806,6 +11824,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // about is the one surprise the opening cannot afford.
     holdCamps:true, arena:true, holdDrops:true,
     dashWindow:false,          // true only while a blink's damage sweep resolves
+    // The card folds: `lead` is what is on screen, `full` what a tap unfolds.
+    open:false, full:'', lead:'', rest:'',
     rings:[], mark:null, watch:[], nudge:'', nudgeT:0, hl:null, _goal:null, _hit:null
   };
 
@@ -11816,6 +11836,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const tutGoalEl  = document.getElementById('tutGoal');
   const tutPointerEl   = document.getElementById('tutPointer');
   const skillAbilityEl = document.getElementById('skillAbility');
+  const tutMoreEl  = document.getElementById('tutMore');
+  const tutRowEl   = document.getElementById('tutRow');
   const tutGoBtn   = document.getElementById('tutGoBtn');
   const tutSkipBtn = document.getElementById('tutSkipBtn');
   const tutQuitBtn = document.getElementById('tutQuitBtn');
@@ -12518,18 +12540,101 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutSkillEl(){
     return (isTouchDevice && skillBtnEl.style.display !== 'none') ? skillBtnEl : skillAbilityEl;
   }
+  // How much of a card is on screen before you ask for the rest. Cards carry
+  // markup, so the cut is made on parsed nodes rather than on the string: a
+  // substring lands inside a <b> as often as not, and counting words in the
+  // source counts `&mdash;` as one. An inline run — <b>double damage</b>, a
+  // <k>W A S D</k> — is taken whole rather than split, which overshoots by a
+  // word or two and reads better for it.
+  const TUT_LEAD_WORDS = 20;
+  // …and a full stop before that mark is a better place to stop than the mark
+  // itself. Twenty words into "Drag a team-mate — either mouse button, from the
+  // field or from his portrait — onto ground to post him there. He holds" is a
+  // lead ending on "He holds", which reads as a bug rather than as a fold. So
+  // the budget takes the last sentence that ends at or before twenty words, and
+  // counts to twenty only when there is none far enough in to be a lead.
+  const TUT_LEAD_MIN = 9;
+  // A dash or a stray "." between two tags is not a word. Both passes have to
+  // agree on that or they cut in different places: the budget counts on the
+  // decoded text, where "orbs." is one token, and the split counts node by
+  // node, where the "." after a </b> is a token of its own.
+  const TUT_WORD = /[\p{L}\p{N}]/u;
+  function tutWords(s){ return (s.match(/\S+/g) || []).filter(t => TUT_WORD.test(t)); }
+  function tutLeadBudget(text){
+    const w = tutWords(text);
+    let best = 0;
+    for(let i = TUT_LEAD_MIN; i <= Math.min(w.length, TUT_LEAD_WORDS); i++)
+      if(/[.!?][”"’']?$/.test(w[i-1])) best = i;
+    return best || TUT_LEAD_WORDS;
+  }
+  function tutSplitLead(html){
+    const src = document.createElement('div'); src.innerHTML = html;
+    const limit = tutLeadBudget(src.textContent);
+    const lead = document.createElement('div'), rest = document.createElement('div');
+    let words = 0, cutting = false;
+    for(const node of Array.from(src.childNodes)){
+      if(cutting){ rest.appendChild(node); continue; }
+      if(node.nodeType === 3){
+        const toks = node.data.split(/(\s+)/);
+        let head = '', tail = '';
+        for(const t of toks){
+          if(cutting){ tail += t; continue; }
+          if(TUT_WORD.test(t)){
+            if(words >= limit){ cutting = true; tail += t; continue; }
+            words++;
+          }
+          head += t;
+        }
+        if(head) lead.appendChild(document.createTextNode(head));
+        if(tail.trim()) rest.appendChild(document.createTextNode(tail));
+      } else {
+        if(words >= limit){ cutting = true; rest.appendChild(node); continue; }
+        words += tutWords(node.textContent).length;
+        lead.appendChild(node);
+      }
+    }
+    // A card a few words over budget is not worth folding: hiding "shooting at
+    // it." behind a tap buys no height and costs the reader the end of a
+    // sentence.
+    if(tutWords(rest.textContent).length < 6) return { lead:html, rest:'' };
+    return { lead:lead.innerHTML.trim(), rest:rest.innerHTML.trim() };
+  }
+  // Folded or unfolded, from whatever tut.full is holding. The two controls
+  // live in the unfolded half: folded, the card is a title, a line of text and
+  // the task, which is all it needs to be while you are playing.
+  function tutSyncCard(){
+    const ph = TUT_PHASES[tut.i];
+    tutBodyEl.innerHTML = tut.open ? tut.full : tut.lead;
+    // The chip is up even on a card with nothing held back, because unfolding
+    // is also how you reach Skip step and Exit.
+    tutMoreEl.textContent = tut.open ? 'LESS' : 'MORE';
+    tutRowEl.classList.toggle('hidden', !tut.open && !(ph && ph.button));
+    tutSkipBtn.classList.toggle('hidden', !tut.open);
+    tutQuitBtn.classList.toggle('hidden', !tut.open);
+    tutPlaceCard();
+  }
+  function tutToggleCard(){
+    if(!tut.on) return;
+    tut.open = !tut.open;
+    tutSyncCard();
+  }
   function tutPaint(){
     const ph = TUT_PHASES[tut.i];
-    tutStepEl.textContent = 'STEP ' + (tut.i+1) + ' / ' + TUT_PHASES.length;
+    tutStepEl.textContent = (tut.i+1) + '/' + TUT_PHASES.length;
     tutTitleEl.textContent = ph.title;
-    tutBodyEl.innerHTML = (tut.nudgeT > 0 && tut.nudge) ? tut.nudge : ph.text();
+    tut.full = (tut.nudgeT > 0 && tut.nudge) ? tut.nudge : ph.text();
+    const s = tutSplitLead(tut.full);
+    tut.lead = s.lead; tut.rest = s.rest;
+    // New text, so the fold starts closed: what you unfolded a card ago is not
+    // what this card says.
+    tut.open = false;
     tut._goal = ph.goal ? ph.goal() : '';
     tutGoalEl.textContent = tut._goal;
     tutGoalEl.classList.remove('hit');
     tut._hit = false;
     tutGoBtn.textContent = ph.button || 'Got it';
     tutGoBtn.classList.toggle('hidden', !ph.button);
-    tutSkipBtn.classList.toggle('hidden', !!ph.button);
+    tutSyncCard();
     tutShow();
   }
   function tutShow(){
@@ -12757,6 +12862,11 @@ window.addEventListener('DOMContentLoaded', function(){
     el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
   }
   bindTap(tutQuitBtn, ()=>{ if(tut.on) tutQuit(); else tutHide(); });
+  // Anywhere on the card folds and unfolds it, except the buttons, which have
+  // their own jobs. The card now swallows the touch, so it has to be stopped
+  // here too or the same press also starts the movement stick underneath.
+  tutCardEl.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
+  bindTap(tutCardEl, e=>{ if(!e.target.closest('.tutRow')) tutToggleCard(); });
   window.addEventListener('resize', ()=>{ if(!tutCardEl.classList.contains('hidden')) tutPlaceCard(); });
 
   let lastMode = 'regular';
