@@ -8315,21 +8315,13 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function castHeal(h, range){
     const s = HERO_STATS.support;
-    h.skillCd = s.skillCd; // cooldown applies even if nothing to heal
-    const team = h.side==='player' ? playerTeam : enemyTeam;
-    const ownCreeps = h.side==='player' ? allyCreeps : enemyCreeps;
-    let best=null, bd=range;
-    for(const ally of team){
-      if(!ally.alive || ally.hp>=ally.maxHp) continue;
-      const d=dist(h.x,h.y,ally.x,ally.y);
-      if(d<bd){ bd=d; best=ally; }
-    }
-    for(const c of ownCreeps){
-      if(c.hp>=c.maxHp) continue;
-      const d=dist(h.x,h.y,c.x,c.y);
-      if(d<bd){ bd=d; best=c; }
-    }
-    if(!healNeeded(h, range)) return;   // don't burn mana on a group already topped up
+    // A group already topped up is not worth 25 mana, so the cast is refused —
+    // but it is refused out loud and for free. It used to take the four second
+    // cooldown on its way out and show nothing at all, which is a button that
+    // has plainly registered the press and plainly done nothing: the skill was
+    // gone for four seconds and the only way to find that out was to need it.
+    if(!healNeeded(h, range)){ noteNothingToHeal(h); return; }
+    h.skillCd = s.skillCd;
     h.mana -= s.skillManaCost;
     spawnHealWave(h, range);
   }
@@ -8660,6 +8652,15 @@ window.addEventListener('DOMContentLoaded', function(){
     noManaT = NO_MANA_GAP;
     manaDryT = 0.5;                     // the bar flashes too, so you know which one
     addFloater(h.x, heroAnchorY(h), 'NO MANA', '#9FE3FF', false, false, false, h);
+  }
+  // The heal has the same shape of refusal: everything in range is full, so
+  // there is no wave and nothing lights up. Held down rather than tapped, most
+  // of the time, so it shouts on the same one-per-gap rule.
+  let noHealT = 0;
+  function noteNothingToHeal(h){
+    if(noHealT > 0) return;
+    noHealT = NO_MANA_GAP;
+    addFloater(h.x, heroAnchorY(h), 'NOBODY HURT', '#7CD98C', false, false, false, h);
   }
   function addFloater(x,y,text,color,big,isXp,crit,owner){
     const STACK_RADIUS = 40, STACK_WINDOW = 0.45;
@@ -9458,6 +9459,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateMusicThreat(dt);
     if(hurtFlash>0) hurtFlash = Math.max(0, hurtFlash - dt*2.4);
     if(noManaT>0) noManaT = Math.max(0, noManaT - dt);
+    if(noHealT>0) noHealT = Math.max(0, noHealT - dt);
     if(manaDryT>0) manaDryT = Math.max(0, manaDryT - dt);
     updateSparkles(dt);
 
@@ -12788,7 +12790,7 @@ window.addEventListener('DOMContentLoaded', function(){
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
-    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
+    allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; levelFx=[]; healWaves=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; noHealT=0; manaDryT=0;
     woodDrops=[]; fellingTrees=[]; woodBanked=0;
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
