@@ -15091,7 +15091,13 @@ window.addEventListener('DOMContentLoaded', function(){
     tutPaint();
   }
   function tutStart(){
-    tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false; tut.hl = null;
+    tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false;
+    // Not a bare `tut.hl = null`: that skips the class removal tutHighlight
+    // does for whatever tut.hl was pointing at. Harmless on a fresh page,
+    // but a tutorial started a second time without going through tutStop()
+    // first (which does call tutHighlight) would leave that element's pulse
+    // class on it forever — nothing else ever revisits it to clean it up.
+    tutHighlight(null);
     tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false; tut.sparFlee = false;
     tut.homeEnemies = false; tut.holdFoeWaves = false;
     // startRound has just stocked every camp. Empty them again: nothing lives in
