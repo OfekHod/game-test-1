@@ -823,6 +823,22 @@
      stat strip a few pixels above the skill button, and an upward bob would put
      the arrow's tail on a stat chip. */
   @keyframes tutPointDown{0%,100%{transform:translateY(0) scale(0.9);}50%{transform:translateY(9px) scale(1.1);}}
+  /* Two fingertips that slide together and back apart, on a loop — the one
+     gesture nothing else on screen can demonstrate by pointing at a button,
+     since there is no button. Shown only on touch, only while the party row
+     itself is highlighted (tutHighlight already knows that means "assemble
+     by 0 or a pinch"), so it rides along under the row rather than needing
+     its own step-by-step wiring. */
+  .tutPinch{position:absolute;z-index:9;width:74px;height:26px;pointer-events:none;}
+  .tutPinch.hidden{display:none;}
+  .tutPinchDot{position:absolute;top:2px;width:22px;height:22px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%,rgba(255,240,200,.95),rgba(255,192,46,.55));
+    border:2px solid rgba(255,213,79,.95);
+    box-shadow:0 0 9px rgba(255,192,46,.85),0 2px 3px rgba(0,0,0,.4);}
+  .tutPinchDot.a{left:0;animation:tutPinchA 1.5s ease-in-out infinite;}
+  .tutPinchDot.b{right:0;animation:tutPinchB 1.5s ease-in-out infinite;}
+  @keyframes tutPinchA{0%,100%{transform:translateX(0);}50%{transform:translateX(24px);}}
+  @keyframes tutPinchB{0%,100%{transform:translateX(0);}50%{transform:translateX(-24px);}}
 
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
@@ -947,6 +963,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · square: skill</div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
+    <div class="tutPinch hidden" id="tutPinch"><i class="tutPinchDot a"></i><i class="tutPinchDot b"></i></div>
     <div class="tutCard hidden" id="tutCard">
       <div class="tutHead"><span class="tutStep" id="tutStep"></span><b class="tutTitle" id="tutTitle"></b></div>
       <span class="tutBody" id="tutBody"></span><span class="tutMore" id="tutMore"></span>
@@ -14012,6 +14029,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const tutBodyEl  = document.getElementById('tutBody');
   const tutGoalEl  = document.getElementById('tutGoal');
   const tutPointerEl   = document.getElementById('tutPointer');
+  const tutPinchEl     = document.getElementById('tutPinch');
   const tutMoreEl  = document.getElementById('tutMore');
   const tutRowEl   = document.getElementById('tutRow');
   const tutGoBtn   = document.getElementById('tutGoBtn');
@@ -14273,7 +14291,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // because the step is for meeting the enemy team, not for losing to it.
   // Their outposts are the far side of the map and a real carry fights from
   // under them.
-  const TUT_SPAR_GAP = 70;       // held outside YOUR attack range, so closing it is the step
+  // Held outside YOUR attack range, so closing it is the step. 70 wasn't
+  // enough: acquisition (nearestHostile) checks edge-to-edge, not
+  // center-to-center, so a stand point 70 units past attackRange(h) put an
+  // enemy's actual hitbox only 70-e.r inside the auto-fire threshold — as
+  // little as 43 units for the tank's 27-unit radius, closed by a heroSpeed*0.7
+  // walk in under a second. 160, with the radius folded into the stand point
+  // itself (see enter()), keeps the true edge-to-edge gap at a full 160
+  // regardless of which hero is standing there.
+  const TUT_SPAR_GAP = 160;
   const TUT_SPAR_RATE = 2.0;
   const TUT_SPAR_HP = 900;
   // The walk is authored on the tutorial's own map, so the rings are places
@@ -14579,6 +14605,11 @@ window.addEventListener('DOMContentLoaded', function(){
       tut.watch = [];
       const h = tutHero(), s = tutOpenSpot(h.x, h.y, 320, TUT_SHOW_ANGLE-0.6);
       tut.mark = { x:s.x, y:s.y, r:54, col:'#5AC8E8', label:'POST A HERO HERE' };
+      // The card mentions the OTHER ending — drop him on a team-mate instead
+      // — as a sentence in passing. A ring on an actual team-mate is the
+      // difference between reading that it exists and seeing where it goes.
+      const mate = playerTeam.find(a => a.alive && a !== h);
+      tut.mark2 = mate ? { unit:mate, r:mate.r+18, col:'#8FD6FF', label:'OR DROP HIM HERE TO FOLLOW', thin:true } : null;
     },
     done:()=>!!tut.p.solo
   },
@@ -14682,6 +14713,13 @@ window.addEventListener('DOMContentLoaded', function(){
       + tutPick('<k>Hold left click on the minimap</k> to look elsewhere &mdash; let go and the view snaps back to your hero.',
                 '<k>Hold a finger on the minimap</k> to look elsewhere &mdash; lift it and the view snaps back to your hero.'),
     goal:()=>'Scout with the minimap',
+    enter(){
+      // Nothing else this early in the tutorial has ever pointed at the
+      // minimap itself — every other step's ring sits out in the world. A
+      // new player's eye has no reason to find a 150px corner panel on its
+      // own, so the panel gets outlined rather than just described.
+      tut.mark = { mini:true, wholeMinimap:true, col:'#5AC8E8' };
+    },
     done:()=>(tut.p.scout||0) > 0.5
   },
   {
@@ -14697,7 +14735,6 @@ window.addEventListener('DOMContentLoaded', function(){
     enter(){
       const h = tutHero();
       macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
-      const hold = attackRange(h) + TUT_SPAR_GAP;
       enemyTeam.forEach((e, i)=>{
         respawnHero(e);
         // In front of you and in the open, not four screens away under their
@@ -14718,6 +14755,9 @@ window.addEventListener('DOMContentLoaded', function(){
         // not recomputed off your position every frame — and clear of your
         // own tower's reach, or the step that introduces the enemy team hands
         // your tower a free kill on one of them before you ever get there.
+        // +e.r because acquisition measures to HIS edge, not his center — this
+        // hero's own radius, not some other hero's, has to come off the gap.
+        const hold = attackRange(h) + e.r + TUT_SPAR_GAP;
         const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
         e._sparTX = stand.x; e._sparTY = stand.y;
       });
@@ -14885,6 +14925,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // and move whenever the stage does.
   function tutAimPointer(){
     const el = tut.hl;
+    // The party row stands for "0, or a pinch" — on touch there is no button
+    // to point at for the pinch half of that, so a little two-fingertip demo
+    // rides under the row instead, on the exact same on/off switch as the
+    // row's own ring: whenever tutHighlight has partyEl lit up.
+    const partyLive = el === partyEl && !el.classList.contains('hidden') && el.offsetParent;
+    if(partyLive && isTouchDevice){
+      const pr = el.getBoundingClientRect(), ps = stageEl.getBoundingClientRect();
+      tutPinchEl.classList.remove('hidden');
+      tutPinchEl.style.left = (pr.left - ps.left + pr.width/2 - 37) + 'px';
+      tutPinchEl.style.top  = (pr.bottom - ps.top + 12) + 'px';
+    } else {
+      tutPinchEl.classList.add('hidden');
+    }
     // A single triangle can only point at one X, and for a three-chip row
     // that X lands on the MIDDLE chip — "call the squad back" ends up
     // looking like it means the middle hero specifically, whoever that
@@ -15023,7 +15076,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutAdvance(){
     tut.i++;
     tut.ready = 0; tut.ack = false; tut.t = 0; tut.p = {};
-    tut.rings = []; tut.mark = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
+    tut.rings = []; tut.mark = null; tut.mark2 = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
     // A real ASSEMBLE_CD outlives the step that taught it. Skip through
     // "Assemble" (or just play it fast) and the button can still be cooling
     // down several steps later — "Push a lane, take a tower" asks for the
@@ -15085,7 +15138,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // again — the handover into a real Match runs through here, and a match
     // against three heroes standing in an empty base is not a match.
     tut.homeEnemies = false; tut.holdFoeWaves = false;
-    tut.rings = []; tut.mark = null; tut.watch = []; tut.p = null;
+    tut.rings = []; tut.mark = null; tut.mark2 = null; tut.watch = []; tut.p = null;
     tutHighlight(null);
     tutHide();
   }
@@ -15204,6 +15257,19 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.setLineDash([]);
       if(m.label) tutLabel(mx, my - Math.min(m.r, 150) - 30, m.label, m.col);
     }
+    // A second, purely illustrative ring — the OTHER thing a drag can do
+    // (post vs. follow are one gesture with two endings, and a step that only
+    // ever marks the ground teaches half of it). Never competes for the
+    // crawling lead line above; it is context, not the goal.
+    const m2 = tut.mark2;
+    if(m2){
+      const mx = m2.unit ? m2.unit.x : m2.x, my = m2.unit ? m2.unit.y : m2.y;
+      ctx.strokeStyle = m2.col; ctx.lineWidth = m2.thin ? 3 : 5;
+      ctx.setLineDash([14,10]);
+      ctx.beginPath(); ctx.arc(mx, my, m2.r + pulse*4, 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
+      if(m2.label) tutLabel(mx, my - Math.min(m2.r, 150) - 26, m2.label, m2.col, 20);
+    }
     for(const c of tut.watch){
       if(!tutAlive(c)) continue;
       ctx.strokeStyle = 'rgba(232,89,90,'+(0.5+0.4*pulse).toFixed(3)+')';
@@ -15221,9 +15287,21 @@ window.addEventListener('DOMContentLoaded', function(){
   function drawTutorialMini(){
     if(!tut.on || !tut.mark || !tut.mark.mini) return;
     const m = tut.mark, r = minimapRect();
-    const wx = m.unit ? m.unit.x : m.x, wy = m.unit ? m.unit.y : m.y;
     const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
     ctx.save();
+    // "Scout with the minimap" has no world point to mark — the whole panel
+    // is the target, not a spot on it — so it gets its own outline around
+    // the panel's own bounds instead of the usual dot projected onto it.
+    if(m.wholeMinimap){
+      ctx.strokeStyle = m.col; ctx.lineWidth = 3;
+      ctx.setLineDash([9,7]);
+      const pad = 4 + pulse*3;
+      ctx.strokeRect(r.x-pad, r.y-pad, r.w+pad*2, r.h+pad*2);
+      ctx.setLineDash([]);
+      ctx.restore();
+      return;
+    }
+    const wx = m.unit ? m.unit.x : m.x, wy = m.unit ? m.unit.y : m.y;
     ctx.strokeStyle = m.col; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(r.x + (wx/WORLD_W)*r.w, r.y + (wy/WORLD_H)*r.h, 4 + pulse*5, 0, 7);
