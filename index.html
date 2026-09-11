@@ -327,7 +327,7 @@
     background:rgba(70,130,170,.20);overflow:hidden;}
   .loadBar > i{display:block;height:100%;border-radius:99px;
     background:linear-gradient(90deg,#4FBEE0,#8FE3F7);
-    transform:scaleX(0);transform-origin:0 50%;}
+    transform:scaleX(0);transform-origin:0 50%;will-change:transform;}
   #loadScreen:not(.leaving) .loadBar > i{animation:loadFill 3s cubic-bezier(.3,.62,.35,1) forwards;}
   @keyframes loadFill{to{transform:scaleX(1)}}
   /* The panel arrives rather than simply being switched on. */
@@ -339,7 +339,7 @@
   @keyframes loadPanelOut{to{opacity:0;transform:scale(1.05) translateY(-6px)}}
   .loadSpin{width:38px;height:38px;margin:0 auto 14px;border-radius:50%;
     border:4px solid rgba(90,200,232,.25);border-top-color:#5AC8E8;
-    animation:loadSpin .8s linear infinite;}
+    animation:loadSpin .8s linear infinite;will-change:transform;}
   @keyframes loadSpin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){
     .loadSpin{animation:none}
@@ -1089,7 +1089,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     <div class="overlay hidden" id="loadScreen">
       <div class="panel loadPanel">
-        <div class="loadSpin"></div>
+        <div class="loadSpin" id="loadSpin"></div>
         <h1>Building the map</h1>
         <p>Lanes, forest, river and camps&hellip;</p>
         <div class="loadBar"><i id="loadBarFill"></i></div>
@@ -2621,6 +2621,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const loadScreen = document.getElementById('loadScreen');
   const curtainEl = document.getElementById('curtain');
   const loadBarFill = document.getElementById('loadBarFill');
+  const loadSpinEl = document.getElementById('loadSpin');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
@@ -14883,8 +14884,10 @@ window.addEventListener('DOMContentLoaded', function(){
     partyEl.classList.add('hidden');
     skillBtnEl.style.display = 'none';
     hideJoystick(moveJoyEl);
+    hideWaveBanner();                  // Survival can quit mid-banner; endRound() already does this
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
+    startScreen.classList.remove('turning');
     setPaused(false);                  // a round quit while paused must not carry the freeze into the menu
     // Quitting before beginRoundLoad's own tryReveal() ever got to fire —
     // reachable now that the pause menu can end a round within its first few
@@ -14896,6 +14899,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // the menu expects it in.
     roundLoadToken++;
     clearTimeout(curtainTimer);
+    clearTimeout(turnTimer);
+    clearTimeout(panelOutTimer);
     curtainEl.classList.add('hidden');
     curtainEl.classList.remove('hold', 'part');
     loadScreen.classList.add('hidden');
@@ -15254,6 +15259,11 @@ window.addEventListener('DOMContentLoaded', function(){
   const WARM_FRAMES = 8;
   const LOAD_MAX_MS = 9000;    // never let the panel outstay its welcome
   let roundHold = false, loadingRound = false, warmFrames = 0, curtainTimer = 0;
+  // The page-turn leaving startScreen (guardedStart) and the load panel
+  // leaving loadScreen (reveal) — both cleared the same way curtainTimer
+  // already was, so a round quit mid-turn or mid-panel-out can't leave a
+  // stale callback to fire into whatever the menu or the next round shows.
+  let turnTimer = 0, panelOutTimer = 0;
   // Bumped by every beginRoundLoad() and by tutQuit(). A round quit before its
   // own tryReveal() below ever fired reveal() leaves that rAF loop running —
   // nothing else stops it — and it would go on to call reveal() on its own
@@ -15282,7 +15292,8 @@ window.addEventListener('DOMContentLoaded', function(){
       startScreen.classList.add('turning');
       sfxPageTurn();
       beginRoundLoad(mode);
-      setTimeout(()=>{
+      clearTimeout(turnTimer);
+      turnTimer = setTimeout(()=>{
         startScreen.classList.add('hidden');
         startScreen.classList.remove('turning');
       }, INTRO_TURN_MS);
@@ -15297,6 +15308,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Sky first, then the panel on top of it. Both go up in this same tick so
     // the field is never briefly naked between the click and the cover.
     clearTimeout(curtainTimer);
+    clearTimeout(panelOutTimer);
     curtainEl.classList.remove('hidden', 'part');
     curtainEl.classList.add('hold');
     loadScreen.classList.remove('hidden');
@@ -15306,10 +15318,27 @@ window.addEventListener('DOMContentLoaded', function(){
     // and the progress bar sitting on their very first frame instead of
     // running: the panel LOOKS frozen even though loading is proceeding fine
     // behind it. First load is unaffected because it is the first time the
-    // element has ever been shown. Reading a layout property forces a reflow
-    // in between the display change and the animation being expected to run,
-    // which is the standard fix for that class of bug.
-    void loadScreen.offsetWidth;
+    // element has ever been shown.
+    //
+    // A reflow on loadScreen itself (the first thing tried here) was not
+    // enough — neither .loadSpin's rule nor .loadBar>i's is gated by anything
+    // that toggles per round (.loadSpin's is unconditional; .loadBar>i's
+    // :not(.leaving) gate already flipped back during THIS round's own
+    // reveal(), long before it runs again), so a layout pass on their
+    // ancestor gives WebKit no signal that these two animations specifically
+    // need restarting. Clearing and restoring `animation` on the animated
+    // elements themselves is the actual fix for this class of bug — it forces
+    // the animation to be torn down and recreated rather than just relaid-out.
+    // loadBarFill also carries a separate inline animationDuration (set once,
+    // below) that clearing the `animation` shorthand would wipe, so it is
+    // saved and put back.
+    const savedBarDuration = loadBarFill.style.animationDuration;
+    for(const el of [loadSpinEl, loadBarFill]){
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = '';
+    }
+    loadBarFill.style.animationDuration = savedBarDuration;
     // The match theme starts HERE, on the click, and not where it used to —
     // inside startRound, on the far side of buildMap. The panel is three
     // seconds of sky with a progress bar on it, and the whole of it used to be
@@ -15368,7 +15397,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // Panel out first, clouds a beat later: two things leaving at once reads as
     // clutter, and the panel is what the eye is already on.
     loadScreen.classList.add('leaving');
-    setTimeout(()=>{
+    clearTimeout(panelOutTimer);
+    panelOutTimer = setTimeout(()=>{
       loadScreen.classList.add('hidden');
       loadScreen.classList.remove('leaving');
     }, PANEL_OUT_MS);
