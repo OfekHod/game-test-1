@@ -8521,7 +8521,12 @@ window.addEventListener('DOMContentLoaded', function(){
       const yy = b.y + Math.sin(b.t*1.7 + b.bob)*5;
       ctx.save(); ctx.translate(b.x, yy);
       if(b.vx < 0) ctx.scale(-1,1);
-      ctx.rotate(Math.atan2(b.vy, Math.abs(b.vx))*0.5);   // bank into the turn
+      // Point along the heading. The mirror above already carries the sign of
+      // vx, so the angle is measured off |vx| -- and it has to be the WHOLE
+      // angle: halving it left a bird flying straight down the screen drawn at
+      // 45 degrees, and made the sprite snap through 90 degrees the moment an
+      // arcing flock crossed vx=0. At the full angle the two halves meet.
+      ctx.rotate(Math.atan2(b.vy, Math.abs(b.vx)));
       ctx.drawImage(birdImg, f*BIRD_W, 0, BIRD_W, BIRD_H, -w/2, -h/2, w, h);
       ctx.restore();
     }
@@ -16265,6 +16270,17 @@ window.addEventListener('DOMContentLoaded', function(){
   // whether the drop landed somewhere the camera can actually see.
   window.__laneHpOrbs = ()=>hpOrbs.length;
   window.__laneHpOrbOnScreen = ()=>hpOrbs.some(o=>onScreen(o.x,o.y,30) && isVisible(o.x,o.y,ORB_SIGHT_R));
+  // And the same again for the flocks: a bird's heading is the thing being
+  // photographed, so a shot has to WAIT for one that is on screen and steep
+  // enough to show it, rather than firing and hoping.
+  window.__laneBirds = ()=>birds.filter(b=>onScreen(b.x,b.y,80)).map(b=>({
+    x:b.x-camera.x, y:b.y-camera.y, vx:b.vx, vy:b.vy, sc:b.sc,
+    deg: Math.atan2(b.vy,b.vx)*180/Math.PI }));
+  // The screenshot scripts need the logical view size to turn a bird's world
+  // position into a pixel on the page: the canvas backing store is W*canvasScale,
+  // so canvas.width alone is off by that factor and lands the crop on the HUD.
+  window.__laneW = ()=>W;
+  window.__laneH = ()=>H;
   window.__laneLoaded = true;
 })();
 </script>
