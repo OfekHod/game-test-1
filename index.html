@@ -14726,7 +14726,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // — as a sentence in passing. A ring on an actual team-mate is the
       // difference between reading that it exists and seeing where it goes.
       const mate = playerTeam.find(a => a.alive && a !== h);
-      tut.mark2 = mate ? { unit:mate, r:mate.r+18, col:'#8FD6FF', label:'OR DROP HIM HERE TO FOLLOW', thin:true } : null;
+      tut.mark2 = mate ? { unit:mate, r:mate.r+18, col:'#8FD6FF', label:'OR DRAG HIM INTO THIS CIRCLE TO FOLLOW', thin:true } : null;
     },
     done:()=>!!tut.p.solo
   },
