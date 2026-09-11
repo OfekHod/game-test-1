@@ -14885,7 +14885,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // and move whenever the stage does.
   function tutAimPointer(){
     const el = tut.hl;
-    if(!el || el.classList.contains('hidden') || !el.offsetParent){
+    // A single triangle can only point at one X, and for a three-chip row
+    // that X lands on the MIDDLE chip — "call the squad back" ends up
+    // looking like it means the middle hero specifically, whoever that
+    // happens to be. The party row already has its own ring (tutPulseArea);
+    // it doesn't need an arrow pretending to single one card out.
+    if(!el || el === partyEl || el.classList.contains('hidden') || !el.offsetParent){
       tutPointerEl.classList.add('hidden');
       return;
     }
