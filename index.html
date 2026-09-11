@@ -73,6 +73,14 @@
   }
   canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;background:#1E9419;}
   #game{cursor:none;outline:none;touch-action:none;}
+  /* Pausing gates update() (see its own `if(paused) return`), which freezes the
+     world but does nothing about input still reaching it — a click during a
+     pause would fire a shot the instant play resumed. Locking out the surfaces
+     a player acts through is simpler than guarding every handler that reads
+     them. The pause card itself and the HUD buttons that opened it live
+     outside this set, so they stay clickable. */
+  #stage.paused #game, #stage.paused #touchLayer, #stage.paused #skillBtn, #stage.paused #party{
+    pointer-events:none;}
 
   /* user-select:none because a chip is something you DRAG: without it, pulling a
      hero off his portrait swept a text selection across the status labels and
@@ -280,6 +288,14 @@
 
   .hud-right{display:flex;align-items:center;gap:24px;font-size:19px;font-weight:800;color:var(--text-strong);
     flex:0 0 auto;}
+  /* Pause and exit sit at the near edge of the HUD's own right-hand slot,
+     styled like the rest of the dock's chrome rather than the tutorial card's
+     — that palette is reserved for the pop-up message itself. */
+  .hudIconBtn{width:40px;height:40px;border-radius:10px;border:2px solid var(--panel-border);
+    background:var(--panel);color:var(--text-strong);font-family:'Baloo 2',sans-serif;
+    font-size:17px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;flex:0 0 auto;padding:0;}
+  .hudIconBtn:active{transform:translateY(2px);}
   /* Survival's slot reads "Wave 12" where a Match reads "10:00", and the xp
      beside it grows a digit at a time all round. On a phone that was enough to
      wrap the slot onto two lines, and then — once it could not wrap — to push
@@ -318,7 +334,7 @@
     background:rgba(70,130,170,.20);overflow:hidden;}
   .loadBar > i{display:block;height:100%;border-radius:99px;
     background:linear-gradient(90deg,#4FBEE0,#8FE3F7);
-    transform:scaleX(0);transform-origin:0 50%;}
+    transform:scaleX(0);transform-origin:0 50%;will-change:transform;}
   #loadScreen:not(.leaving) .loadBar > i{animation:loadFill 3s cubic-bezier(.3,.62,.35,1) forwards;}
   @keyframes loadFill{to{transform:scaleX(1)}}
   /* The panel arrives rather than simply being switched on. */
@@ -330,7 +346,7 @@
   @keyframes loadPanelOut{to{opacity:0;transform:scale(1.05) translateY(-6px)}}
   .loadSpin{width:38px;height:38px;margin:0 auto 14px;border-radius:50%;
     border:4px solid rgba(90,200,232,.25);border-top-color:#5AC8E8;
-    animation:loadSpin .8s linear infinite;}
+    animation:loadSpin .8s linear infinite;will-change:transform;}
   @keyframes loadSpin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){
     .loadSpin{animation:none}
@@ -809,10 +825,30 @@
      the arrow's tail on a stat chip. */
   @keyframes tutPointDown{0%,100%{transform:translateY(0);}50%{transform:translateY(6px);}}
 
+  /* Pause menu. Same palette and the same .tutRow/.go button classes as the
+     tutorial card, so the exit confirmation reads as the same kind of
+     message — just centered in the frame instead of pinned to the dock. */
+  /* pointer-events:none on the veil itself, restored on the card: the HUD's
+     own pause/exit buttons sit UNDER this overlay (z-index:10 over the dock's
+     5) so the veil would otherwise block the exit button the moment "Paused"
+     is up, with no way to reach it short of resuming first. */
+  .overlay#pauseScreen{background:rgba(30,40,20,.45);pointer-events:none;}
+  .overlay#pauseScreen .pauseModal{pointer-events:auto;}
+  .pauseModal{background:rgba(74,52,22,.95);border:3px solid var(--panel-border);border-radius:14px;
+    padding:20px 24px;color:#FFF3D6;max-width:360px;box-shadow:0 10px 26px rgba(0,0,0,.35);
+    text-align:center;margin:auto;}
+  .pauseModal.hidden{display:none;}
+  .pauseModal .tutTitle{display:block;font-size:19px;margin-bottom:8px;}
+  .pauseModal p{margin:0;font-size:13.5px;line-height:1.45;}
+  .pauseModal .tutRow{justify-content:center;margin-top:16px;}
+
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
   @media (max-width: 700px), (max-height: 560px){
     .tutCard{font-size:11.5px;padding:5px 9px 5px;width:min(520px,94%);}
+    .pauseModal{padding:16px 18px;max-width:92%;}
+    .pauseModal .tutTitle{font-size:16px;}
+    .pauseModal p{font-size:12px;}
     .tutCard.touchPad{padding-right:80px;}
     .tutTitle{font-size:12.5px;}
     .tutGoal{font-size:10.5px;}
@@ -847,6 +883,7 @@
        Match's clock was a fixed five characters. A point smaller and a
        tighter gap is what keeps both on one line at the width of a phone. */
     .hud-right{gap:8px;font-size:12.5px;}
+    .hudIconBtn{width:30px;height:30px;font-size:12.5px;border-radius:8px;}
     .xpGem{width:9px;height:9px;margin-right:4px;}
 
     /* Same card, same nameplate, at the width a phone has. 56px is where a run
@@ -887,6 +924,7 @@
     .ability .skillIcon{width:28px;height:28px;border-radius:6px;}
     .hudLevel{font-size:10px;padding:2px 5px;}
     .hud-right{font-size:12.5px;gap:10px;}
+    .hudIconBtn{width:24px;height:24px;font-size:10.5px;border-radius:6px;}
     .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
     .waveBanner{top:7%;}
@@ -942,6 +980,21 @@ window.addEventListener('DOMContentLoaded', function(){
         <button class="go hidden" id="tutGoBtn">Got it</button>
       </div>
     </div>
+    <div class="overlay hidden" id="pauseScreen">
+      <div class="pauseModal" id="pauseResumePage">
+        <b class="tutTitle">Paused</b>
+        <p>Nothing moves until you resume.</p>
+        <div class="tutRow"><button class="go" id="pauseResumeBtn">Resume</button></div>
+      </div>
+      <div class="pauseModal hidden" id="pauseConfirmPage">
+        <b class="tutTitle">End this game?</b>
+        <p>You'll forfeit the match and return to the main menu.</p>
+        <div class="tutRow">
+          <button id="pauseCancelBtn">No, keep playing</button>
+          <button class="go" id="pauseConfirmBtn">Yes, end match</button>
+        </div>
+      </div>
+    </div>
     <div class="tip" id="tooltip"></div>
 
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -984,6 +1037,8 @@ window.addEventListener('DOMContentLoaded', function(){
           <div class="ability" id="skillAbility"><div class="skillIcon skill-dash" id="skillIcon"></div><div class="cd" id="dashCdFill"></div></div>
         </div>
         <div class="hud-right">
+          <button class="hudIconBtn" id="pauseBtn" type="button" aria-label="Pause" title="Pause">&#10074;&#10074;</button>
+          <button class="hudIconBtn" id="exitBtn" type="button" aria-label="End match" title="End match">&#10005;</button>
           <span><span class="xpGem"></span><span id="xpCount">0</span> xp</span>
           <span id="timer">10:00</span>
         </div>
@@ -1042,7 +1097,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     <div class="overlay hidden" id="loadScreen">
       <div class="panel loadPanel">
-        <div class="loadSpin"></div>
+        <div class="loadSpin" id="loadSpin"></div>
         <h1>Building the map</h1>
         <p>Lanes, forest, river and camps&hellip;</p>
         <div class="loadBar"><i id="loadBarFill"></i></div>
@@ -2574,12 +2629,21 @@ window.addEventListener('DOMContentLoaded', function(){
   const loadScreen = document.getElementById('loadScreen');
   const curtainEl = document.getElementById('curtain');
   const loadBarFill = document.getElementById('loadBarFill');
+  const loadSpinEl = document.getElementById('loadSpin');
   const startBtn = document.getElementById('startBtn');
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
   const restartBtn = document.getElementById('restartBtn');
   const xpCountEl = document.getElementById('xpCount');
   const timerEl = document.getElementById('timer');
+  const pauseBtnEl = document.getElementById('pauseBtn');
+  const exitBtnEl = document.getElementById('exitBtn');
+  const pauseScreenEl = document.getElementById('pauseScreen');
+  const pauseResumePageEl = document.getElementById('pauseResumePage');
+  const pauseConfirmPageEl = document.getElementById('pauseConfirmPage');
+  const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+  const pauseCancelBtn = document.getElementById('pauseCancelBtn');
+  const pauseConfirmBtn = document.getElementById('pauseConfirmBtn');
   const waveBannerEl = document.getElementById('waveBanner');
   const waveBannerNumEl = document.getElementById('waveBannerNum');
   const waveBannerSubEl = document.getElementById('waveBannerSub');
@@ -3110,6 +3174,10 @@ window.addEventListener('DOMContentLoaded', function(){
   const TYPE_ORDER = ['carry','tank','support'];
 
   let state = 'idle';
+  // Frozen without leaving 'playing' — see update()'s own gate below — so the
+  // HUD, the timer text and the rest of the running round stay exactly as
+  // they were instead of unwinding into the idle/menu state.
+  let paused = false;
   let timeLeft = ROUND_TIME;
   // Points are the second way to win. If neither base falls, the clock decides
   // it on score, so killing things is never wasted effort even when a push
@@ -8618,13 +8686,13 @@ window.addEventListener('DOMContentLoaded', function(){
     if(e.key.startsWith('Arrow')) e.preventDefault();   // they steer the hero; they must not scroll the page
     if(e.key==='Tab'){
       e.preventDefault();
-      if(state==='playing') cyclePlayer(e.shiftKey ? -1 : 1);
+      if(state==='playing' && !paused) cyclePlayer(e.shiftKey ? -1 : 1);
     }
-    if(state==='playing' && (e.key==='1'||e.key==='2'||e.key==='3')){
+    if(state==='playing' && !paused && (e.key==='1'||e.key==='2'||e.key==='3')){
       const idx = parseInt(e.key,10)-1;
       focusHero(idx);
     }
-    if(state==='playing' && e.key==='0') assembleOnFocus();
+    if(state==='playing' && !paused && e.key==='0') assembleOnFocus();
   });
   window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
   canvas.addEventListener('mousemove', e=>{
@@ -8641,6 +8709,10 @@ window.addEventListener('DOMContentLoaded', function(){
   });
   canvas.addEventListener('contextmenu', e=> e.preventDefault());
   canvas.addEventListener('mousedown', e=>{
+    // Belt and suspenders alongside #stage.paused's pointer-events:none: that
+    // rule keeps a real mouse off the canvas, but a synthetic click (devtools,
+    // some embeds) can still reach an element that is merely un-hit-testable.
+    if(paused) return;
     if(e.button===2){
       const w = toWorld(e.clientX, e.clientY);
       const h = playerHeroAt(w.x, w.y);
@@ -8924,7 +8996,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function onTouchStart(e){
     usedTouch = true;
-    if(state!=='playing') return;
+    if(state!=='playing' || paused) return;
     for(const t of e.changedTouches){
       if(isOnSkillBtn(t.clientX, t.clientY)){
         touchSkillTap = true;
@@ -9073,7 +9145,7 @@ window.addEventListener('DOMContentLoaded', function(){
   stageEl.addEventListener('touchmove', onTouchMove, {passive:false});
   stageEl.addEventListener('touchend', onTouchEnd, {passive:false});
   stageEl.addEventListener('touchcancel', onTouchEnd, {passive:false});
-  skillBtnEl.addEventListener('touchstart', e=>{ if(state==='playing'){ touchSkillTap=true; } e.preventDefault(); e.stopPropagation(); }, {passive:false});
+  skillBtnEl.addEventListener('touchstart', e=>{ if(state==='playing' && !paused){ touchSkillTap=true; } e.preventDefault(); e.stopPropagation(); }, {passive:false});
 
   for(let i=0;i<3;i++){
     pchips[i].style.pointerEvents='auto';
@@ -9099,7 +9171,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }, {passive:false});
     pchips[i].addEventListener('click', ()=>{
       if(lastDragMoved > 6){ lastDragMoved = 0; return; }   // that was a drag
-      if(state==='playing') focusHero(i);
+      if(state==='playing' && !paused) focusHero(i);
     });
   }
 
@@ -10939,6 +11011,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // ---------- update ----------
   function update(dt){
     if(state!=='playing') return;
+    if(paused) return;
     // The round is built but the load panel is still up. Render on — it warms
     // the draw path — but do not let the match run behind a screen nobody can
     // see or play through.
@@ -14981,6 +15054,9 @@ window.addEventListener('DOMContentLoaded', function(){
     tutHide();
   }
   function tutFinish(){ tutLaunchMatch(); }
+  // Abandons whatever round is running and lands on the menu. tutStop() is a
+  // no-op outside the tutorial, so this doubles as the pause menu's "end
+  // match" for a Match or Survival round — see pauseConfirmBtn below.
   function tutQuit(){
     tutStop();
     state = 'idle';
@@ -14988,9 +15064,30 @@ window.addEventListener('DOMContentLoaded', function(){
     partyEl.classList.add('hidden');
     skillBtnEl.style.display = 'none';
     hideJoystick(moveJoyEl);
+    hideWaveBanner();                  // Survival can quit mid-banner; endRound() already does this
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
-    musicSync();                       // quitting the tutorial lands on the menu
+    startScreen.classList.remove('turning');
+    setPaused(false);                  // a round quit while paused must not carry the freeze into the menu
+    // Quitting before beginRoundLoad's own tryReveal() ever got to fire —
+    // reachable now that the pause menu can end a round within its first few
+    // seconds — otherwise left that rAF loop alive with nothing to stop it. It
+    // would go on to call reveal() on its own schedule, well after the menu
+    // (or a newer round) owns the curtain, and stomp on whichever one is
+    // showing. Bumping the token here is what it checks each frame to know it
+    // has been superseded; the rest just puts the curtain back to the state
+    // the menu expects it in.
+    roundLoadToken++;
+    clearTimeout(curtainTimer);
+    clearTimeout(turnTimer);
+    clearTimeout(panelOutTimer);
+    curtainEl.classList.add('hidden');
+    curtainEl.classList.remove('hold', 'part');
+    loadScreen.classList.add('hidden');
+    loadScreen.classList.remove('leaving');
+    roundHold = false;
+    loadingRound = false;
+    musicSync();                       // quitting the round lands on the menu
   }
   function tutUpdate(dt){
     if(!tut.on) return;
@@ -15140,8 +15237,46 @@ window.addEventListener('DOMContentLoaded', function(){
   bindTap(tutCardEl, e=>{ if(!e.target.closest('.tutRow')) tutToggleCard(); });
   window.addEventListener('resize', ()=>{ if(!tutCardEl.classList.contains('hidden')) tutPlaceCard(); });
 
+  // ---------- pause menu ----------
+  // Pausing is just the `paused` flag update() gates on — render() keeps
+  // running so the frozen frame stays on screen. Locking the world's own
+  // input surfaces out is handled in CSS (#stage.paused, near #game above);
+  // this only has to drive the flag and the two on-screen pages.
+  function setPaused(v){
+    paused = v;
+    stageEl.classList.toggle('paused', v);
+    const label = v ? 'Resume' : 'Pause';
+    pauseBtnEl.textContent = v ? '▶' : '❚❚';
+    pauseBtnEl.setAttribute('aria-label', label);
+    pauseBtnEl.title = label;
+    pauseScreenEl.classList.toggle('hidden', !v);
+    if(!v){
+      // Whatever page the exit confirm left showing, an unpause always lands
+      // back on "Paused" — so the pause button never reopens mid-confirm.
+      pauseConfirmPageEl.classList.add('hidden');
+      pauseResumePageEl.classList.remove('hidden');
+    }
+  }
+  bindTap(pauseBtnEl, ()=>{
+    // While the exit confirm is up it owns the paused state; the icon waits.
+    if(paused && !pauseConfirmPageEl.classList.contains('hidden')) return;
+    setPaused(!paused);
+  });
+  bindTap(exitBtnEl, ()=>{
+    pauseResumePageEl.classList.add('hidden');
+    pauseConfirmPageEl.classList.remove('hidden');
+    setPaused(true);
+  });
+  bindTap(pauseResumeBtn, ()=> setPaused(false));
+  bindTap(pauseCancelBtn, ()=> setPaused(false));
+  bindTap(pauseConfirmBtn, tutQuit);
+  for(const el of [pauseBtnEl, exitBtnEl, pauseResumeBtn, pauseCancelBtn, pauseConfirmBtn]){
+    el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
+  }
+
   let lastMode = 'regular';
   function startRound(mode){
+    setPaused(false);                  // a fresh round never opens frozen, whatever the last one left behind
     lastMode = mode;
     gameMode = (mode==='survival') ? 'survival' : 'regular';
     tutMap = (mode === 'tutorial');    // read by buildMap below, so set it first
@@ -15311,6 +15446,18 @@ window.addEventListener('DOMContentLoaded', function(){
   const WARM_FRAMES = 8;
   const LOAD_MAX_MS = 9000;    // never let the panel outstay its welcome
   let roundHold = false, loadingRound = false, warmFrames = 0, curtainTimer = 0;
+  // The page-turn leaving startScreen (guardedStart) and the load panel
+  // leaving loadScreen (reveal) — both cleared the same way curtainTimer
+  // already was, so a round quit mid-turn or mid-panel-out can't leave a
+  // stale callback to fire into whatever the menu or the next round shows.
+  let turnTimer = 0, panelOutTimer = 0;
+  // Bumped by every beginRoundLoad() and by tutQuit(). A round quit before its
+  // own tryReveal() below ever fired reveal() leaves that rAF loop running —
+  // nothing else stops it — and it would go on to call reveal() on its own
+  // schedule, well after a newer round (or the bare menu) owns the curtain.
+  // tryReveal checks its own token against this one each frame and simply
+  // stops once it no longer matches, instead of touching state it no longer owns.
+  let roundLoadToken = 0;
   // Every way into a round — Match, Survival, Tutorial, Play Again, the Enter
   // key — goes through here, so none of them can skip the panel.
   // Leaving the menu gets the same book-turn the menu itself arrived with —
@@ -15332,7 +15479,8 @@ window.addEventListener('DOMContentLoaded', function(){
       startScreen.classList.add('turning');
       sfxPageTurn();
       beginRoundLoad(mode);
-      setTimeout(()=>{
+      clearTimeout(turnTimer);
+      turnTimer = setTimeout(()=>{
         startScreen.classList.add('hidden');
         startScreen.classList.remove('turning');
       }, INTRO_TURN_MS);
@@ -15342,13 +15490,42 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function beginRoundLoad(mode){
+    const myToken = ++roundLoadToken;
     endScreen.classList.add('hidden');
     // Sky first, then the panel on top of it. Both go up in this same tick so
     // the field is never briefly naked between the click and the cover.
     clearTimeout(curtainTimer);
+    clearTimeout(panelOutTimer);
     curtainEl.classList.remove('hidden', 'part');
     curtainEl.classList.add('hold');
     loadScreen.classList.remove('hidden');
+    // Safari/WebKit — the only engine an iPhone has, whichever browser it is
+    // named after — can fail to restart an `animation: X infinite` the second
+    // time its container comes back from display:none, leaving the spinner
+    // and the progress bar sitting on their very first frame instead of
+    // running: the panel LOOKS frozen even though loading is proceeding fine
+    // behind it. First load is unaffected because it is the first time the
+    // element has ever been shown.
+    //
+    // A reflow on loadScreen itself (the first thing tried here) was not
+    // enough — neither .loadSpin's rule nor .loadBar>i's is gated by anything
+    // that toggles per round (.loadSpin's is unconditional; .loadBar>i's
+    // :not(.leaving) gate already flipped back during THIS round's own
+    // reveal(), long before it runs again), so a layout pass on their
+    // ancestor gives WebKit no signal that these two animations specifically
+    // need restarting. Clearing and restoring `animation` on the animated
+    // elements themselves is the actual fix for this class of bug — it forces
+    // the animation to be torn down and recreated rather than just relaid-out.
+    // loadBarFill also carries a separate inline animationDuration (set once,
+    // below) that clearing the `animation` shorthand would wipe, so it is
+    // saved and put back.
+    const savedBarDuration = loadBarFill.style.animationDuration;
+    for(const el of [loadSpinEl, loadBarFill]){
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = '';
+    }
+    loadBarFill.style.animationDuration = savedBarDuration;
     // The match theme starts HERE, on the click, and not where it used to —
     // inside startRound, on the far side of buildMap. The panel is three
     // seconds of sky with a progress bar on it, and the whole of it used to be
@@ -15385,6 +15562,9 @@ window.addEventListener('DOMContentLoaded', function(){
       // Reveal on a frame boundary, once the field behind has actually been
       // drawn a few times and the floor has passed.
       const tryReveal = ()=>{
+        // Superseded — a quit or a newer round now owns the curtain — so stop
+        // here rather than call reveal() on state that has moved on without it.
+        if(myToken !== roundLoadToken) return;
         const waited = performance.now() - shownAt;
         if(waited < LOAD_MAX_MS && (warmFrames < WARM_FRAMES || waited < LOAD_MIN_MS)){
           requestAnimationFrame(tryReveal);
@@ -15404,7 +15584,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // Panel out first, clouds a beat later: two things leaving at once reads as
     // clutter, and the panel is what the eye is already on.
     loadScreen.classList.add('leaving');
-    setTimeout(()=>{
+    clearTimeout(panelOutTimer);
+    panelOutTimer = setTimeout(()=>{
       loadScreen.classList.add('hidden');
       loadScreen.classList.remove('leaving');
     }, PANEL_OUT_MS);
