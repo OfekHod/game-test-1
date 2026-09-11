@@ -14506,6 +14506,9 @@ window.addEventListener('DOMContentLoaded', function(){
       'A forest mob has wandered out. Aim with the mouse, <k>hold left click</k> to fire. Nothing is shooting it for you here, and a shot only carries as far as your range.',
       'A forest mob has wandered out. <k>Tap</k> where you want to shoot. Nothing is shooting it for you here, and a shot only carries as far as your range.'),
     goal:()=>'Kill the forest mob',
+    // The red ring already says WHERE; most other games teach click-to-move,
+    // so this says WHAT — a click here fires, it does not walk you there.
+    actionWord:()=>tutPick('CLICK','TAP'),
     enter(){
       // Out past your own reach, so you have to close on it, and with the
       // auto-assist off, so the kill is yours. Left to itself the assist kills a
@@ -14704,6 +14707,9 @@ window.addEventListener('DOMContentLoaded', function(){
       '<k>Drag a team-mate</k> &mdash; either mouse button, from the field or from his portrait &mdash; onto ground to post him there. He holds it and fights what comes to him. Drop him <b>on a team-mate</b> instead and he follows that hero. The one you are driving goes by his portrait or a right-drag.',
       '<k>Drag a hero</k> &mdash; from the field or from his portrait &mdash; onto ground to post him there. He holds it and fights what comes to him. Drop him <b>on a team-mate</b> instead and he follows that hero.'),
     goal:()=>'Post a hero on the marked spot',
+    // The destination ring says where; nothing so far has shown the drag
+    // itself, and unlike Assemble's pinch there is no button to demo it on.
+    actionWord:()=>'DRAG',
     enter(){
       // The practice targets from the shooting steps have done their job. Clear
       // them, so the ground you are being asked to post a hero on is empty
@@ -14824,6 +14830,9 @@ window.addEventListener('DOMContentLoaded', function(){
       + tutPick('<k>Hold left click on the minimap</k> to look elsewhere &mdash; let go and the view snaps back to your hero.',
                 '<k>Hold a finger on the minimap</k> to look elsewhere &mdash; lift it and the view snaps back to your hero.'),
     goal:()=>'Scout with the minimap',
+    // The outline says "this panel"; HOLD says which gesture — a tap would
+    // just recentre on your hero and teach nothing.
+    actionWord:()=>'HOLD',
     enter(){
       // Nothing else this early in the tutorial has ever pointed at the
       // minimap itself — every other step's ring sits out in the world. A
@@ -14837,6 +14846,11 @@ window.addEventListener('DOMContentLoaded', function(){
     title:'Pushing a lane',
     text:()=>'Drag a hero onto the <b>top or bottom half of the minimap</b> and he walks that lane on his own for the rest of the round &mdash; advancing with his wave rather than ahead of it, which is what keeps him alive.',
     goal:()=>'Send a hero to a lane',
+    actionWord:()=>'DRAG',
+    // Nothing pointed at the minimap here before — same outline "The map"
+    // used, so the panel itself is not a search a step earlier already
+    // taught you how to end.
+    enter(){ tut.mark = { mini:true, wholeMinimap:true, col:'#5AC8E8' }; },
     done:()=>!!tut.p.lane
   },
   {
@@ -15343,6 +15357,29 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.fillStyle = col || '#FFF3D6'; ctx.fillText(text, x, y);
     ctx.restore();
   }
+  // A ring already says WHERE; a phase with `actionWord` uses this to say
+  // WHAT — the one thing a static circle cannot show, and the reason most of
+  // these steps used to be text-only. Full brightness for the phase's first
+  // few seconds, then eased back to a quiet glow rather than nagging forever:
+  // a player still hunting for it can still find it, one who already has it
+  // is not told twice.
+  function tutCueAlpha(){
+    const t = tut.t;
+    if(t < 4) return 1;
+    if(t < 5.5) return 1 - (t-4)/1.5*0.65;
+    return 0.35;
+  }
+  function tutActionCue(x, y, word){
+    const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
+    ctx.save();
+    ctx.globalAlpha = tutCueAlpha();
+    ctx.strokeStyle = 'rgba(159,227,255,.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 12 + pulse*5, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#9FE3FF';
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill();
+    tutLabel(x, y - 32, word, '#9FE3FF', 19);
+    ctx.restore();
+  }
   function drawTutorialMarks(){
     if(!tut.on) return;
     const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
@@ -15433,6 +15470,18 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 16 + pulse*4, 0, 7); ctx.stroke();
     }
 
+    // Anchored on whichever world target the current phase actually cares
+    // about — the ground mark first (Orders posts to a spot, not a unit),
+    // else the nearest live watch target (Shooting's creep).
+    const aw = TUT_PHASES[tut.i] && TUT_PHASES[tut.i].actionWord;
+    if(aw && m && !m.mini){
+      const mx = m.unit ? m.unit.x : m.x, my = m.unit ? m.unit.y : m.y;
+      tutActionCue(mx + (m.r||60) + 46, my, aw());
+    } else if(aw){
+      const c = tut.watch.find(tutAlive);
+      if(c) tutActionCue(c.x + c.r + 46, c.y, aw());
+    }
+
     // The card is at the bottom of the screen and your eyes are on your hero, so
     // the task rides over his head as well. High enough to clear two rows of
     // damage numbers, which stack upward from the same point.
@@ -15454,6 +15503,8 @@ window.addEventListener('DOMContentLoaded', function(){
       const pad = 4 + pulse*3;
       ctx.strokeRect(r.x-pad, r.y-pad, r.w+pad*2, r.h+pad*2);
       ctx.setLineDash([]);
+      const aw = TUT_PHASES[tut.i] && TUT_PHASES[tut.i].actionWord;
+      if(aw) tutActionCue(r.x + r.w/2, r.y + r.h + 26, aw());
       ctx.restore();
       return;
     }
