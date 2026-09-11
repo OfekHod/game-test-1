@@ -749,7 +749,6 @@
      the same trick the desktop dock already uses, is both square and exact:
      full dark right after the cast, gone the instant it is off cooldown. */
   .skillBtn .cd{position:absolute;left:0;right:0;bottom:0;background:rgba(60,40,10,.55);height:0%;}
-  .mobileHint{position:absolute;left:0;right:0;bottom:calc(6px + var(--sab));text-align:center;font-size:11px;color:var(--text-strong);opacity:.7;display:none;pointer-events:none;z-index:6;}
 
   /* Survival's wave call. It is the only thing on screen that announces itself,
      so it sits above the play area rather than in the dock, and it is high up
@@ -969,7 +968,6 @@
     .waveBanner{top:7%;}
     .waveBanner b{font-size:52px;}
     .waveBanner i{font-size:11px;}
-    .mobileHint{display:none !important;}
   }
 </style>
 <script>
@@ -1006,7 +1004,6 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="joystick move" id="moveJoystick"><div class="knob"></div></div>
     </div>
     <div class="skillBtn" id="skillBtn"><div class="skillIcon skill-dash" id="skillBtnIcon"></div><div class="cd" id="skillBtnCd"></div></div>
-    <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · square: skill</div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
     <div class="tutPinch hidden" id="tutPinch"><i class="tutPinchDot a"></i><i class="tutPinchDot b"></i></div>
@@ -8983,8 +8980,6 @@ window.addEventListener('DOMContentLoaded', function(){
   const skillBtnEl = document.getElementById('skillBtn');
   const skillBtnCdEl = document.getElementById('skillBtnCd');
   const skillBtnIconEl = document.getElementById('skillBtnIcon');
-  const mobileHintEl = document.getElementById('mobileHint');
-  let mobileHintTimer = 0;
   // The dock's skill square is the SPACE control's desktop face; on a touch
   // device the same skill lives in the on-screen square instead, so the dock
   // slot that would otherwise sit next to it stays empty.
@@ -15607,13 +15602,6 @@ window.addEventListener('DOMContentLoaded', function(){
     resetScoreHud();
     if(isTouchDevice){
       skillBtnEl.style.display='flex';
-      // The tutorial's first card says all of this and more, so the hint would
-      // be two sets of instructions arguing over the same corner of the screen.
-      if(mode !== 'tutorial'){
-        // Shown here, but timed from the reveal — see reveal().
-        mobileHintEl.style.display='block';
-        clearTimeout(mobileHintTimer);
-      }
     }
     if(mode === 'tutorial') tutStart();
     else tutStop();
@@ -15839,14 +15827,6 @@ window.addEventListener('DOMContentLoaded', function(){
     curtainEl.classList.add('part');
     roundHold = false;
     loadingRound = false;
-    // The phone hint is a four-second timer started back in startRound, which
-    // the three-second hold would have spent behind the cloud. Restart it now
-    // that there is something to read it against.
-    if(isTouchDevice && mode !== 'tutorial'){
-      clearTimeout(mobileHintTimer);
-      mobileHintEl.style.display = 'block';
-      mobileHintTimer = setTimeout(()=>{ mobileHintEl.style.display='none'; }, 4000);
-    }
     curtainTimer = setTimeout(()=>{
       curtainEl.classList.add('hidden');
       curtainEl.classList.remove('part');
