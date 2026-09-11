@@ -810,20 +810,59 @@
   .tutRow button.go{background:#5AC8E8;color:#0a3a4a;}
   .tutRow button.hidden{display:none;}
   .tutRow button:active{transform:translateY(2px);}
-  @keyframes tutPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,213,79,0);}50%{box-shadow:0 0 0 5px rgba(255,213,79,.5);}}
-  .tutPulse{animation:tutPulse 1.15s ease-in-out infinite;border-radius:10px;}
+  /* A ring that actually pings outward and fades, plus a soft scale-breathe on
+     the target itself — the old version only grew to 5px and never got past
+     half-opacity, which read as a static glow rather than something asking
+     for your eye. */
+  @keyframes tutPulse{
+    0%{box-shadow:0 0 0 0 rgba(255,213,79,.65);transform:scale(1);}
+    60%{box-shadow:0 0 0 15px rgba(255,213,79,0);transform:scale(1.07);}
+    100%{box-shadow:0 0 0 0 rgba(255,213,79,0);transform:scale(1);}
+  }
+  .tutPulse{animation:tutPulse 1s cubic-bezier(.4,0,.4,1) infinite;border-radius:10px;}
+  /* The party ROW gets highlighted for steps that are not about any one card
+     (call the squad back, push a lane) — a keyboard press or a pinch, not a
+     tap on a chip. Scaling three chips up and down as one block reads as
+     "pick one of these", the same language "take over the tank" uses on a
+     single chip, so the row gets the ping without the scale-breathe. */
+  @keyframes tutPulseArea{
+    0%{box-shadow:0 0 0 0 rgba(255,213,79,.5);}
+    60%{box-shadow:0 0 0 15px rgba(255,213,79,0);}
+    100%{box-shadow:0 0 0 0 rgba(255,213,79,0);}
+  }
+  .tutPulseArea{animation:tutPulseArea 1.4s ease-in-out infinite;border-radius:14px;}
   /* The arrow that points at whatever the step is asking you to press. The
-     pulse alone says "this corner matters"; the arrow says "that one, there". */
+     pulse alone says "this corner matters"; the arrow says "that one, there".
+     Bigger than a plain triangle needs to be and lit from inside with its own
+     glow, because next to a bright HUD a thin dark-edged wedge disappears. */
   .tutPointer{position:absolute;z-index:9;width:0;height:0;pointer-events:none;
-    border-left:12px solid transparent;border-right:12px solid transparent;
-    filter:drop-shadow(0 0 1px rgba(60,34,10,.9)) drop-shadow(0 2px 3px rgba(0,0,0,.5));}
-  .tutPointer.up{border-bottom:17px solid #FFC02E;animation:tutPointUp 1.05s ease-in-out infinite;}
-  .tutPointer.down{border-top:17px solid #FFC02E;animation:tutPointDown 1.05s ease-in-out infinite;}
-  @keyframes tutPointUp{0%,100%{transform:translateY(6px);}50%{transform:translateY(0);}}
+    border-left:15px solid transparent;border-right:15px solid transparent;
+    filter:drop-shadow(0 0 1px rgba(60,34,10,.9)) drop-shadow(0 2px 3px rgba(0,0,0,.5))
+           drop-shadow(0 0 8px rgba(255,192,46,.9));}
+  .tutPointer.hidden{display:none;}
+  .tutPointer.up{border-bottom:21px solid #FFC02E;animation:tutPointUp 0.85s ease-in-out infinite;}
+  .tutPointer.down{border-top:21px solid #FFC02E;animation:tutPointDown 0.85s ease-in-out infinite;}
+  @keyframes tutPointUp{0%,100%{transform:translateY(9px) scale(0.9);}50%{transform:translateY(0) scale(1.1);}}
   /* The down arrow bobs INTO its target, never away from it: the dock stacks the
      stat strip a few pixels above the skill button, and an upward bob would put
      the arrow's tail on a stat chip. */
-  @keyframes tutPointDown{0%,100%{transform:translateY(0);}50%{transform:translateY(6px);}}
+  @keyframes tutPointDown{0%,100%{transform:translateY(0) scale(0.9);}50%{transform:translateY(9px) scale(1.1);}}
+  /* Two fingertips that slide together and back apart, on a loop — the one
+     gesture nothing else on screen can demonstrate by pointing at a button,
+     since there is no button. Shown only on touch, only while the party row
+     itself is highlighted (tutHighlight already knows that means "assemble
+     by 0 or a pinch"), so it rides along under the row rather than needing
+     its own step-by-step wiring. */
+  .tutPinch{position:absolute;z-index:9;width:74px;height:26px;pointer-events:none;}
+  .tutPinch.hidden{display:none;}
+  .tutPinchDot{position:absolute;top:2px;width:22px;height:22px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%,rgba(255,240,200,.95),rgba(255,192,46,.55));
+    border:2px solid rgba(255,213,79,.95);
+    box-shadow:0 0 9px rgba(255,192,46,.85),0 2px 3px rgba(0,0,0,.4);}
+  .tutPinchDot.a{left:0;animation:tutPinchA 1.5s ease-in-out infinite;}
+  .tutPinchDot.b{right:0;animation:tutPinchB 1.5s ease-in-out infinite;}
+  @keyframes tutPinchA{0%,100%{transform:translateX(0);}50%{transform:translateX(24px);}}
+  @keyframes tutPinchB{0%,100%{transform:translateX(0);}50%{transform:translateX(-24px);}}
 
   /* Pause menu. Same palette and the same .tutRow/.go button classes as the
      tutorial card, so the exit confirmation reads as the same kind of
@@ -970,6 +1009,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="mobileHint" id="mobileHint">drag anywhere to move · tap to shoot there · square: skill</div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
+    <div class="tutPinch hidden" id="tutPinch"><i class="tutPinchDot a"></i><i class="tutPinchDot b"></i></div>
     <div class="tutCard hidden" id="tutCard">
       <div class="tutHead"><span class="tutStep" id="tutStep"></span><b class="tutTitle" id="tutTitle"></b></div>
       <span class="tutBody" id="tutBody"></span><span class="tutMore" id="tutMore"></span>
@@ -13425,6 +13465,25 @@ window.addEventListener('DOMContentLoaded', function(){
     const vTL=mp(camera.x,camera.y), vBR=mp(camera.x+W,camera.y+H);
     ctx.strokeStyle='rgba(90,62,27,.55)'; ctx.lineWidth=1.3;
     ctx.strokeRect(vTL.x, vTL.y, Math.max(2,vBR.x-vTL.x), Math.max(2,vBR.y-vTL.y));
+
+    // Scouting moves the viewport rectangle, but that is a slow-easing outline
+    // that can sit half off the panel — nothing before this marked the exact
+    // spot a held click actually asked to look at. A pin at that spot, not just
+    // a box around it, is the thing your eye can confirm against your thumb.
+    if(scout){
+      const q = mp(scout.x, scout.y);
+      const pulse = 0.5 + 0.5*Math.sin(performance.now()/220);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(q.x, q.y, 7+pulse*4, 0, 7);
+      ctx.strokeStyle = 'rgba(255,192,46,'+(0.55+0.35*pulse).toFixed(3)+')';
+      ctx.lineWidth = 2.4; ctx.stroke();
+      ctx.translate(q.x, q.y);
+      ctx.beginPath();
+      ctx.moveTo(0,-12); ctx.lineTo(4.5,-3); ctx.lineTo(-4.5,-3); ctx.closePath();
+      ctx.fillStyle = '#FFC02E'; ctx.strokeStyle = 'rgba(60,34,10,.9)'; ctx.lineWidth = 1;
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -13814,6 +13873,21 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
 
+    // The camera is only ever riding a shell the PLAYER fired (see rideRocket),
+    // so there is no need to check whose rocket this is — if the view is on it,
+    // it is yours, and pressing the skill again is the one thing to say.
+    if(rocketCam){
+      const bob = Math.sin(performance.now()/260)*2;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = "800 15px 'Baloo 2', sans-serif";
+      ctx.lineWidth = 4; ctx.strokeStyle = '#5A3E1B';
+      ctx.strokeText('CLICK TO EXPLODE', rocketCam.x, rocketCam.y - 30 + bob);
+      ctx.fillStyle = '#FFD54F';
+      ctx.fillText('CLICK TO EXPLODE', rocketCam.x, rocketCam.y - 30 + bob);
+      ctx.restore();
+    }
+
     drawEmbers();
     for(const pt of particles){
       if(pt.water) continue;   // drawn earlier, under the units, with the ripples
@@ -14066,6 +14140,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const tutBodyEl  = document.getElementById('tutBody');
   const tutGoalEl  = document.getElementById('tutGoal');
   const tutPointerEl   = document.getElementById('tutPointer');
+  const tutPinchEl     = document.getElementById('tutPinch');
   const tutMoreEl  = document.getElementById('tutMore');
   const tutRowEl   = document.getElementById('tutRow');
   const tutGoBtn   = document.getElementById('tutGoBtn');
@@ -14327,7 +14402,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // because the step is for meeting the enemy team, not for losing to it.
   // Their outposts are the far side of the map and a real carry fights from
   // under them.
-  const TUT_SPAR_GAP = 70;       // held outside YOUR attack range, so closing it is the step
+  // Held outside YOUR attack range, so closing it is the step. 70 wasn't
+  // enough: acquisition (nearestHostile) checks edge-to-edge, not
+  // center-to-center, so a stand point 70 units past attackRange(h) put an
+  // enemy's actual hitbox only 70-e.r inside the auto-fire threshold — as
+  // little as 43 units for the tank's 27-unit radius, closed by a heroSpeed*0.7
+  // walk in under a second. 160, with the radius folded into the stand point
+  // itself (see enter()), keeps the true edge-to-edge gap at a full 160
+  // regardless of which hero is standing there.
+  const TUT_SPAR_GAP = 160;
   const TUT_SPAR_RATE = 2.0;
   const TUT_SPAR_HP = 900;
   // The walk is authored on the tutorial's own map, so the rings are places
@@ -14439,6 +14522,10 @@ window.addEventListener('DOMContentLoaded', function(){
       '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.',
       'The <k>square button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.'),
     goal:()=>'Kill this one with the blink alone',
+    // No take-over stage first — you are already driving him — so the arrow
+    // goes straight on the skill square, the same as the tank's rocket and
+    // the support's heal do once THEY reach their own skill stage.
+    hl:()=>tutSkillEl(),
     enter(){
       tut.noAuto = true;
       tut.p.spawn = ()=>{
@@ -14508,17 +14595,25 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Your squad',
-    // One hero, one skill, in that order — and the arrow moves with the ask:
-    // from the tank's portrait to the skill button the moment he is yours.
-    // Asking for both heroes and then both skills put four things in the air at
-    // once, and left the pointer nothing more specific than the whole party bar.
+    // Three beats, in order, and the arrow moves with the ask: from the tank's
+    // portrait, to nothing while the pack is a field problem, to the skill
+    // button the moment the rocket is the point. The pack sits BETWEEN taking
+    // him over and the rocket rather than folded into either, because "it
+    // hits everyone" means nothing until you have felt the basic attack hit
+    // only one.
     text(){
-      if(tutDriving('tank'))
-        return 'His skill is a <b>rocket</b>: it flies far, the view goes with it, and it explodes where it lands. Everything caught is frozen and takes <b>double damage</b> until it comes round. Press again in flight to set it off early.';
-      return 'A <b>tank</b> and a <b>support</b> are walking out of your base. You drive one at a time; the other two think for themselves. '
-        + tutPick('<k>1</k> <k>2</k> <k>3</k> or <k>Tab</k> switches.', '<k>Tap a portrait</k>, top left, to take one over.');
+      if(!tutDriving('tank'))
+        return 'A <b>tank</b> and a <b>support</b> are walking out of your base. You drive one at a time; the other two think for themselves. '
+          + tutPick('<k>1</k> <k>2</k> <k>3</k> or <k>Tab</k> switches.', '<k>Tap a portrait</k>, top left, to take one over.');
+      if(!tut.p.splashDone)
+        return 'Get in close and hit them with his <b>basic attack</b> &mdash; it only ever lands on one at a time. His <b>rocket</b> does not have that problem: it explodes on impact and damages <b>everything</b> it catches, which is what makes it worth saving for a group like this one.';
+      return 'His skill is a <b>rocket</b>: it flies far, the view goes with it, and it explodes where it lands. Everything caught is frozen and takes <b>double damage</b> until it comes round. Press again in flight to set it off early.';
     },
-    goal:()=>tutDriving('tank') ? '2 · Fire his rocket' : '1 · Take over the tank',
+    goal(){
+      if(!tutDriving('tank')) return '1 · Take over the tank';
+      if(!tut.p.splashDone) return '2 · Clear the pack with basic attacks';
+      return '3 · Fire his rocket';
+    },
     hl:()=>pchips[1],
     enter(){
       const h = tutHero();
@@ -14537,13 +14632,57 @@ window.addEventListener('DOMContentLoaded', function(){
         // through a tutorial reads as a punishment for switching.
         for(let g=0; g<MAX_LEVEL && a.level < h.level; g++) grantXP(a, a.xpToNext - a.xp + 1);
       }
-      // Something for the rocket to land on. Two of them, close enough together
-      // that the blast takes both, which is what the blast is for.
-      const a = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(h.x, h.y, 340, TUT_SHOW_ANGLE+0.22);
-      tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
       tut.p.stage = 0;
     },
-    tick(){ tutSkillStage('tank', pchips[1]); },
+    tick(){
+      const p = tut.p;
+      if(!tutDriving('tank')) return;
+      // Anchored on the TANK, wherever he currently stands — he spawns back at
+      // base and walks over on his own clock, so anchoring on whoever you were
+      // driving before could leave either spawn far from where he actually is.
+      const tankH = playerTeam.find(a => a.type === 'tank') || tutHero();
+      // Stage 2: five to soften up by hand, close enough together to read as a
+      // pack rather than a stack. Reuses TUT_PACK, the same five the "clear the
+      // mobs" step asks for, so the number means the same thing both times.
+      if(!p.pack && !p.splashDone){
+        const c = tutOpenSpot(tankH.x, tankH.y, 300, TUT_SHOW_ANGLE);
+        p.pack = [];
+        for(let i=0;i<TUT_PACK;i++){
+          const s = tutOpenSpot(c.x, c.y, 80, TUT_SHOW_ANGLE + (i-2)*0.7);
+          p.pack.push(tutSpawnCreep(s.x, s.y));
+        }
+        tut.watch = p.pack;
+        tutHighlight(null);        // a field problem, not a UI control to point at
+        // Taking the tank over just reassigned the other two to follow him —
+        // squadTogether does that on every switch, on purpose, so your squad
+        // stays with whoever you drive. Here it means the carry closes in
+        // right along with you and clears the pack on his own ranged hits
+        // before "one at a time" ever lands. Hold them where they are instead;
+        // they rejoin once the lesson is over.
+        squadTogether = false;
+        for(const a of playerTeam){
+          if(a === tankH) continue;
+          a.mode = 'idle'; a.followTarget = null; a.moveTarget = null;
+        }
+        tutPaint();
+      }
+      if(p.pack && !p.splashDone && !p.pack.some(tutAlive)){
+        p.splashDone = true;
+        // Pack's down — let the squad close up again for the rest of the
+        // tutorial, same as the moment you first took the tank over.
+        squadTogether = true;
+        for(const a of playerTeam){
+          if(a === tankH) continue;
+          a.mode = 'follow'; a.followTarget = tankH; a.moveTarget = null;
+        }
+        // Something for the rocket to land on. Two of them, close enough
+        // together that the blast takes both, which is what the blast is for.
+        const a = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE-0.22), b = tutOpenSpot(tankH.x, tankH.y, 340, TUT_SHOW_ANGLE+0.22);
+        tut.watch = [ tutSpawnCreep(a.x, a.y), tutSpawnCreep(b.x, b.y) ];
+        tutPaint();
+      }
+      if(p.splashDone) tutSkillStage('tank', pchips[1]);
+    },
     done:()=>!!(tut.p.cast && tut.p.cast.tank)
   },
   {
@@ -14577,6 +14716,11 @@ window.addEventListener('DOMContentLoaded', function(){
       tut.watch = [];
       const h = tutHero(), s = tutOpenSpot(h.x, h.y, 320, TUT_SHOW_ANGLE-0.6);
       tut.mark = { x:s.x, y:s.y, r:54, col:'#5AC8E8', label:'POST A HERO HERE' };
+      // The card mentions the OTHER ending — drop him on a team-mate instead
+      // — as a sentence in passing. A ring on an actual team-mate is the
+      // difference between reading that it exists and seeing where it goes.
+      const mate = playerTeam.find(a => a.alive && a !== h);
+      tut.mark2 = mate ? { unit:mate, r:mate.r+18, col:'#8FD6FF', label:'OR DROP HIM HERE TO FOLLOW', thin:true } : null;
     },
     done:()=>!!tut.p.solo
   },
@@ -14680,6 +14824,13 @@ window.addEventListener('DOMContentLoaded', function(){
       + tutPick('<k>Hold left click on the minimap</k> to look elsewhere &mdash; let go and the view snaps back to your hero.',
                 '<k>Hold a finger on the minimap</k> to look elsewhere &mdash; lift it and the view snaps back to your hero.'),
     goal:()=>'Scout with the minimap',
+    enter(){
+      // Nothing else this early in the tutorial has ever pointed at the
+      // minimap itself — every other step's ring sits out in the world. A
+      // new player's eye has no reason to find a 150px corner panel on its
+      // own, so the panel gets outlined rather than just described.
+      tut.mark = { mini:true, wholeMinimap:true, col:'#5AC8E8' };
+    },
     done:()=>(tut.p.scout||0) > 0.5
   },
   {
@@ -14695,14 +14846,37 @@ window.addEventListener('DOMContentLoaded', function(){
     enter(){
       const h = tutHero();
       macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
-      const hold = attackRange(h) + TUT_SPAR_GAP;
       enemyTeam.forEach((e, i)=>{
         respawnHero(e);
-        // In front of you and in the open, not four screens away under their
-        // outposts. Walking to him used to mean walking into a tower. Fanned
-        // out by index so the three of them arrive as a line, not a stack.
+        // Fanned out by index so the three of them arrive as a line, not a
+        // stack.
         const bearing = TUT_SHOW_ANGLE + (i-1)*0.5;
-        const spot = tutOpenSpot(h.x, h.y, 700 + i*60, bearing);
+        // Where each one stands, fixed once — see `tutSparAI` for why it is
+        // not recomputed off your position every frame — and clear of your
+        // own tower's reach, or the step that introduces the enemy team hands
+        // your tower a free kill on one of them before you ever get there.
+        // +e.r because acquisition measures to HIS edge, not his center — this
+        // hero's own radius, not some other hero's, has to come off the gap.
+        // Clamped under HERO_VISION: a build that put points into range can
+        // push attackRange(h) high enough that the raw formula lands the
+        // stand point outside your own sight — he "arrives" and just never
+        // renders, fogged, while whichever of the three stayed inside vision
+        // is the only one you ever see. Held outside your reach only means
+        // something if he is still somewhere you can look at.
+        const hold = Math.min(attackRange(h) + e.r + TUT_SPAR_GAP, HERO_VISION - 90);
+        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
+        e._sparTX = stand.x; e._sparTY = stand.y;
+        // Spawn further OUT than the stand point, not at a fixed radius: a
+        // fixed 700+i*60 used to sit safely past `hold`, but hold grows with
+        // the player's own live attack range (a build that spent points on
+        // range can push it well past 400), and once hold caught up to a
+        // fixed spawn radius the enemy's "walk to your stand point" became a
+        // walk AWAY from the player instead of toward him — the three showing
+        // up as one, because only whichever had the smallest hold still had
+        // room to walk in. Anchoring the spawn off hold itself keeps every
+        // one of them walking the same real distance in, in front of you,
+        // however far your own reach has grown.
+        const spot = tutOpenSpot(h.x, h.y, hold + 220 + i*60, bearing);
         const s = tutClearOwnTower(spot.x, spot.y);
         e.x = s.x; e.y = s.y;
         e.animPrevX = e.x; e.animPrevY = e.y;
@@ -14712,12 +14886,6 @@ window.addEventListener('DOMContentLoaded', function(){
         // about meeting the enemy is worth nothing if they are corpses before
         // you have looked at them.
         e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
-        // Where each one stands, fixed once — see `tutSparAI` for why it is
-        // not recomputed off your position every frame — and clear of your
-        // own tower's reach, or the step that introduces the enemy team hands
-        // your tower a free kill on one of them before you ever get there.
-        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
-        e._sparTX = stand.x; e._sparTY = stand.y;
       });
       tut.spar = true; tut.sparCd = 1.5;
       tut.sparFlee = false;
@@ -14740,22 +14908,30 @@ window.addEventListener('DOMContentLoaded', function(){
   },
   {
     title:'Push a lane, take a tower',
-    // Three things in one phase because they are one movement: pull the squad
-    // together, point it down a lane, and walk in behind the wave. Taught apart
-    // they are three gestures; taught together they are how a round is won.
+    // Three things in one phase, not four: pull the squad together, catch up
+    // to the wave it already sends down the lane, and walk in behind it.
+    // Dragging a hero onto the minimap is not asked for again here — "Pushing
+    // a lane" already taught that gesture on its own, and asking for it a
+    // second time mid-push would be re-teaching, not pushing. So the lane
+    // itself is just walked to, the same way "Walking" walks you to a
+    // ring: a dashed line and a circle, straight onto your own wave.
     text(){
       const p = tut.p;
       if(!p.assemble) return 'Your base now sends a <b>wave</b> down each lane every twenty seconds &mdash; one big creep leading three small. A lane is taken by a squad walking behind one, never by a hero alone. Their team has pulled back and their waves have stopped, so this lane is yours. <b>Pull your three together</b> first.';
-      if(!p.lane) return 'Now point them down the <b>' + p.laneName + ' lane</b>: drag the hero you are driving onto the <b>' + p.laneName + ' half of the minimap</b>. The other two are following him, so all three go together.';
+      if(!p.metCreeps) return 'Head down the <b>' + p.laneName + ' lane</b> and catch up to your creep wave &mdash; it is already marching. A squad that arrives ahead of its own creeps takes the tower fire alone.';
       return 'Walk in <b>behind your creeps</b>. A tower outranges every hero and hits harder than anything on the map, so let the wave hold its attention while the three of you cut the outpost down. Worth <b>200 points</b>.';
     },
     goal(){
       const p = tut.p;
       if(!p.assemble) return '1 · Assemble your squad';
-      if(!p.lane) return '2 · Send them down the ' + p.laneName + ' lane';
+      if(!p.metCreeps) return '2 · Get to the ' + p.laneName + ' lane';
       const t = p.tower;
       const left = t ? Math.max(0, Math.ceil(t.hp / t.maxHp * 100)) : 0;
-      return '3 · Destroy their outpost — ' + left + '% left';
+      // This line doubles as the label that floats over your own head — the
+      // one thing visible to someone who never looks down at the card — so
+      // "stay behind them" has to ride along with "destroy it", not just
+      // live in the card text below.
+      return '3 · Follow your creeps to destroy the outpost — ' + left + '% left';
     },
     hl:()=>partyEl,
     enter(){
@@ -14792,24 +14968,35 @@ window.addEventListener('DOMContentLoaded', function(){
       // stated — but the mark and the percentage follow the lane you are nearest.
       tut.p.standing = enemyTowers.filter(t => !t.main && t.hp > 0);
       tut.p.tower = tut.p.standing.find(t => Math.abs(t.y - LANE_YS[li]) < 200) || tut.p.standing[0] || null;
-      if(tut.p.tower)
-        tut.mark = { x:tut.p.tower.x, y:tut.p.tower.y, r:TOWER_RANGE, col:'#FF9A8B',
-                     label:'THEIR OUTPOST', thin:true, mini:true };
+      // The tower is not marked yet — see tick(). Pointing at it before the
+      // squad has even met its own wave puts the whole lesson's attention on
+      // the wrong thing first.
     },
     tick(){
       const p = tut.p;
-      // Order is the lesson, not pedantry: assemble pulls the other two onto
-      // whoever you are driving, so a lane order given first is undone by the
-      // assemble that follows it. Ask again rather than leaving the squad
-      // standing in the base under a goal that says "destroy the outpost".
-      if(p.lane && !p.assemble){
-        p.lane = false;
-        tut.nudge = 'Pull them <b>together</b> first &mdash; assembling now calls him straight back.';
-        tut.nudgeT = 4;
-        tutPaint();
-        return;
+      // Once assembled, the mark rides your own wave — the closest of its
+      // four creeps, so the ring keeps up with whichever one is currently in
+      // front rather than trailing a fixed lead creep that outpaces its own
+      // escorts — and the dashed line/arrow every other ring or mark gets
+      // (drawTutorialMarks) is what actually walks you there. No drag, no
+      // separate "send them down the lane" ask: you already know that
+      // gesture from "Pushing a lane", so this just points at the lane.
+      if(p.assemble && !p.metCreeps){
+        const h = tutHero();
+        const wave = allyCreeps.filter(c => c.lane === p.laneIdx);
+        let near = false, best = null, bd = Infinity;
+        for(const c of wave){
+          const d = dist(h.x, h.y, c.x, c.y);
+          if(d < bd){ bd = d; best = c; }
+          if(d < 260) near = true;
+        }
+        if(near) p.metCreeps = true;
+        else if(best) tut.mark = { x:best.x, y:best.y, r:70, col:'#8CE39B', label:'YOUR CREEPS', mini:true };
       }
-      const stage = (p.assemble ? 1 : 0) + (p.lane ? 1 : 0);
+      if(p.metCreeps && tut.p.tower && (!tut.mark || tut.mark.label !== 'THEIR OUTPOST'))
+        tut.mark = { x:tut.p.tower.x, y:tut.p.tower.y, r:TOWER_RANGE, col:'#FF9A8B',
+                     label:'THEIR OUTPOST', thin:true, mini:true };
+      const stage = (p.assemble ? 1 : 0) + (p.metCreeps ? 1 : 0);
       if(stage !== p.stage){
         p.stage = stage;
         tutHighlight(stage === 0 ? partyEl : null);
@@ -14849,9 +15036,12 @@ window.addEventListener('DOMContentLoaded', function(){
     tutCardEl.classList.toggle('touchPad', isTouchDevice);
   }
   function tutHighlight(el){
-    if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse');
+    if(tut.hl && tut.hl !== el) tut.hl.classList.remove('tutPulse', 'tutPulseArea');
     tut.hl = el || null;
-    if(tut.hl) tut.hl.classList.add('tutPulse');
+    // The party row stands for the whole squad, not a card to tap — a
+    // keyboard press or a pinch, same as "Assemble" and "Push a lane" ask
+    // for. The scale-breathe belongs to a single chip you take over.
+    if(tut.hl) tut.hl.classList.add(tut.hl === partyEl ? 'tutPulseArea' : 'tutPulse');
     tutAimPointer();
   }
   // The arrow that sits next to the highlighted control. It goes on whichever
@@ -14861,7 +15051,25 @@ window.addEventListener('DOMContentLoaded', function(){
   // and move whenever the stage does.
   function tutAimPointer(){
     const el = tut.hl;
-    if(!el || el.classList.contains('hidden') || !el.offsetParent){
+    // The party row stands for "0, or a pinch" — on touch there is no button
+    // to point at for the pinch half of that, so a little two-fingertip demo
+    // rides under the row instead, on the exact same on/off switch as the
+    // row's own ring: whenever tutHighlight has partyEl lit up.
+    const partyLive = el === partyEl && !el.classList.contains('hidden') && el.offsetParent;
+    if(partyLive && isTouchDevice){
+      const pr = el.getBoundingClientRect(), ps = stageEl.getBoundingClientRect();
+      tutPinchEl.classList.remove('hidden');
+      tutPinchEl.style.left = (pr.left - ps.left + pr.width/2 - 37) + 'px';
+      tutPinchEl.style.top  = (pr.bottom - ps.top + 12) + 'px';
+    } else {
+      tutPinchEl.classList.add('hidden');
+    }
+    // A single triangle can only point at one X, and for a three-chip row
+    // that X lands on the MIDDLE chip — "call the squad back" ends up
+    // looking like it means the middle hero specifically, whoever that
+    // happens to be. The party row already has its own ring (tutPulseArea);
+    // it doesn't need an arrow pretending to single one card out.
+    if(!el || el === partyEl || el.classList.contains('hidden') || !el.offsetParent){
       tutPointerEl.classList.add('hidden');
       return;
     }
@@ -14874,9 +15082,9 @@ window.addEventListener('DOMContentLoaded', function(){
     // The tip rests ON the control's edge rather than floating clear of it. The
     // dock stacks the stat strip directly above the skill button, so an arrow
     // with air under it points at the row above the one it means.
-    tutPointerEl.style.left = (r.left - s.left + r.width/2 - 12) + 'px';
+    tutPointerEl.style.left = (r.left - s.left + r.width/2 - 15) + 'px';
     tutPointerEl.style.top  = up ? (r.bottom - s.top - 3) + 'px'
-                                 : (r.top - s.top - 14) + 'px';
+                                 : (r.top - s.top - 18) + 'px';
   }
   // Where "press the skill" points. The round button only exists on touch; on a
   // desktop the same skill is the SPACE slot in the dock.
@@ -14994,7 +15202,14 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutAdvance(){
     tut.i++;
     tut.ready = 0; tut.ack = false; tut.t = 0; tut.p = {};
-    tut.rings = []; tut.mark = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
+    tut.rings = []; tut.mark = null; tut.mark2 = null; tut.watch = []; tut.nudge = ''; tut.nudgeT = 0;
+    // A real ASSEMBLE_CD outlives the step that taught it. Skip through
+    // "Assemble" (or just play it fast) and the button can still be cooling
+    // down several steps later — "Push a lane, take a tower" asks for the
+    // same press, presses it into a silent cooldown floater nobody is
+    // watching for, and the arrow is left pointing at a button that visibly
+    // does nothing. Every phase starts with it ready.
+    assembleCd = 0;
     if(tut.i >= TUT_PHASES.length){ tutFinish(); return; }
     const ph = TUT_PHASES[tut.i];
     tutHighlight(ph.hl ? ph.hl() : null);
@@ -15002,7 +15217,13 @@ window.addEventListener('DOMContentLoaded', function(){
     tutPaint();
   }
   function tutStart(){
-    tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false; tut.hl = null;
+    tut.on = true; tut.i = -1; tut.holdWaves = true; tut.noAuto = false;
+    // Not a bare `tut.hl = null`: that skips the class removal tutHighlight
+    // does for whatever tut.hl was pointing at. Harmless on a fresh page,
+    // but a tutorial started a second time without going through tutStop()
+    // first (which does call tutHighlight) would leave that element's pulse
+    // class on it forever — nothing else ever revisits it to clean it up.
+    tutHighlight(null);
     tut.holdCamps = true; tut.arena = true; tut.holdDrops = true; tut.spar = false; tut.sparFlee = false;
     tut.homeEnemies = false; tut.holdFoeWaves = false;
     // startRound has just stocked every camp. Empty them again: nothing lives in
@@ -15049,7 +15270,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // again — the handover into a real Match runs through here, and a match
     // against three heroes standing in an empty base is not a match.
     tut.homeEnemies = false; tut.holdFoeWaves = false;
-    tut.rings = []; tut.mark = null; tut.watch = []; tut.p = null;
+    tut.rings = []; tut.mark = null; tut.mark2 = null; tut.watch = []; tut.p = null;
     tutHighlight(null);
     tutHide();
   }
@@ -15192,6 +15413,19 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.setLineDash([]);
       if(m.label) tutLabel(mx, my - Math.min(m.r, 150) - 30, m.label, m.col);
     }
+    // A second, purely illustrative ring — the OTHER thing a drag can do
+    // (post vs. follow are one gesture with two endings, and a step that only
+    // ever marks the ground teaches half of it). Never competes for the
+    // crawling lead line above; it is context, not the goal.
+    const m2 = tut.mark2;
+    if(m2){
+      const mx = m2.unit ? m2.unit.x : m2.x, my = m2.unit ? m2.unit.y : m2.y;
+      ctx.strokeStyle = m2.col; ctx.lineWidth = m2.thin ? 3 : 5;
+      ctx.setLineDash([14,10]);
+      ctx.beginPath(); ctx.arc(mx, my, m2.r + pulse*4, 0, 7); ctx.stroke();
+      ctx.setLineDash([]);
+      if(m2.label) tutLabel(mx, my - Math.min(m2.r, 150) - 26, m2.label, m2.col, 20);
+    }
     for(const c of tut.watch){
       if(!tutAlive(c)) continue;
       ctx.strokeStyle = 'rgba(232,89,90,'+(0.5+0.4*pulse).toFixed(3)+')';
@@ -15209,9 +15443,21 @@ window.addEventListener('DOMContentLoaded', function(){
   function drawTutorialMini(){
     if(!tut.on || !tut.mark || !tut.mark.mini) return;
     const m = tut.mark, r = minimapRect();
-    const wx = m.unit ? m.unit.x : m.x, wy = m.unit ? m.unit.y : m.y;
     const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
     ctx.save();
+    // "Scout with the minimap" has no world point to mark — the whole panel
+    // is the target, not a spot on it — so it gets its own outline around
+    // the panel's own bounds instead of the usual dot projected onto it.
+    if(m.wholeMinimap){
+      ctx.strokeStyle = m.col; ctx.lineWidth = 3;
+      ctx.setLineDash([9,7]);
+      const pad = 4 + pulse*3;
+      ctx.strokeRect(r.x-pad, r.y-pad, r.w+pad*2, r.h+pad*2);
+      ctx.setLineDash([]);
+      ctx.restore();
+      return;
+    }
+    const wx = m.unit ? m.unit.x : m.x, wy = m.unit ? m.unit.y : m.y;
     ctx.strokeStyle = m.col; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(r.x + (wx/WORLD_W)*r.w, r.y + (wy/WORLD_H)*r.h, 4 + pulse*5, 0, 7);
