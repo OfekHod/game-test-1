@@ -14737,11 +14737,35 @@ window.addEventListener('DOMContentLoaded', function(){
       macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
       enemyTeam.forEach((e, i)=>{
         respawnHero(e);
-        // In front of you and in the open, not four screens away under their
-        // outposts. Walking to him used to mean walking into a tower. Fanned
-        // out by index so the three of them arrive as a line, not a stack.
+        // Fanned out by index so the three of them arrive as a line, not a
+        // stack.
         const bearing = TUT_SHOW_ANGLE + (i-1)*0.5;
-        const spot = tutOpenSpot(h.x, h.y, 700 + i*60, bearing);
+        // Where each one stands, fixed once — see `tutSparAI` for why it is
+        // not recomputed off your position every frame — and clear of your
+        // own tower's reach, or the step that introduces the enemy team hands
+        // your tower a free kill on one of them before you ever get there.
+        // +e.r because acquisition measures to HIS edge, not his center — this
+        // hero's own radius, not some other hero's, has to come off the gap.
+        // Clamped under HERO_VISION: a build that put points into range can
+        // push attackRange(h) high enough that the raw formula lands the
+        // stand point outside your own sight — he "arrives" and just never
+        // renders, fogged, while whichever of the three stayed inside vision
+        // is the only one you ever see. Held outside your reach only means
+        // something if he is still somewhere you can look at.
+        const hold = Math.min(attackRange(h) + e.r + TUT_SPAR_GAP, HERO_VISION - 90);
+        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
+        e._sparTX = stand.x; e._sparTY = stand.y;
+        // Spawn further OUT than the stand point, not at a fixed radius: a
+        // fixed 700+i*60 used to sit safely past `hold`, but hold grows with
+        // the player's own live attack range (a build that spent points on
+        // range can push it well past 400), and once hold caught up to a
+        // fixed spawn radius the enemy's "walk to your stand point" became a
+        // walk AWAY from the player instead of toward him — the three showing
+        // up as one, because only whichever had the smallest hold still had
+        // room to walk in. Anchoring the spawn off hold itself keeps every
+        // one of them walking the same real distance in, in front of you,
+        // however far your own reach has grown.
+        const spot = tutOpenSpot(h.x, h.y, hold + 220 + i*60, bearing);
         const s = tutClearOwnTower(spot.x, spot.y);
         e.x = s.x; e.y = s.y;
         e.animPrevX = e.x; e.animPrevY = e.y;
@@ -14751,15 +14775,6 @@ window.addEventListener('DOMContentLoaded', function(){
         // about meeting the enemy is worth nothing if they are corpses before
         // you have looked at them.
         e.maxHp = TUT_SPAR_HP; e.hp = TUT_SPAR_HP;
-        // Where each one stands, fixed once — see `tutSparAI` for why it is
-        // not recomputed off your position every frame — and clear of your
-        // own tower's reach, or the step that introduces the enemy team hands
-        // your tower a free kill on one of them before you ever get there.
-        // +e.r because acquisition measures to HIS edge, not his center — this
-        // hero's own radius, not some other hero's, has to come off the gap.
-        const hold = attackRange(h) + e.r + TUT_SPAR_GAP;
-        const stand = tutClearOwnTower(h.x + Math.cos(bearing)*hold, h.y + Math.sin(bearing)*hold);
-        e._sparTX = stand.x; e._sparTY = stand.y;
       });
       tut.spar = true; tut.sparCd = 1.5;
       tut.sparFlee = false;
