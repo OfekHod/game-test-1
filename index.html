@@ -2598,6 +2598,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // of ownership and loading, a tile the unit of background baking, a region
   // the unit a feature belongs to. Declared here because applyLayout sizes the
   // tile pool off OW_TILE while this script is still being evaluated.
+  // The edges of the world, as the things that live in it see them. In every
+  // other mode they are the map: 0 to WORLD_W. In Open World the entity pair
+  // is the loaded envelope — always a chunk clear of every hero, so a clamp
+  // still means something — and the camera pair is not a bound at all, because
+  // the loader follows the unclamped focus and a scout may outrun the chunks.
+  let WX0 = 0, WY0 = 0, WX1 = WORLD_W, WY1 = WORLD_H;
+  let CAMX0 = 0, CAMY0 = 0, CAMX1 = WORLD_W, CAMY1 = WORLD_H;
   const CHUNK = 1000, OW_TILE = CHUNK/2, REGION = 4000;
   let OW_TILE_MAX = 64;         // sized from the view in applyLayout, never chosen
   const OW_TILE_BUDGET = 64;    // and never past the 4000-square bake it gives back
@@ -4726,6 +4733,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // temporal dead zone, and it is a let read at every use: OW_DEBUG = true in
   // the console arms it for the rest of the page's life.
   let OW_DEBUG = typeof location !== 'undefined' && /(?:^|[?&])owdebug(?:=|&|$)/.test(location.search || '');
+  // ?warp=x,y puts the squad there at the start of an Open World round. It is
+  // how a screenshot reaches ground 90,000 units out without walking eight
+  // minutes to it, and like ?speed it is file:// only — dead in the published
+  // build, where a player would simply be skipping the mode.
+  const OW_WARP = (typeof location !== 'undefined' && location.protocol === 'file:')
+    ? (/(?:^|[?&])warp=(-?\d+),(-?\d+)/.exec(location.search || '') || null)
+    : null;
   let worldSeed = 0;        // the seed of the Open World round being played
   let pendingSeed = null;   // what the title screen's seed box asked for
   let genRng = null, genDepth = 0;
@@ -5605,13 +5619,37 @@ window.addEventListener('DOMContentLoaded', function(){
   // of units wide at the far end, the way a real shadow opens up. FOG_EDGE_SOFT
   // then rounds the two steps into one continuous ramp.
   const SHADOW_UMBRA_R = 0.58;  // inner blocking radius, as a fraction of the true one
+  // The carve is O(near²) — every rim ray and every tree's two edge rays is
+  // tested against every near tree, twice. Inside a ten-camp grove "near" is
+  // about seventy trees, which is ninety thousand ray tests per hero per
+  // frame, in exactly the place this mode is about. So the carve works from
+  // the NEAREST few: a tree standing behind thirty-two nearer ones is already
+  // in someone's shadow, and its own shadow falls inside theirs. isVisible and
+  // blockedByTrees keep the full list, so the vision TEST stays exact — this
+  // caps what is drawn, not what can be seen.
+  const FOG_NEAR_MAX = 32, FOG_UMBRA_MAX = 40;
   function carveVision(fctx, s){
-    const sNear = nearOf(s);
+    let sNear = nearOf(s);
     // No tree in range means both passes would carve the same circle, so there
     // is no penumbra to draw and no reason to pay for a second one.
     if(!sNear.length){ carvePass(fctx, s, sNear, 1, 1); return; }
-    carvePass(fctx, s, sNear, 1, 0.5);
-    carvePass(fctx, s, sNear, SHADOW_UMBRA_R, 0.5);
+    const full = sNear.length;
+    if(full > FOG_NEAR_MAX){
+      if(!s._sorted){
+        sNear = sNear.slice().sort((a, b) =>
+          ((a.x-s.x)*(a.x-s.x) + (a.y-s.y)*(a.y-s.y)) - ((b.x-s.x)*(b.x-s.x) + (b.y-s.y)*(b.y-s.y)));
+        s._sorted = sNear;
+      } else sNear = s._sorted;
+      sNear = sNear.slice(0, FOG_NEAR_MAX);
+    }
+    if(full > FOG_UMBRA_MAX){
+      // Too many casters for the two-pass penumbra to read as anything but
+      // noise anyway, and it is the pass that doubles the cost.
+      carvePass(fctx, s, sNear, 1, 1);
+    } else {
+      carvePass(fctx, s, sNear, 1, 0.5);
+      carvePass(fctx, s, sNear, SHADOW_UMBRA_R, 0.5);
+    }
     revealTrees(fctx, s);
   }
   function carvePass(fctx, s, sNear, k, alpha){
@@ -7652,6 +7690,7 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const v of chunk.rivers){ if(seen.has(v.id)) continue; seen.add(v.id); rivers.push(v); }
     }
     for(const t of playerTowers) t._sightTrees = null;
+    owSetEnvelope();
   }
   // The start block: four regions, the rivers they can see, and the 4x4 chunks
   // covering today's arena box — built synchronously behind the loading panel,
@@ -7674,6 +7713,232 @@ window.addEventListener('DOMContentLoaded', function(){
     for(let cx=0; cx<WORLD_W/CHUNK; cx++)
       for(let cy=0; cy<WORLD_H/CHUNK; cy++) loadChunk(cx, cy, false).pinned = true;
     rebuildWorldLists();
+  }
+
+
+  /* ---- streaming: what is loaded, and when -----------------------------
+     The rule the whole loader turns on: a chunk is built before any hero or
+     the camera can see it, and dropped only when it is far from every one of
+     them. Nothing that is wanted is ever evicted, so a clamp, a camp timer or
+     a stump can never be lost to loader churn.
+  */
+  const OW_LOAD_R = HERO_VISION + CHUNK + 100;   // 1800: a whole chunk lies beyond sight before he reaches its edge
+  const OW_UNLOAD_R = 3000;                      // leaves at 3000, arrives at 1800 — 1.2 chunks of hysteresis
+  const OW_CAM_PAD = 300, OW_CHUNK_TICK = 0.5;
+  const OW_GEN_MS = 6, OW_GEN_MS_URGENT = 12;
+  const OW_REGION_KEEP = 3, OW_RIVER_KEEP = 5;   // in regions, from every hero and the focus
+  const OW_LOADED_WARN = 120;
+  const genQueue = [], owWarmQueue = [];
+  let owChunkTimer = 0, owLastFocus = '';
+
+  function owChunkBox(set, x0, y0, x1, y1){
+    for(let cx=Math.floor(x0/CHUNK); cx<=Math.floor(x1/CHUNK); cx++)
+      for(let cy=Math.floor(y0/CHUNK); cy<=Math.floor(y1/CHUNK); cy++) set.add(keyOf(cx, cy));
+  }
+  // Heroes, the camera's own box, and the start block, which is pinned for the
+  // round: coming home is then always instant, and it is "the start of the
+  // generated map" the mode is anchored to.
+  function wantedSet(){
+    const want = new Set();
+    for(let cx=0; cx<WORLD_W/CHUNK; cx++) for(let cy=0; cy<WORLD_H/CHUNK; cy++) want.add(keyOf(cx, cy));
+    for(const h of playerTeam){
+      if(!h.alive) continue;
+      owChunkBox(want, h.x-OW_LOAD_R, h.y-OW_LOAD_R, h.x+OW_LOAD_R, h.y+OW_LOAD_R);
+    }
+    // Derived from the UNCLAMPED focus, not from camera: a minimap scout, a
+    // hero switch or an edge pan is known to the loader the frame it begins
+    // rather than after the camera has eased its way there.
+    const f = owFocus();
+    owChunkBox(want, f.x - W/2 - OW_CAM_PAD, f.y - H/2 - OW_CAM_PAD, f.x + W/2 + OW_CAM_PAD, f.y + H/2 + OW_CAM_PAD);
+    // ...and extended along the camera's own smoothed velocity, so walking
+    // fast queues what is about to be in front of you.
+    const vx = (camVX || 0)*0.6, vy = (camVY || 0)*0.6;
+    if(vx || vy) owChunkBox(want, camera.x + Math.min(0,vx) - OW_CAM_PAD, camera.y + Math.min(0,vy) - OW_CAM_PAD,
+                                  camera.x + W + Math.max(0,vx) + OW_CAM_PAD, camera.y + H + Math.max(0,vy) + OW_CAM_PAD);
+    return want;
+  }
+  // Runs every CHUNK_TICK, and immediately whenever the focus box has moved
+  // into different chunks or a scout is up — four integer compares a frame.
+  function chunkTick(force){
+    const f = owFocus();
+    const key = Math.floor((f.x - W/2)/CHUNK) + '|' + Math.floor((f.y - H/2)/CHUNK) + '|'
+              + Math.floor((f.x + W/2)/CHUNK) + '|' + Math.floor((f.y + H/2)/CHUNK);
+    if(!force && key === owLastFocus && owChunkTimer > 0) return;
+    owLastFocus = key; owChunkTimer = OW_CHUNK_TICK;
+
+    const want = wantedSet();
+    // Queue what is missing, nearest to a hero or the focus first.
+    for(const k of want){
+      if(loaded.has(k) || genQueue.some(q => q.kind === 'chunk' && q.key === k)) continue;
+      const [cx, cy] = k.split(',').map(Number);
+      genQueue.push({ kind: 'chunk', key: k, cx, cy, d: owNearHero(cx*CHUNK + CHUNK/2, cy*CHUNK + CHUNK/2) });
+    }
+    genQueue.sort((a, b) => a.d - b.d);
+
+    // Regions ahead of need, out to the minimap's own reach (A1), so the panel
+    // is built to its edge and a chunk never waits on a region build.
+    const ahead = MM_WORLD/2 + 200;
+    for(const h of playerTeam){
+      if(!h.alive) continue;
+      for(let rx=regionXOf(h.x-ahead); rx<=regionXOf(h.x+ahead); rx++)
+        for(let ry=regionYOf(h.y-ahead); ry<=regionYOf(h.y+ahead); ry++){
+          const rk = keyOf(rx, ry);
+          if(regionCache.has(rk) || genQueue.some(q => q.kind === 'region' && q.key === rk)) continue;
+          genQueue.push({ kind: 'region', key: rk, rx, ry, d: dist(h.x, h.y, OW_BASE_X + rx*REGION + REGION/2, OW_BASE_Y + ry*REGION + REGION/2) });
+        }
+    }
+
+    owUnloadFar(want);
+    owEvictRegions();
+    if(OW_DEBUG && loaded.size > OW_LOADED_WARN) console.warn('[ow] ' + loaded.size + ' chunks loaded');
+  }
+  function owNearHero(x, y){
+    let best = dist(x, y, owFocus().x, owFocus().y);
+    for(const h of playerTeam){ if(h.alive) best = Math.min(best, dist(x, y, h.x, h.y)); }
+    return best;
+  }
+  // A chunk leaves when it is outside every hero's UNLOAD_R and outside the
+  // camera's box by a chunk — and never when it is wanted.
+  function owUnloadFar(want){
+    const f = owFocus();
+    const cx0 = f.x - W/2 - CHUNK, cy0 = f.y - H/2 - CHUNK, cx1 = f.x + W/2 + CHUNK, cy1 = f.y + H/2 + CHUNK;
+    let changed = false;
+    for(const [k, chunk] of loaded){
+      if(chunk.pinned || want.has(k)) continue;
+      const mx = chunk.x0 + CHUNK/2, my = chunk.y0 + CHUNK/2;
+      let near = (mx > cx0 && mx < cx1 && my > cy0 && my < cy1);
+      if(!near) for(const h of playerTeam){ if(h.alive && dist(mx, my, h.x, h.y) < OW_UNLOAD_R){ near = true; break; } }
+      if(near) continue;
+      unloadChunk(chunk);
+      changed = true;
+    }
+    if(changed) rebuildWorldLists();
+  }
+  // Everything the player did to a chunk goes into the diff on the way out;
+  // the terrain itself is thrown away, because it is a function of the seed.
+  function unloadChunk(chunk){
+    for(const c of chunk.camps) worldDiff.camps.set(c.id, { alive: c.alive, timer: c.timer, at: timeLeft });
+    const ids = new Set(chunk.camps.map(c => c.id));
+    for(let i=neutralCreeps.length-1; i>=0; i--){
+      const n = neutralCreeps[i];
+      if(n.camp && ids.has(n.camp.id)) neutralCreeps.splice(i, 1);
+    }
+    // A tree you hit twice is still hit twice when you come back (A3). The
+    // entry is written here and deleted on reload, so the map only ever holds
+    // chopped trees in chunks you are away from.
+    for(const t of chunk.trees) if(t.chops > 0) worldDiff.chops.set(t.id, t.chops);
+    loaded.delete(chunk.key);
+    genCount.set('unload:'+chunk.key, (genCount.get('unload:'+chunk.key)||0) + 1);
+  }
+  // Regions go when no hero and no camera is within OW_REGION_KEEP of them.
+  // All runtime state lives in the diff, so eviction loses nothing: the region
+  // rebuilds identically from its own stream.
+  function owEvictRegions(){
+    const keep = new Set();
+    const mark = (x, y) => {
+      for(let rx=regionXOf(x)-OW_REGION_KEEP; rx<=regionXOf(x)+OW_REGION_KEEP; rx++)
+        for(let ry=regionYOf(y)-OW_REGION_KEEP; ry<=regionYOf(y)+OW_REGION_KEEP; ry++) keep.add(keyOf(rx, ry));
+    };
+    for(const h of playerTeam) if(h.alive) mark(h.x, h.y);
+    const f = owFocus(); mark(f.x, f.y);
+    for(const k of regionCache.keys()) if(!keep.has(k)) regionCache.delete(k);
+    // A river is evicted by REFERENCE, not by distance: a chunk can hold a
+    // river whose source region is four regions behind it, and two copies of
+    // one river in rivers[] would draw both banks of every seam twice.
+    const held = new Set();
+    for(const chunk of loaded.values()) for(const v of chunk.rivers) held.add(v.id);
+    for(const [k, v] of riverCache){
+      if(!v) continue;
+      if(held.has(v.id)) continue;
+      const [rx, ry] = k.split(',').map(Number);
+      let far = true;
+      for(const h of playerTeam){
+        if(!h.alive) continue;
+        if(Math.abs(regionXOf(h.x)-rx) < OW_RIVER_KEEP && Math.abs(regionYOf(h.y)-ry) < OW_RIVER_KEEP){ far = false; break; }
+      }
+      if(far) riverCache.delete(k);
+    }
+    // A region that has gone takes its rivers' shore segments with it: the
+    // segment is rebuilt from its own stream, identically, when it is next
+    // needed (test 9).
+    for(const v of riverCache.values()){
+      if(!v) continue;
+      for(const rk of [...v.shore.keys()]) if(!regionCache.has(rk)) v.shore.delete(rk);
+    }
+  }
+  // Drains the queue under a time budget rather than a count, so a slow frame
+  // is a short frame's worth of work and not a fixed number of chunks. Exactly
+  // one rule is one-per-frame: a region build, which is the only item that can
+  // cost 8ms on its own.
+  function genStep(){
+    if(!genQueue.length) return;
+    const t0 = owNow();
+    const urgent = owTileMissingInView();
+    const budget = urgent ? OW_GEN_MS_URGENT : OW_GEN_MS;
+    let builtRegion = false;
+    while(genQueue.length){
+      const item = genQueue[0];
+      if(item.kind === 'region'){
+        if(builtRegion) break;
+        genQueue.shift();
+        regionFor(item.rx, item.ry);
+        builtRegion = true;
+      } else {
+        // A chunk whose region is not built yet puts the region in front of
+        // itself and waits one turn rather than building it out of budget.
+        const rk = keyOf(regionXOf(item.cx*CHUNK), regionYOf(item.cy*CHUNK));
+        if(!regionCache.has(rk)){
+          if(builtRegion) break;
+          regionFor(regionXOf(item.cx*CHUNK), regionYOf(item.cy*CHUNK));
+          builtRegion = true;
+        }
+        genQueue.shift();
+        if(!loaded.has(item.key)){
+          loadChunk(item.cx, item.cy, true);
+          owDirtyAround(item.cx, item.cy);
+        }
+      }
+      if(owNow() - t0 > budget) break;
+    }
+    rebuildWorldLists();
+  }
+  function owTileMissingInView(){
+    const x0 = camera.x, y0 = camera.y;
+    for(let tx=Math.floor(x0/OW_TILE); tx<=Math.floor((x0+W)/OW_TILE); tx++)
+      for(let ty=Math.floor(y0/OW_TILE); ty<=Math.floor((y0+H)/OW_TILE); ty++)
+        if(!bgTiles.has(keyOf(tx, ty))) return true;
+    return false;
+  }
+  // A tile baked while a neighbouring chunk was missing has no shadows from
+  // that chunk's border trees, and a shadow reaches SHADOW_REACH. So loading a
+  // chunk marks every tile of its neighbours within that reach for a re-bake.
+  function owDirtyAround(cx, cy){
+    const x0 = cx*CHUNK - SHADOW_REACH, y0 = cy*CHUNK - SHADOW_REACH;
+    const x1 = cx*CHUNK + CHUNK + SHADOW_REACH, y1 = cy*CHUNK + CHUNK + SHADOW_REACH;
+    for(let tx=Math.floor(x0/OW_TILE); tx<=Math.floor(x1/OW_TILE); tx++)
+      for(let ty=Math.floor(y0/OW_TILE); ty<=Math.floor(y1/OW_TILE); ty++) bgTiles.delete(keyOf(tx, ty));
+  }
+  // The tiles a felled tree's shadow touched: a cached tile must not keep a
+  // shadow the rebaked one next to it has already dropped.
+  function owDirtyShadow(t){
+    const r = SHADOW_REACH;
+    for(let tx=Math.floor((t.x-r)/OW_TILE); tx<=Math.floor((t.x+r)/OW_TILE); tx++)
+      for(let ty=Math.floor((t.y-r)/OW_TILE); ty<=Math.floor((t.y+r)/OW_TILE); ty++) bgTiles.delete(keyOf(tx, ty));
+  }
+  // The loaded envelope, which is what the entity clamps mean out here: it
+  // always contains every hero with a chunk to spare, so a clamp still stops a
+  // hero at ground that exists.
+  function owSetEnvelope(){
+    if(!loaded.size) return;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for(const c of loaded.values()){
+      if(c.x0 < x0) x0 = c.x0;
+      if(c.y0 < y0) y0 = c.y0;
+      if(c.x0 + CHUNK > x1) x1 = c.x0 + CHUNK;
+      if(c.y0 + CHUNK > y1) y1 = c.y0 + CHUNK;
+    }
+    WX0 = x0; WY0 = y0; WX1 = x1; WY1 = y1;
+    CAMX0 = CAMY0 = -1e9; CAMX1 = CAMY1 = 1e9;     // the camera is not bounded at all out here
   }
 
   /* ---- hashes: what "the same world" means, exactly -------------------- */
@@ -7738,8 +8003,12 @@ window.addEventListener('DOMContentLoaded', function(){
       + ' · minimap ' + (owProf.map/f).toFixed(2) + 'ms'
       + ' · bake ' + owProf.bakeN + '×' + (owProf.bakeN ? (owProf.bake/owProf.bakeN).toFixed(1) : '0') + 'ms'
       + ' · pool ' + bgTiles.size + '/' + OW_TILE_MAX
-      + ' · chunks ' + loaded.size + ' · mobs ' + neutralCreeps.length
-      + ' · rivers ' + rivers.length + '/' + riverCache.size);
+      + ' · chunks ' + loaded.size + ' · queue ' + genQueue.length
+      + ' · hero ' + Math.round(playerTeam[activePlayerIdx] ? playerTeam[activePlayerIdx].x : 0)
+      + ' of ' + Math.round(WX1)
+      + ' · mobs ' + neutralCreeps.length
+      + ' · rivers ' + rivers.length + '/' + riverCache.size
+      + ' · explored ' + owExploredKm2().toFixed(1) + 'km² in ' + owFog.size + ' sheets');
     owProf.bake = owProf.bakeN = owProf.tiles = owProf.map = owProf.water = 0;
     owProf.ground = owProf.draw = owProf.fog = 0;
     owProf.frames = 0; owProf.t0 = now;
@@ -7960,6 +8229,45 @@ window.addEventListener('DOMContentLoaded', function(){
     if(pauseConfirmNoteEl) pauseConfirmNoteEl.textContent = open
       ? 'Leave this world? Its seed is ' + worldSeed + ' — type it on the title screen to come back.'
       : "You'll forfeit the match and return to the main menu.";
+  }
+
+  // Dying 10km out used to mean the plaza and a 45-60 second walk back through
+  // aggro-250 groves, which past the first hour would be the routine state of
+  // the mode. So beyond OW_RESPAWN_NEAR from home you come back beside the
+  // nearest living ally — behind him, on his far side from whatever he is
+  // fighting — and the plaza is still the answer near home, or when the whole
+  // squad is down.
+  const OW_RESPAWN_NEAR = 2500, OW_RESPAWN_BACK = 120;
+  function owRespawnSpot(h){
+    if(gameMode !== 'openworld') return null;
+    let ally = null, best = Infinity;
+    for(const a of playerTeam){
+      if(a === h || !a.alive) continue;
+      const d = distBase(a.x, a.y);
+      if(d < best){ best = d; ally = a; }
+    }
+    if(!ally) return null;                                   // all down: the plaza
+    const anchor = playerTeam[activePlayerIdx] && playerTeam[activePlayerIdx].alive
+      ? playerTeam[activePlayerIdx] : ally;
+    if(distBase(anchor.x, anchor.y) <= OW_RESPAWN_NEAR) return null;
+    // "Behind" is defined: away from the mob he is in a fight with, and
+    // base-ward when he is not in one.
+    let ax = OW_BASE_X - ally.x, ay = OW_BASE_Y - ally.y;
+    let foe = null, fd = 600;
+    for(const n of neutralCreeps){
+      if(!n.target) continue;
+      const d = dist(n.x, n.y, ally.x, ally.y);
+      if(d < fd){ fd = d; foe = n; }
+    }
+    if(foe){ ax = ally.x - foe.x; ay = ally.y - foe.y; }
+    const len = Math.sqrt(ax*ax + ay*ay) || 1;
+    const x = ally.x + ax/len*OW_RESPAWN_BACK, y = ally.y + ay/len*OW_RESPAWN_BACK;
+    // Water or a trunk would have resolveSolidCollision shove him somewhere
+    // arbitrary, so his ally's own feet are the fallback.
+    if(nearWater(x, y, h.r)) return { x: ally.x, y: ally.y };
+    for(const t of trees){ if(dist(x, y, t.x, t.y) < t.r + h.r) return { x: ally.x, y: ally.y }; }
+    for(const d of props){ if(dist(x, y, d.x, d.y) < d.w*0.4 + h.r) return { x: ally.x, y: ally.y }; }
+    return { x, y };
   }
 
   // "BASE 1.4k" — how far out the driven hero is, in thousands. Distance is
@@ -8298,6 +8606,15 @@ window.addEventListener('DOMContentLoaded', function(){
              alpha: rand(0.26, 0.41), spr, pad: spr.pad };
   }
   function resetClouds(){
+    if(gameMode==='openworld'){
+      // No map to spread them over, so the box is around the camera and moves
+      // with it (updateClouds recentres it), and a cloud that falls behind
+      // re-enters ahead the same way it always did.
+      owCloudBox();
+      clouds = [];
+      for(let i=0;i<CLOUD_COUNT_SURVIVAL;i++) clouds.push(makeCloud(rand(cloudX0, cloudX1), rand(cloudY0, cloudY1)));
+      return;
+    }
     if(gameMode==='survival'){
       const cx=WORLD_W/2, cy=WORLD_H/2, half=1600;
       cloudX0=cx-half; cloudY0=cy-half; cloudX1=cx+half; cloudY1=cy+half;
@@ -8308,7 +8625,12 @@ window.addEventListener('DOMContentLoaded', function(){
     const n = gameMode==='survival' ? CLOUD_COUNT_SURVIVAL : CLOUD_COUNT;
     for(let i=0;i<n;i++) clouds.push(makeCloud(rand(cloudX0, cloudX1), rand(cloudY0, cloudY1)));
   }
+  function owCloudBox(){
+    const cx = camera.x + W/2, cy = camera.y + H/2, half = 1600;
+    cloudX0 = cx-half; cloudY0 = cy-half; cloudX1 = cx+half; cloudY1 = cy+half;
+  }
   function updateClouds(dt){
+    if(gameMode==='openworld') owCloudBox();
     for(const c of clouds){
       c.x += c.vx*dt; c.y += c.vy*dt;
       // wrap on the far side rather than turning, so the direction never changes
@@ -9445,8 +9767,11 @@ window.addEventListener('DOMContentLoaded', function(){
   function riverAt(rv, t){
     const a = riverArc(rv), p = rv.pts;
     const s = Math.max(0, Math.min(a.len, t*a.len));
-    let i = 1;
-    while(i < a.cum.length-1 && a.cum[i] < s) i++;
+    // Bisection, not a walk: cum is sorted, a long river is 267 entries and
+    // the flow specks call this a hundred times a frame.
+    let lo = 1, hi = a.cum.length-1;
+    while(lo < hi){ const mid = (lo+hi) >> 1; if(a.cum[mid] < s) lo = mid+1; else hi = mid; }
+    const i = lo;
     const seg = a.cum[i]-a.cum[i-1] || 1, f = (s-a.cum[i-1])/seg;
     const A = p[i-1], B = p[i];
     return { x: A.x+(B.x-A.x)*f, y: A.y+(B.y-A.y)*f,
@@ -9568,6 +9893,13 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.lineCap='round'; ctx.lineJoin='round';
 
     for(const rvRaw of rivers){
+      // The tight box first: onScreen's disc is the river's half-diagonal, so
+      // a 12,000-unit river passed it for any camera within six kilometres of
+      // its middle and was then stroked whole, filled, clipped, flow-specked
+      // and foamed. Its own bbox is exact and already cached.
+      riverBox(rvRaw);
+      if(rvRaw.bx1 < camera.x || rvRaw.bx0 > camera.x + W ||
+         rvRaw.by1 < camera.y || rvRaw.by0 > camera.y + H) continue;
       const rv = riverPoly(rvRaw);
       if(!onScreen(rv.cx, rv.cy, rv.ext)) continue;
       const rpath = riverPath(rv), rpoly = polyPath(rv.poly);
@@ -10542,8 +10874,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if(dx===0 && dy===0){ ddx=wmx-h.x; ddy=wmy-h.y; }
     const len=Math.sqrt(ddx*ddx+ddy*ddy)||1;
     const dashDist = heroDashDist(h);
-    const tx=Math.min(WORLD_W-h.r-6, Math.max(h.r+6, h.x+ddx/len*dashDist));
-    const ty=Math.min(WORLD_H-h.r-6, Math.max(h.r+6, h.y+ddy/len*dashDist));
+    const tx=Math.min(WX1-h.r-6, Math.max(WX0+h.r+6, h.x+ddx/len*dashDist));
+    const ty=Math.min(WY1-h.r-6, Math.max(WY0+h.r+6, h.y+ddy/len*dashDist));
     const s=HERO_STATS.carry;
     const fromX=h.x, fromY=h.y;
     h.dashing=true; h.dashElapsed=0; h.dashFrom={x:h.x,y:h.y}; h.dashTo={x:tx,y:ty};
@@ -10949,6 +11281,12 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Neutrals hold their clearing. They aggro anyone of either team who walks
   // in, chase only as far as the leash, then walk home and heal up.
+  const CAMP_TICK_R = 1200;     // NEUTRAL_AGGRO 250 + NEUTRAL_LEASH 330 + margin
+  function owCampAwake(camp){
+    if(gameMode !== 'openworld') return true;
+    for(const h of playerTeam){ if(h.alive && dist(h.x, h.y, camp.x, camp.y) < CAMP_TICK_R) return true; }
+    return false;
+  }
   function updateNeutrals(dt){
     if(tut.on && tut.holdCamps) return;      // the jungle is empty until step 11 stocks it
     // Recount from the live list every frame rather than trusting a tally that
@@ -10964,11 +11302,21 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     for(const n of neutralCreeps){
       if(n.huge) continue;   // the apex runs its own roam/aggro loop, see updateApexRoam
+      // A hundred and fifty mobs of a streamed world, each walked against every
+      // tree, prop and lake every frame, is a quarter of a million tests for
+      // mobs that are standing at home in a grove nobody is in. A camp ticks
+      // only with a live hero inside aggro + leash + margin; the rest sit
+      // still, and their camp's respawn timer counts either way.
+      if(n.camp && !owCampAwake(n.camp)) continue;
       let target=null, bd=NEUTRAL_AGGRO;
       for(const h of playerTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
       for(const h of enemyTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
       const homeD = dist(n.x,n.y,n.camp.x,n.camp.y);
       if(n.atkCd>0) n.atkCd -= dt;
+      // Nothing to resolve for a mob that is home, unpushed, unstunned and
+      // has nobody to chase — and resolveSolidCollision is the most expensive
+      // thing in this loop.
+      if(!target && homeD <= 34 && n.kt <= 0 && !isStunned(n)) continue;
       // A stunned mob is frozen: it does not chase, it does not swing, and it
       // does not wander home either. This check was missing entirely, so the
       // rocket's stun mark appeared over forest mobs that carried on as normal.
@@ -11711,6 +12059,20 @@ window.addEventListener('DOMContentLoaded', function(){
     t.thudded = false;
     fellingTrees.push(t);
     stumps.push({ x:t.x, y:t.y, r:t.r });
+    if(gameMode==='openworld'){
+      // The stump belongs to the CHUNK, not to the global list: stumps[] is
+      // rebuilt from the chunks on every load, so a stump pushed only onto the
+      // global would vanish about a second later while you walked.
+      worldDiff.felled.add(t.id);
+      worldDiff.chops.delete(t.id);
+      const chunk = loaded.get(keyOf(Math.floor(t.x/CHUNK), Math.floor(t.y/CHUNK)));
+      if(chunk){
+        const ci = chunk.trees.indexOf(t);
+        if(ci >= 0) chunk.trees.splice(ci, 1);
+        chunk.stumps.push({ x:t.x, y:t.y, r:t.r });
+      }
+      owDirtyShadow(t);      // its shadow goes with it, so the ground agrees
+    }
     woodChips(t.x, t.y + t.r*TREE_SINK, t.fallDir > 0 ? 0 : Math.PI, 18);
     addBurst(t.x, t.y - t.r*0.5, '#6bab5c', 16);
     // The logs come out on the blow that fells it, and tumble clear while the
@@ -11857,8 +12219,8 @@ window.addEventListener('DOMContentLoaded', function(){
     const damp = Math.exp(-KNOCKBACK_DAMPING*dt);
     e.kx *= damp; e.ky *= damp;
     if(Math.abs(e.kx) < 2 && Math.abs(e.ky) < 2){ e.kx = 0; e.ky = 0; }
-    e.x = Math.min(WORLD_W-e.r-6, Math.max(e.r+6, e.x));
-    e.y = Math.min(WORLD_H-e.r-6, Math.max(e.r+6, e.y));
+    e.x = Math.min(WX1-e.r-6, Math.max(WX0+e.r+6, e.x));
+    e.y = Math.min(WY1-e.r-6, Math.max(WY0+e.r+6, e.y));
   }
   function applyCreepKnockback(list, dt){
     for(const c of list) updateKnockback(c, dt);
@@ -12014,8 +12376,8 @@ window.addEventListener('DOMContentLoaded', function(){
       if(vx || vy){
         if(!dragPanCam) dragPanCam = { x: h?h.x:camera.x+W/2, y: h?h.y:camera.y+H/2 };
         const panSpeed = Math.min(W,H) * EDGE_PAN_SPEED_FRAC;
-        dragPanCam.x = Math.min(WORLD_W, Math.max(0, dragPanCam.x + vx*panSpeed*dt));
-        dragPanCam.y = Math.min(WORLD_H, Math.max(0, dragPanCam.y + vy*panSpeed*dt));
+        dragPanCam.x = Math.min(CAMX1, Math.max(CAMX0, dragPanCam.x + vx*panSpeed*dt));
+        dragPanCam.y = Math.min(CAMY1, Math.max(CAMY0, dragPanCam.y + vy*panSpeed*dt));
       }
     } else if(dragPanCam){
       dragPanCam = null;
@@ -12025,8 +12387,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // and letting go snaps back to the shell if it is somehow still flying.
     const fx = scout ? scout.x : (dragPanCam ? dragPanCam.x : (ride ? ride.x : (h?h.x:0)));
     const fy = scout ? scout.y : (dragPanCam ? dragPanCam.y : (ride ? ride.y : (h?h.y:0)));
-    const desiredX = Math.min(WORLD_W-W, Math.max(0, fx - W/2));
-    const desiredY = Math.min(WORLD_H-H, Math.max(0, fy - H/2));
+    const desiredX = Math.min(CAMX1-W, Math.max(CAMX0, fx - W/2));
+    const desiredY = Math.min(CAMY1-H, Math.max(CAMY0, fy - H/2));
     const px = camera.x, py = camera.y;
     if(camGlide && camGlide.dur === 0) armGlide(desiredX, desiredY);
     if(camGlide){
@@ -12141,6 +12503,11 @@ window.addEventListener('DOMContentLoaded', function(){
       timeLeft += dt;
       timerEl.textContent = fmtTime(timeLeft);
       owHudTick();
+      // The world arrives here: what to load, then as much building as the
+      // frame can afford. Both are Node-safe — no canvas, no DOM.
+      owChunkTimer -= dt;
+      chunkTick(false);
+      genStep();
     } else if(gameMode==='survival'){
       // The clock still runs — the end card reports it — but the WAVE is the
       // score now, so that is what the HUD's right-hand slot reads.
@@ -12429,8 +12796,8 @@ window.addEventListener('DOMContentLoaded', function(){
     const tvx=(dx/len)*spd, tvy=(dy/len)*spd;
     h.vx += (tvx-h.vx)*Math.min(1,dt*12);
     h.vy += (tvy-h.vy)*Math.min(1,dt*12);
-    h.x = Math.min(WORLD_W-h.r-6, Math.max(h.r+6, h.x+h.vx*dt));
-    h.y = Math.min(WORLD_H-h.r-6, Math.max(h.r+6, h.y+h.vy*dt));
+    h.x = Math.min(WX1-h.r-6, Math.max(WX0+h.r+6, h.x+h.vx*dt));
+    h.y = Math.min(WY1-h.r-6, Math.max(WY0+h.r+6, h.y+h.vy*dt));
   }
 
   // An AI hero knocked off its spot walks straight back into it and keeps
@@ -12692,8 +13059,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if(len < 3) return;                       // already there; do not twitch
     const step=Math.min(len, speed*flowAssist(h.x,h.y,dx,dy)*dt);
     h.x += dx/len*step; h.y += dy/len*step;
-    h.x=Math.min(WORLD_W-h.r-6,Math.max(h.r+6,h.x));
-    h.y=Math.min(WORLD_H-h.r-6,Math.max(h.r+6,h.y));
+    h.x=Math.min(WX1-h.r-6,Math.max(WX0+h.r+6,h.x));
+    h.y=Math.min(WY1-h.r-6,Math.max(WY0+h.r+6,h.y));
   }
 
   function updateIdleAI(team, activeIdx, oppTeam, oppCreeps, dt, allowCommands){
@@ -13306,8 +13673,8 @@ window.addEventListener('DOMContentLoaded', function(){
     const tvx=(ddx/dlen)*heroSpd*speedMul, tvy=(ddy/dlen)*heroSpd*speedMul;
     h.vx=(h.vx||0)+(tvx-(h.vx||0))*Math.min(1,dt*8);
     h.vy=(h.vy||0)+(tvy-(h.vy||0))*Math.min(1,dt*8);
-    h.x = Math.min(WORLD_W-h.r-6, Math.max(h.r+6, h.x+h.vx*dt));
-    h.y = Math.min(WORLD_H-h.r-6, Math.max(h.r+6, h.y+h.vy*dt));
+    h.x = Math.min(WX1-h.r-6, Math.max(WX0+h.r+6, h.x+h.vx*dt));
+    h.y = Math.min(WY1-h.r-6, Math.max(WY0+h.r+6, h.y+h.vy*dt));
 
     tryAutoAttack(h);   // the flee case returned earlier, so we are committed here
   }
@@ -13599,7 +13966,7 @@ window.addEventListener('DOMContentLoaded', function(){
         p.emberAt = 0;
         addEmber(p.x + rand(-1.5,1.5), p.y + rand(-1.5,1.5), emberRgb(p));
       }
-      if(p.x<-20||p.x>WORLD_W+20||p.y<-20||p.y>WORLD_H+20){ projectiles.splice(i,1); continue; }
+      if(p.x<WX0-20||p.x>WX1+20||p.y<WY0-20||p.y>WY1+20){ projectiles.splice(i,1); continue; }
       // Out of range: fizzle rather than vanish, so it is obvious the shot fell
       // short instead of looking like the game dropped it.
       if(!p.isRocket && p.maxDist && p.traveled >= p.maxDist){
@@ -13803,13 +14170,18 @@ window.addEventListener('DOMContentLoaded', function(){
     // instead of trailing home at the rate meant for a man on foot.
     if(h === playerTeam[activePlayerIdx]) glideCam(0.9);
     h.alive=true; h.hp=h.maxHp; h.mana=h.maxMana;
-    h.x=h.homeX; h.y=h.homeY; h.vx=0; h.vy=0; h.invuln=0.5; h.kt=0; h.dashing=false;
+    const spot = owRespawnSpot(h);
+    h.x = spot ? spot.x : h.homeX; h.y = spot ? spot.y : h.homeY;
+    h.vx=0; h.vy=0; h.invuln=0.5; h.kt=0; h.dashing=false;
     h.standX=null; h.standY=null; h.siegeT=null; h.backoffT=0;
     // a corpse must never stay latched as a sticky target
     h._laneT=null; h._campT=null; h._campSpook=null; h._closeTo=null; h._act=null; h._actT=0;
     h._campClaim=null; h._campSeen=0; h._task=null; h._taskT=0;
     h._chaseT=0; h._huntBan=0; h.combatT=99; h._chaseOn=false; h._offHuntT=0;
     h._hdg=undefined; h._hdgT=0; h._retreat=false;
+    if(gameMode==='openworld' && squadTogether && h !== playerTeam[activePlayerIdx]){
+      h.mode = 'follow'; h.followTarget = playerTeam[activePlayerIdx];
+    }
     h.ghosts.length=0;   // no streak stretching from where he died to the spawn
     h.lwp=1;   // walk the lane from the top again rather than cutting across the map
   }
@@ -14522,8 +14894,10 @@ window.addEventListener('DOMContentLoaded', function(){
     const m = owMaskCv.getContext('2d');
     m.setTransform(1, 0, 0, 1, 0, 0);
     m.clearRect(0, 0, mmW, mmH);
-    // What you have seen, at a fraction of the alpha...
-    m.globalAlpha = 0.45;
+    // What you have seen, at a fraction of the alpha — enough of one that a
+    // walked trail reads as ground against the panel's blank paper rather than
+    // as a slightly different shade of it.
+    m.globalAlpha = 0.62;
     m.imageSmoothingEnabled = true;
     const span = MM_WORLD, x0 = fx - span/2, y0 = fy - span/2;
     for(let f0 = Math.floor(x0/OW_FOG_SPAN); f0 <= Math.floor((x0+span)/OW_FOG_SPAN); f0++)
@@ -14644,7 +15018,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // roads against ground instead of against a road-colored panel.
     // Out in the world the panel's own face is the UNEXPLORED colour, so it
     // wants to read as blank paper rather than as ground.
-    ctx.fillStyle = gameMode==='openworld' ? 'rgba(226,232,206,.94)' : 'rgba(198,230,170,.92)';
+    ctx.fillStyle = gameMode==='openworld' ? 'rgba(232,231,214,.95)' : 'rgba(198,230,170,.92)';
     ctx.strokeStyle='rgba(122,150,84,.9)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.rect(mmX,mmY,mmW,mmH); ctx.fill(); ctx.stroke();
     const open = gameMode === 'openworld';
@@ -16586,8 +16960,8 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const e of enemyTeam){ e.alive = false; e.hp = 0; e.respawnTimer = Infinity; }
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0, rallyT:0, rally:null };
     activePlayerIdx = 0;
-    camera.x = Math.min(WORLD_W-W, Math.max(0, sx - W/2));
-    camera.y = Math.min(WORLD_H-H, Math.max(0, sy - H/2));
+    camera.x = Math.min(CAMX1-W, Math.max(CAMX0, sx - W/2));
+    camera.y = Math.min(CAMY1-H, Math.max(CAMY0, sy - H/2));
     camCut();                       // a new map behind a curtain: placed, not slid to
     partyEl.classList.add('hidden');
     const shud = document.getElementById('scoreHud');
@@ -16916,6 +17290,9 @@ window.addEventListener('DOMContentLoaded', function(){
     // of the last one's caches left to be read by anything.
     regionCache.clear(); riverCache.clear(); loaded.clear(); genCount.clear();
     bgTiles.clear(); owFog.clear(); worldDiff = blankDiff(); basePlaza = null; lastGenMs = 0;
+    genQueue.length = 0; owWarmQueue.length = 0; owChunkTimer = 0; owLastFocus = '';
+    WX0 = WY0 = 0; WX1 = WORLD_W; WY1 = WORLD_H;
+    CAMX0 = CAMY0 = 0; CAMX1 = WORLD_W; CAMY1 = WORLD_H;
     birdRng = (mode === 'openworld') ? streamFor(SALT.birds, 0, 0) : null;
     tutMap = (mode === 'tutorial');    // read by buildMap below, so set it first
     survWave = 0;
@@ -17009,6 +17386,13 @@ window.addEventListener('DOMContentLoaded', function(){
     if(mode === 'tutorial') tutStart();
     else tutStop();
     if(mode === 'openworld'){
+      if(OW_WARP){
+        const wx = parseInt(OW_WARP[1], 10), wy = parseInt(OW_WARP[2], 10);
+        for(const h of playerTeam){ h.x += wx - OW_BASE_X; h.y += wy - OW_BASE_Y; h.homeX = h.x; h.homeY = h.y; }
+        camera.x = wx - W/2; camera.y = wy - H/2; camCut();
+        chunkTick(true); genStep();
+        rebuildWorldLists();
+      }
       if(seedInputEl){
         seedInputEl.value = '';
         seedInputEl.placeholder = 'blank = random · last ' + worldSeed;
