@@ -2600,6 +2600,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // tile pool off OW_TILE while this script is still being evaluated.
   const CHUNK = 1000, OW_TILE = CHUNK/2, REGION = 4000;
   let OW_TILE_MAX = 64;         // sized from the view in applyLayout, never chosen
+  const OW_TILE_BUDGET = 64;    // and never past the 4000-square bake it gives back
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
   const BG_DPR = 1;
   function setupCanvas(cv, c, w, h, dpr){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); c.setTransform(dpr,0,0,dpr,0,0); }
@@ -2664,7 +2665,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // tiles is the hysteresis — 77 on this desktop (78MB, against the 64MB
     // bgCanvas it replaces), 42 on a phone (43MB against the same 64MB).
     const cols = Math.ceil((W + OW_TILE + 4)/OW_TILE + 1), rows = Math.ceil((H + OW_TILE + 4)/OW_TILE + 1);
-    OW_TILE_MAX = cols*rows + cols + rows + 8;
+    // The ring of hysteresis is what stops a step east and back re-baking, but
+    // it is also canvas memory, and a browser keeps a GPU texture per canvas.
+    // So the ring grows only up to the budget the mode already replaced: the
+    // 4000-square bgCanvas this gives back is 64 tiles' worth, and the pool
+    // never exceeds it. Desktop 64 (window 54 + 10 of slack), phone 42.
+    const winTiles = cols*rows;
+    OW_TILE_MAX = Math.min(winTiles + cols + rows + 8, Math.max(winTiles + 8, OW_TILE_BUDGET));
     owMinimapSize();
     setupCanvas(canvas, ctx, W, H, canvasScale);
     // The fog is a screen-space overlay, so it follows the same budget. drawFog
@@ -7713,7 +7720,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // ?owdebug prints a per-second breakdown to the console — on any protocol,
   // because the build the owner tests by hand is the published one. Costs a
   // pair of adds a frame when it is off.
-  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, frames:0, t0:0 };
+  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, ground:0, draw:0, fog:0, frames:0, t0:0 };
   function owMark(key, t0){ if(OW_DEBUG) owProf[key] += owNow() - t0; }
   function owProfTick(){
     if(!OW_DEBUG) return;
@@ -7724,12 +7731,17 @@ window.addEventListener('DOMContentLoaded', function(){
     const f = Math.max(1, owProf.frames);
     console.log('[ow] ' + f + 'fps'
       + ' · tiles ' + (owProf.tiles/f).toFixed(2) + 'ms'
+      + ' · water ' + (owProf.water/f).toFixed(1)
+      + ' · sort ' + (owProf.ground/f).toFixed(1)
+      + ' · sprites ' + (owProf.draw/f).toFixed(1)
+      + ' · fog ' + (owProf.fog/f).toFixed(1)
       + ' · minimap ' + (owProf.map/f).toFixed(2) + 'ms'
       + ' · bake ' + owProf.bakeN + '×' + (owProf.bakeN ? (owProf.bake/owProf.bakeN).toFixed(1) : '0') + 'ms'
       + ' · pool ' + bgTiles.size + '/' + OW_TILE_MAX
       + ' · chunks ' + loaded.size + ' · mobs ' + neutralCreeps.length
       + ' · rivers ' + rivers.length + '/' + riverCache.size);
     owProf.bake = owProf.bakeN = owProf.tiles = owProf.map = owProf.water = 0;
+    owProf.ground = owProf.draw = owProf.fog = 0;
     owProf.frames = 0; owProf.t0 = now;
   }
 
@@ -14553,16 +14565,28 @@ window.addEventListener('DOMContentLoaded', function(){
       g.fillStyle = 'rgba(122,81,56,.6)';
       g.beginPath(); g.arc(p.x, p.y, Math.max(2, basePlaza.r/MM_WORLD*mmW), 0, 7); g.fill();
     }
+    // A river is up to 267 points and there are a hundred of them in the
+    // cache. Walking every point into a fresh path every frame was the whole
+    // cost of this panel, so each river keeps its own path in WORLD units and
+    // the panel transform does the mapping — built once, stroked thereafter.
+    const k = mmW/MM_WORLD;
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.transform(k, 0, 0, k, mmX + mmW/2 - fx*k, mmY + mmH/2 - fy*k);
     g.strokeStyle = '#3E86C8'; g.lineJoin = 'round';
     for(const v of riverCache.values()){
       if(!v) continue;
       if(v.bx1 < fx-half || v.bx0 > fx+half || v.by1 < fy-half || v.by0 > fy+half) continue;
-      g.lineWidth = Math.max(1.5, v.w/MM_WORLD*mmW);
-      g.beginPath();
-      let q = mp(v.pts[0].x, v.pts[0].y); g.moveTo(q.x, q.y);
-      for(let i=1;i<v.pts.length;i++){ q = mp(v.pts[i].x, v.pts[i].y); g.lineTo(q.x, q.y); }
-      g.stroke();
+      if(!v._mmPath && typeof Path2D !== 'undefined'){
+        const pth = new Path2D();
+        pth.moveTo(v.pts[0].x, v.pts[0].y);
+        for(let i=1;i<v.pts.length;i++) pth.lineTo(v.pts[i].x, v.pts[i].y);
+        v._mmPath = pth;
+      }
+      g.lineWidth = Math.max(1.5/k, v.w);
+      if(v._mmPath) g.stroke(v._mmPath);
     }
+    g.restore();
     g.fillStyle = '#4E96D8';
     for(const reg of regionCache.values()){
       for(const l of reg.lakes.concat(reg.rivers.filter(v => v.mouth).map(v => v.mouth))){
@@ -14899,7 +14923,6 @@ window.addEventListener('DOMContentLoaded', function(){
         owDrawTiles(ctx, shakeX, shakeY);
         bakeTick();
         owMark('tiles', tp);
-        owProfTick();
       } else {
         const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
         const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
@@ -14911,7 +14934,10 @@ window.addEventListener('DOMContentLoaded', function(){
             bx0, by0, bx1-bx0, by1-by0);
       }
     }
+    const _pw = OW_DEBUG ? owNow() : 0;
     drawWater();
+    owMark('water', _pw);
+    const _pg = OW_DEBUG ? owNow() : 0;
 
     for(const t of playerTowers){ if(t.hp>0) drawTowerRange(t); }
     for(const t of enemyTowers){ if(t.hp>0) drawTowerRange(t); }
@@ -15077,6 +15103,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     drawBirdShadows();
 
+    owMark('ground', _pg);
+    const _pd = OW_DEBUG ? owNow() : 0;
     ground.sort(byGroundY);
     for(const e of ground){
       const o = e.o;
@@ -15287,7 +15315,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // minimap, the drag line and the rest of the overlay untouched.
     drawCamBlur();
 
+    owMark('draw', _pd);
+    const _pf = OW_DEBUG ? owNow() : 0;
     drawFog(shakeX, shakeY);
+    owMark('fog', _pf);
     ctx.save();
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
     drawBirds();          // sky layer: over the fog, not subject to vision
@@ -15301,6 +15332,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawVignetteOverlay();
     drawHurtOverlay();
     drawMinimap();
+    owProfTick();
     drawTutorialMini();
     drawHudSparks();
     drawReticle();
