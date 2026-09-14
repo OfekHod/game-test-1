@@ -58,5 +58,123 @@ test('14  Open World without an integer seed throws (PR1)', () => {
   assert.strictEqual(G.state().left, 600, 'Match will not start after the throws');
 });
 
+// ---------------------------------------------------------------- PR2 -----
+// The mode exists now, so these are about the world itself: one seed, one
+// world, whichever order it was built in.
+
+test(' 1  Same seed, same world (PR2)', () => {
+  const A = load(), B = load();
+  A.start('openworld', 42);
+  B.start('openworld', 42);
+  assert.strictEqual(A.world.hash(), B.world.hash(), 'two instances disagree on seed 42');
+  const first = A.world.hash();
+  A.start('openworld', 42);
+  assert.strictEqual(A.world.hash(), first, 'a second round on one instance differs — state bled between rounds');
+  assert.deepStrictEqual(A.world.loaded(), B.world.loaded(), 'different chunks loaded');
+});
+
+test(' 2  A different seed is a different world (PR2)', () => {
+  const A = load();
+  A.start('openworld', 42);
+  const h42 = A.world.hash(), c42 = A.world.chunkHash(0, 0);
+  A.start('openworld', 43);
+  assert.notStrictEqual(A.world.hash(), h42, 'seed 43 gave seed 42\'s world');
+  assert.notStrictEqual(A.world.chunkHash(0, 0), c42, 'chunk 0,0 is identical under two seeds');
+});
+
+// The proof of req 1: generation draws from the seed and from nothing else.
+// Math.random is replaced by a thrower for the length of two chunk builds well
+// outside the start block, so every region, river, grove and stand they need
+// is built under the poison.
+test(' 3a No unseeded draw inside generation (PR2)', () => {
+  const G2 = load();
+  G2.start('openworld', 1234);
+  const real = Math.random;
+  Math.random = () => { throw new Error('Math.random inside generation'); };
+  try {
+    G2.world.gen(7, -3);
+    G2.world.gen(-9, 12);
+  } finally { Math.random = real; }
+  assert.strictEqual(G2.world.rngLeaked(), false, 'genRng was left set');
+  assert.strictEqual(G2.world.genDepth(), 0, 'genDepth was left raised');
+});
+
+// Feature-owned lists are generated once and filtered into chunks, so the
+// union of what the chunks keep must be the whole list — nothing lost at a
+// seam, nothing counted twice — and it must not depend on which chunk or which
+// region was built first.
+test(' 4  Features straddle seams without disagreeing (PR2)', () => {
+  const A = load();
+  A.start('openworld', 42);
+  // Walk every chunk of every extent box FIRST: a chunk build is what makes a
+  // river's shore segment for its region exist, so the member lists have to be
+  // read after the walk or the walk itself would change them.
+  // Groves and lakes are a handful of chunks each; a 12,000-unit river can
+  // cross a hundred, so the union test takes the two with the most shore
+  // rather than every river in the layer — the property is the same one.
+  const all = A.world.features();
+  const rivers = all.filter(f => f.kind === 'river' && f.members.length)
+                    .sort((a, b) => b.members.length - a.members.length).slice(0, 2);
+  const boxes = all.filter(f => f.kind !== 'river').concat(rivers)
+                   .map(f => ({ id: f.id, kind: f.kind, box: f.box }));
+  const found = new Map(), hits = new Map();
+  for(const f of boxes){
+    const cs = chunksOf(f.box);
+    assert.ok(cs.length <= 400, f.id + ' has an absurd extent box (' + cs.length + ' chunks)');
+    const seen = [];
+    let hit = 0;
+    for(const [cx, cy] of cs){
+      const mine = A.world.chunkMembers(cx, cy, f.id);
+      if(mine.length) hit++;
+      for(const id of mine) seen.push(id);
+    }
+    found.set(f.id, seen); hits.set(f.id, hit);
+  }
+  const ids = new Set(boxes.map(f => f.id));
+  const feats = A.world.features().filter(f => f.members.length > 0 && ids.has(f.id));
+  assert.ok(feats.length > 3, 'no features to test');
+  const straddlers = { grove: 0, lake: 0, river: 0 };
+  for(const f of feats){
+    const seen = found.get(f.id) || [], hit = hits.get(f.id) || 0;
+    const a = seen.slice().sort(), b = f.members.slice().sort();
+    assert.deepStrictEqual(new Set(a).size, a.length, f.id + ': a member landed in two chunks');
+    assert.deepStrictEqual(a, b, f.id + ': the chunks do not add up to the feature');
+    if(hit > 1) straddlers[f.kind]++;
+  }
+  assert.ok(straddlers.grove > 0, 'no grove straddled a chunk seam — the test proved nothing');
+  // ...and the same world whichever end you build from. Two instances of the
+  // same seed, walked in opposite orders, must agree chunk for chunk.
+  const B = load();
+  B.start('openworld', 42);
+  const keys = A.world.loaded();
+  const forward = keys.map(k => A.world.chunkHash(...k.split(',').map(Number)));
+  const backward = keys.slice().reverse().map(k => B.world.chunkHash(...k.split(',').map(Number)));
+  assert.deepStrictEqual(forward, backward.reverse(), 'chunk hashes depend on build order');
+});
+
+test('12  Timings and sizes (PR2)', () => {
+  const G2 = load();
+  const t0 = Date.now();
+  G2.start('openworld', 42);
+  const ms = Date.now() - t0;
+  const c = G2.world.counts();
+  console.log('        world built in ' + ms + 'ms · ' + G2.world.loaded().length + ' chunks'
+    + ' · last chunk ' + G2.world.genMs().toFixed(2) + 'ms · last region ' + G2.world.regionMs().toFixed(2) + 'ms');
+  console.log('        in the start block: ' + c.camps + ' camps, ' + c.mobs + ' mobs, '
+    + c.trees + ' trees, ' + c.props + ' props, ' + c.lakes + ' lakes, ' + c.rivers + ' rivers');
+  assert.ok(G2.world.genMs() <= 8, 'a chunk build took ' + G2.world.genMs().toFixed(2) + 'ms');
+  assert.ok(c.camps > 0, 'a world with nothing to farm in the start block');
+  for(const k of G2.world.loaded()) assert.strictEqual(G2.world.genCount(k), 1, k + ' was built more than once');
+});
+
+// Every chunk the box touches, so a feature's members can be counted across
+// every seam its extent crosses.
+function chunksOf(box){
+  const out = [];
+  for(let cx = Math.floor(box[0]/1000); cx <= Math.floor(box[2]/1000); cx++)
+    for(let cy = Math.floor(box[1]/1000); cy <= Math.floor(box[3]/1000); cy++) out.push([cx, cy]);
+  return out;
+}
+
 console.log(failed ? '\n' + failed + ' failed' : '\nall green');
 process.exitCode = failed ? 1 : 0;

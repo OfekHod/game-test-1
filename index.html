@@ -592,6 +592,17 @@
   .menuBoard{position:absolute;left:21.8%;right:21.8%;top:24.9%;bottom:37.4%;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:calc(2.2 * min(1vw,0.5582vh));}
+  /* The seed box rides on the sign with the buttons — measured, four buttons
+     and the box leave 35px of parchment spare on a desktop and 40 on a phone.
+     Only landscape is too short for it, and there it drops just under the
+     board (the rule in the max-height block below). */
+  #seedInput{box-sizing:border-box;width:66%;text-align:center;
+    font-family:'Baloo 2',sans-serif;font-weight:600;
+    font-size:clamp(10px,calc(1.7 * min(1vw,0.5582vh)),14px);
+    padding:calc(0.7 * min(1vw,0.5582vh)) 4px;
+    border-radius:calc(1.2 * min(1vw,0.5582vh));
+    border:2px solid rgba(92,58,30,.7);background:rgba(255,247,226,.96);color:#3B2412;}
+  #seedInput::placeholder{color:rgba(70,46,24,.6);}
   /* Crimson, taken off the knight's cape. The cyan these started as was the one
      saturated colour anywhere on this screen — everything in the art sits in a
      narrow band of warm greys and browns — so it read as interface laid on top
@@ -626,6 +637,7 @@
   @media (max-width:640px){
     .menuBoard{gap:calc(1.8 * min(1vw,0.5582vh));}
     .menuBoard button{min-height:40px;font-size:13px;}
+    #seedInput{font-size:12px;padding:4px;}
   }
   /* The front door sits above the menu rather than replacing it, so the menu is
      already there underneath and nothing has to be told the game has started. */
@@ -950,6 +962,14 @@
   /* Very short screens (phone in landscape): the dock becomes a thin
      translucent strip so it stops eating the play area. */
   @media (max-height: 470px){
+    /* Four buttons at the 40px touch floor need 172px and the board is 147px
+       in landscape, so the floor comes down to 32 here — still a finger. */
+    .menuBoard{gap:2px;}
+    .menuBoard button{min-height:32px;padding-block:2px;}
+    /* 147px of board holds four 32px buttons and nothing else, so the box goes
+       just below the sign rather than on it. */
+    #seedInput{position:absolute;top:calc(100% + 3px);left:17%;right:17%;width:auto;
+      padding:2px 4px;font-size:9.5px;border-width:1.5px;}
     .bottomDock{background:transparent;}
     .statStrip{background:rgba(255,231,184,.72);border-top:none;padding:2px 2%;gap:4px;}
     .statBtn{padding:1px 4px;}
@@ -1020,16 +1040,17 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="overlay hidden" id="pauseScreen">
       <div class="pauseModal" id="pauseResumePage">
         <b class="tutTitle">Paused</b>
-        <p>Nothing moves until you resume.</p>
+        <p id="pauseNote">Nothing moves until you resume.</p>
         <div class="tutRow"><button class="go" id="pauseResumeBtn">Resume</button></div>
       </div>
       <div class="pauseModal hidden" id="pauseConfirmPage">
-        <b class="tutTitle">End this game?</b>
-        <p>You'll forfeit the match and return to the main menu.</p>
+        <b class="tutTitle" id="pauseConfirmTitle">End this game?</b>
+        <p id="pauseConfirmNote">You'll forfeit the match and return to the main menu.</p>
         <div class="tutRow">
           <button id="pauseCancelBtn">No, keep playing</button>
           <button class="go" id="pauseConfirmBtn">Yes, end match</button>
         </div>
+        <div class="tutRow"><button id="pauseReseedBtn" class="hidden">Play this world again</button></div>
       </div>
     </div>
     <div class="tip" id="tooltip"></div>
@@ -1043,7 +1064,7 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="scoreHud hidden" id="scoreHud">
       <div class="scoreBox you" id="scoreBoxYou"><b id="scoreYou">0</b><span>BLUE TEAM</span></div>
       <div class="scoreBox foe" id="scoreBoxFoe"><b id="scoreFoe">0</b><span>RED TEAM</span></div>
-      <div class="scoreBox wave hidden" id="scoreBoxWave"><b id="scoreWave">1</b><span>WAVE</span></div>
+      <div class="scoreBox wave hidden" id="scoreBoxWave"><b id="scoreWave">1</b><span id="scoreWaveLabel">WAVE</span></div>
     </div>
     <div class="party hidden" id="party">
       <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
@@ -1106,6 +1127,9 @@ window.addEventListener('DOMContentLoaded', function(){
           <button id="startBtn">Match &middot; 10:00</button>
           <button id="startSurvBtn">Survival</button>
           <button id="startTutBtn">Tutorial</button>
+          <button id="startWorldBtn">Open World</button>
+          <input id="seedInput" inputmode="numeric" autocomplete="off" spellcheck="false"
+                 aria-label="World seed" placeholder="seed · blank = random">
         </div>
       </div>
     </div>
@@ -1135,8 +1159,8 @@ window.addEventListener('DOMContentLoaded', function(){
     <div class="overlay hidden" id="loadScreen">
       <div class="panel loadPanel">
         <div class="loadSpin" id="loadSpin"></div>
-        <h1>Building the map</h1>
-        <p>Lanes, forest, river and camps&hellip;</p>
+        <h1 id="loadTitle">Building the map</h1>
+        <p id="loadNote">Lanes, forest, river and camps&hellip;</p>
         <div class="loadBar"><i id="loadBarFill"></i></div>
       </div>
     </div>
@@ -1149,6 +1173,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <p id="finalHits">0 last hits</p>
         <p id="towerCompare"></p>
         <button id="restartBtn">Play Again</button>
+        <button id="menuBtn" class="hidden">Back to the menu</button>
       </div>
     </div>
   </div>
@@ -2516,7 +2541,13 @@ window.addEventListener('DOMContentLoaded', function(){
 <script>
 (function(){
   const bgCanvas = document.createElement('canvas');
-  const bgCtx = bgCanvas.getContext('2d');
+  // A let, because bakeTile points it at the tile it is baking for the length
+  // of that bake — so every bakeX helper below draws in world coordinates,
+  // unchanged, whether the target is the 4000-square Match canvas or a tile.
+  let bgCtx = bgCanvas.getContext('2d');
+  // Open World's background: 504-square baked tiles keyed 'tx,ty', instead of
+  // one bake of a world that has no edges.
+  const bgTiles = new Map();
   const fogCanvas = document.createElement('canvas');
   const fogCtx = fogCanvas.getContext('2d');
   const maskCanvas = document.createElement('canvas');
@@ -2563,6 +2594,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // enemy whose deepest push in a full match was still on its own half.
   const WORLD_W = 1600 * 2.5;
   const WORLD_H = WORLD_W;
+  // Open World's three grids, all derived from one number. A chunk is the unit
+  // of ownership and loading, a tile the unit of background baking, a region
+  // the unit a feature belongs to. Declared here because applyLayout sizes the
+  // tile pool off OW_TILE while this script is still being evaluated.
+  const CHUNK = 1000, OW_TILE = CHUNK/2, REGION = 4000;
+  let OW_TILE_MAX = 64;         // sized from the view in applyLayout, never chosen
+  const OW_TILE_BUDGET = 64;    // and never past the 4000-square bake it gives back
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
   const BG_DPR = 1;
   function setupCanvas(cv, c, w, h, dpr){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); c.setTransform(dpr,0,0,dpr,0,0); }
@@ -2573,7 +2611,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // off of it and runs long before drawMinimap is ever called.
   // 30% bigger than the original 150 — towers and hero faces need the room.
   const MM_SCALE = 1.3;
-  const MM_W = Math.round(150*MM_SCALE), MM_H = Math.round(150*MM_SCALE), MM_TOP = 16, MM_RIGHT = 16;
+  let MM_W = Math.round(150*MM_SCALE), MM_H = Math.round(150*MM_SCALE);
+  let MM_WORLD = 4000;                // how much world the panel shows (A1)
+  const MM_TOP = 16, MM_RIGHT = 16;   // MM_W/MM_H follow the window in Open World (A1)
   const MM_CAMP_R = 2.8*MM_SCALE, MM_TOWER_R = 6.5, MM_TOWER_R_MAIN = 9.5, MM_HERO_R = 8;
 
   // The canvas fills the stage and the stage fills the screen. Logical
@@ -2615,6 +2655,24 @@ window.addEventListener('DOMContentLoaded', function(){
     // at DPR and floored at 0.5 so a very wide desktop view keeps a little
     // supersampling rather than going soft.
     canvasScale = Math.min(DPR, Math.max(0.5, (cw * (window.devicePixelRatio || 1)) / W));
+    // The tile pool follows the view rather than being a constant: one extra
+    // column and row for a fractional camera, plus eight of slack so a tile
+    // inside the bake window is never the one evicted.
+    // The pool has to be bigger than the bake window, not equal to it: at
+    // window + 8 the first step in any direction evicted a tile and the step
+    // back re-baked it, and a 4000-square world (64 tiles) against a 62-tile
+    // pool re-baked six tiles a second while walking. A whole extra ring of
+    // tiles is the hysteresis — 77 on this desktop (78MB, against the 64MB
+    // bgCanvas it replaces), 42 on a phone (43MB against the same 64MB).
+    const cols = Math.ceil((W + OW_TILE + 4)/OW_TILE + 1), rows = Math.ceil((H + OW_TILE + 4)/OW_TILE + 1);
+    // The ring of hysteresis is what stops a step east and back re-baking, but
+    // it is also canvas memory, and a browser keeps a GPU texture per canvas.
+    // So the ring grows only up to the budget the mode already replaced: the
+    // 4000-square bgCanvas this gives back is 64 tiles' worth, and the pool
+    // never exceeds it. Desktop 64 (window 54 + 10 of slack), phone 42.
+    const winTiles = cols*rows;
+    OW_TILE_MAX = Math.min(winTiles + cols + rows + 8, Math.max(winTiles + 8, OW_TILE_BUDGET));
+    owMinimapSize();
     setupCanvas(canvas, ctx, W, H, canvasScale);
     // The fog is a screen-space overlay, so it follows the same budget. drawFog
     // reads its own scale back off fogCanvas.width, so shrinking it here is all
@@ -2701,6 +2759,16 @@ window.addEventListener('DOMContentLoaded', function(){
   const towerCompareEl = document.getElementById('towerCompare');
   const pointsLabelEl = document.getElementById('pointsLabel');
   const statStripEl = document.getElementById('statStrip');
+  const scoreWaveLabelEl = document.getElementById('scoreWaveLabel');
+  const startWorldBtn = document.getElementById('startWorldBtn');
+  const seedInputEl = document.getElementById('seedInput');
+  const loadTitleEl = document.getElementById('loadTitle');
+  const loadNoteEl = document.getElementById('loadNote');
+  const pauseNoteEl = document.getElementById('pauseNote');
+  const pauseConfirmNoteEl = document.getElementById('pauseConfirmNote');
+  const pauseReseedBtn = document.getElementById('pauseReseedBtn');
+  const pauseConfirmTitleEl = document.getElementById('pauseConfirmTitle');
+  const menuBtn = document.getElementById('menuBtn');
 
   // Ten minutes. Simulated across 40 matches with the player idle: at 5 minutes
   // the enemy takes the base 60% of the time, at 7 minutes 72%, at 10 minutes
@@ -3367,7 +3435,7 @@ window.addEventListener('DOMContentLoaded', function(){
     refreshScoreHud();
   }
   function addScore(side, n, x, y){
-    if(gameMode === 'survival' || !side) return;
+    if(gameMode === 'survival' || gameMode === 'openworld' || !side) return;
     score[side] += n;
     bumpScore(side);
     if(x !== undefined) addFloater(x, y-18, '+'+n, side==='player' ? '#FFD54F' : '#FF9A8B', n>=30);
@@ -3531,6 +3599,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // Survival is one tower in the middle of an open arena and nothing to attack —
   // the map is rebuilt on mode select rather than being two separate scenes.
   function buildMap(){
+    if(gameMode==='openworld'){
+      // One tower, at the middle of the start block, and nothing that attacks
+      // it. The world itself is built by worldInit below rather than by the
+      // generateX pass: out here the map is derived per chunk, not laid out.
+      playerTowers = [ makeTower(OW_BASE_X, OW_BASE_Y, 'player', true) ];
+      enemyTowers = [];
+      // The 4000-square background bake is 64MB and there is no 4000-square
+      // world to bake it onto; tiles replace it, so give the canvas back.
+      setupCanvas(bgCanvas, bgCtx, 1, 1, 1);
+      worldInit();
+      resetClouds();
+      return;
+    }
     if(gameMode==='survival'){
       const cx=WORLD_W/2, cy=WORLD_H/2;
       playerTowers = [ makeTower(cx, cy, 'player', true) ];
@@ -3604,7 +3685,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // exactly level 10 and no more — measured, they capped there every game. At
   // +8 the same experience reaches 13-16, which is the difference between a
   // carry that dies to a tower and one that can stand next to it.
-  function xpForLevel(level){ return 20 + (level-1)*8; }
+  // Req 5: an Open World level costs twenty times what a Match level does, so
+  // the mode is about farming for a long time rather than about ten minutes.
+  const OW_XP_MULT = 20;
+  function xpForLevel(level){ return (gameMode==='openworld' ? OW_XP_MULT : 1) * (20 + (level-1)*8); }
 
   function makeHero(type, side, hx, hy){
     const statLv = {}, stats = {};
@@ -3659,7 +3743,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function applyDefaultOrders(){
-    if(gameMode==='survival'){ squadFollow(playerTeam); return; }   // arena: stay together
+    if(gameMode==='survival' || gameMode==='openworld'){ squadFollow(playerTeam); return; }   // arena and open world: stay together
     squadLanes(playerTeam);
     squadLanes(enemyTeam);
   }
@@ -3693,7 +3777,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Match has two straight lanes; Survival has two arena roads. Same count
   // today, but the array that actually holds them differs by mode.
-  function laneCount(){ return gameMode==='survival' ? SURV_PATHS.length : LANE_YS.length; }
+  function laneCount(){ return gameMode==='openworld' ? 1 : (gameMode==='survival' ? SURV_PATHS.length : LANE_YS.length); }   // never read out here; insurance against idx % 0
   function setLanePath(h){
     h.laneIdx = h.laneIdx % laneCount();
     h.lpath = lanePath(h.laneIdx, h.side);
@@ -4073,7 +4157,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // camps and loose orbs use a much deeper line; only advancing on you doesn't.
   const EARLY_FARM_X = 1150;
   function inEarlyPeace(){
-    return gameMode !== 'survival' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_PEACE;
+    return gameMode !== 'survival' && gameMode !== 'openworld' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_PEACE;
   }
   function leashBlocked(h, x){
     return h.side === 'enemy' && inEarlyPeace() && x < EARLY_LEASH_X;
@@ -4091,13 +4175,13 @@ window.addEventListener('DOMContentLoaded', function(){
   const DANGER_RESUME = 0.42;    // and danger must fall this low before it re-commits
   const ENDGAME_TIME = 120, ENDGAME_LEVEL = 10;
   function isEndgame(){
-    if(gameMode === 'survival' || inEarlyPeace()) return false;
+    if(gameMode === 'survival' || gameMode === 'openworld' || inEarlyPeace()) return false;   // a count-up clock would read as the last two minutes, for ever
     if(timeLeft <= ENDGAME_TIME) return true;
     const c = enemyTeam[0];
     return !!(c && c.level >= ENDGAME_LEVEL);
   }
   function isEarlyGame(){
-    return gameMode !== 'survival' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_GAME;
+    return gameMode !== 'survival' && gameMode !== 'openworld' && !tut.on && (ROUND_TIME - timeLeft) < EARLY_GAME;
   }
 
   // ---- collapse on fights ----
@@ -4814,6 +4898,11 @@ window.addEventListener('DOMContentLoaded', function(){
       if((Math.sqrt(dx*dx+dy*dy) - l.r*LAKE_WOBBLE_MAX)*l.sy < pad) return true;
     }
     for(const rv of _rivers){
+      // A river is up to 267 points long and this is called per tuft, per tree
+      // and per placement attempt. Its own box rejects it in four compares —
+      // which is most calls, since a river is a line through a big box.
+      riverBox(rv);
+      if(x < rv.bx0-pad || x > rv.bx1+pad || y < rv.by0-pad || y > rv.by1+pad) continue;
       const p=rv.pts;
       for(let i=0;i<p.length-1;i++)
         if(pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y) < rv.w*0.5+pad) return true;
@@ -4982,7 +5071,7 @@ window.addEventListener('DOMContentLoaded', function(){
     matchMidLake(1250, WORLD_H-MATCH_MID_Y);
   }
   function nearAnyLane(x, y, pad){
-    if(gameMode==='survival') return false;   // no lanes in the arena
+    if(gameMode==='survival' || gameMode==='openworld') return false;   // no lanes in the arena, none at all out in the world
     for(const path of LANE_PATHS){
       for(let i=0;i<path.length-1;i++){
         if(pointSegDist(x,y,path[i].x,path[i].y,path[i+1].x,path[i+1].y) < pad) return true;
@@ -6611,6 +6700,11 @@ window.addEventListener('DOMContentLoaded', function(){
 
   // ---------- background ----------
   function drawBackground(){
+    // Open World bakes its ground in tiles instead (bakeTile), and gave this
+    // canvas back at startRound. Any other mode that finds it at 1x1 is the
+    // round after one, and takes its 4000-square canvas back first.
+    if(gameMode==='openworld') return;
+    if(bgCanvas.width <= 1) setupCanvas(bgCanvas, bgCtx, WORLD_W, WORLD_H, BG_DPR);
     // Flat top-down grass: one solid, deeply saturated green. The white stud
     // grid that used to sit on top was a moulded-plastic look — it lifted the
     // whole field towards white and flattened the contrast against the lanes,
@@ -6621,17 +6715,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // hard-edged 1-2px flecks, half darker green and half lighter, at an alpha
     // low enough that the base colour still reads as a single flat green from
     // playing distance but never as dead vinyl up close.
-    const TILE = 64;
-    const tile = document.createElement('canvas');
-    tile.width = tile.height = TILE;
-    const tc = tile.getContext('2d');
-    const TR = mulberry(0x51EED);
-    for(let i=0;i<300;i++){
-      const x = TR()*TILE, y = TR()*TILE, s = 1 + (TR()<0.25 ? 1 : 0);
-      tc.fillStyle = TR()<0.5 ? 'rgba(12,86,10,.16)' : 'rgba(150,232,110,.13)';
-      tc.fillRect(x, y, s, s);
-    }
-    bgCtx.fillStyle = bgCtx.createPattern(tile,'repeat');
+    bgCtx.fillStyle = bgCtx.createPattern(grainTile(),'repeat');
     bgCtx.fillRect(0,0,WORLD_W,WORLD_H);
     // A slow, wide mottle over the grain so the field has large soft patches of
     // shade the way real turf does, without any of it reading as a pattern.
@@ -6756,7 +6840,13 @@ window.addEventListener('DOMContentLoaded', function(){
   // atlas that never decodes would leave the other two unbaked behind the
   // procedural stand-ins.
   let decorPending = 3;
-  function decorArrived(){ if(--decorPending === 0) drawBackground(); }
+  function decorArrived(){
+    if(--decorPending !== 0) return;
+    // Shadows are baked from the sprite's own size, so tiles baked before the
+    // atlases decoded are wrong; drop them and let bakeTick redo them.
+    if(gameMode==='openworld'){ bgTiles.clear(); return; }
+    drawBackground();
+  }
   treeImg.onload = ()=>{ treeSheet = scrubSheet(treeImg, SHEET_BLEED.tree); treeImgReady = true; decorArrived(); };
   bushImg.onload = ()=>{ bushSheet = scrubSheet(bushImg, SHEET_BLEED.bush); bushImgReady = true; decorArrived(); };
   rockImg.onload = ()=>{ rockSheet = scrubSheet(rockImg, SHEET_BLEED.rock); rockImgReady = true; decorArrived(); };
@@ -6910,7 +7000,11 @@ window.addEventListener('DOMContentLoaded', function(){
   const DECOR_ROAD_KEEP = 130, DECOR_TOWER_KEEP = TOWER_RANGE + 120, DECOR_WATER_KEEP = 24;
   const DECOR_CAMP_KEEP = 90;      // beyond the camp ring, so a clearing stays clear
   function decorSpotClear(x, y, lists){
-    if(x < 200 || y < 200 || x > WORLD_W-200 || y > WORLD_H-200) return false;
+    // A bundle may carry its own bounds — a chunk's inset, out in the open
+    // world, where the map has no edge to keep 200 units off.
+    const b = lists && lists.bounds;
+    if(b){ if(x < b[0] || y < b[1] || x > b[2] || y > b[3]) return false; }
+    else if(x < 200 || y < 200 || x > WORLD_W-200 || y > WORLD_H-200) return false;
     if(onRoadway(x, y, DECOR_ROAD_KEEP, lists)) return false;
     if(nearWater(x, y, DECOR_WATER_KEEP, lists)) return false;
     if(nearAnyTower(x, y, DECOR_TOWER_KEEP, lists)) return false;
@@ -6987,6 +7081,896 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
   }
+  /* ==================================================================== world
+     Open World's map is not built; it is *derived*. Everything below is a pure
+     function of (worldSeed, coordinates), cached, so the same seed gives the
+     same world whichever direction you walk into it — and so a chunk built in
+     isolation for a test is identical to the one that streams in during play.
+
+     Five layers, each reading only the layers above it, never a neighbour of
+     its own layer. That is the whole trick: no cycles, no build order.
+
+       L0  rivers         per source region   — not confined; a river crosses anything
+       L1  regions        per region          — lakes, then groves; every feature CONFINED
+       L2  rings, stands, lake shores         — per feature, cached on the feature
+       L3  river shores   per (river, region) segment
+       L4  loose stands   per chunk
+       L5  props          per chunk
+
+     "Confined" means a feature's EXTENT — one number per feature, computed
+     from its own recipe — lies inside its region. Two regions' features
+     therefore cannot collide, so no placer ever reads another region, and
+     because the 4000 region grid falls on the 1000 chunk grid, every chunk
+     lies inside exactly one region and needs only that region's features
+     (rivers excepted, which are registered by source region within +-4).
+     Loose trees and props fill across the borders, so the lattice is invisible.
+  */
+  // CHUNK, OW_TILE and REGION are declared up with WORLD_W: applyLayout reads
+  // OW_TILE while the script is still being evaluated, and a const down here
+  // would be in its temporal dead zone.
+  const OW_BASE_X = 2000, OW_BASE_Y = 2000;                 // = OW_TOWERS[0], and WORLD_W/2 today
+  const OW_SPAN_D0 = 1500, OW_SPAN = 90000;                 // the difficulty axis (§11 q.19)
+  const OW_RIVER_P = 0.7, OW_RIVER_STEP = 600, OW_RIVER_SCAN = 4;
+  const OW_RIVER_STOP = 1100, OW_RIVER_SRC_MIN = 1700;      // rivers keep off the base
+  const OW_BASE_CAMP_R = 1000, OW_BASE_LAKE_R = 1200, OW_BASE_GROVE_R = 1000;
+  const OW_CAMP_SPACING = 510;    // no chain pulls at the ring (§11 q.18)
+  const OW_GROVE_WATER_KEEP = 300;   // the grove's centre, not its whole disc
+  const OW_TREE_RATE = TREE_COUNT/16, OW_BUSH_RATE = BUSH_COUNT/16, OW_ROCK_RATE = ROCK_COUNT/16;
+  const OW_CHUNK_INSET = TREE_MIN_GAP/2;                    // so two chunks' trees are >= TREE_MIN_GAP apart
+  const OW_PROP_INSET = 100;
+
+  let regionCache = new Map(), riverCache = new Map(), loaded = new Map();
+  let genCount = new Map(), lastGenMs = 0, lastRegionMs = 0;
+  let worldDiff = blankDiff();
+  let basePlaza = null;
+  function blankDiff(){ return { felled: new Set(), chops: new Map(), camps: new Map(), areas: new Map() }; }
+
+  function keyOf(a,b){ return a+','+b; }
+  function regionXOf(x){ return Math.floor((x - OW_BASE_X)/REGION); }
+  function regionYOf(y){ return Math.floor((y - OW_BASE_Y)/REGION); }
+  function distBase(x,y){ return dist(x, y, OW_BASE_X, OW_BASE_Y); }
+  // The difficulty axis, and the only thing that says how far "far" is.
+  function owU(x,y){ return Math.max(0, Math.min(1, (distBase(x,y) - OW_SPAN_D0)/OW_SPAN)); }
+  function owLists(reg, trees, props, camps){
+    return { lakes: reg.lakes, rivers: reg.rivers, camps: camps || reg.camps,
+             trees: trees || [], props: props || [], dirt: reg.dirt, towers: OW_TOWERS };
+  }
+
+  /* ---- L0: rivers ------------------------------------------------------ */
+  // A river belongs to the region its source falls in and to nothing else. It
+  // is never extended, sliced or continued by a chunk: a chunk only asks which
+  // rivers cross it, so both banks of every seam come off one polyline and no
+  // two chunks can disagree about where the water is.
+  function riverFor(rx, ry){
+    const k = keyOf(rx, ry);
+    if(riverCache.has(k)) return riverCache.get(k);
+    genDepth++;
+    let rv = null;
+    try {
+      const rng = streamFor(SALT.river, rx, ry);
+      const home = (rx === 0 && ry === 0);       // §6.1: the start block always has its river
+      const p = rng();                           // drawn either way, so the stream cannot drift
+      if(home || p < OW_RIVER_P) rv = buildRiver(rx, ry, rng, home);
+    } finally { genDepth--; }
+    riverCache.set(k, rv);
+    genCount.set('river:'+k, (genCount.get('river:'+k)||0) + 1);
+    return rv;
+  }
+  function buildRiver(rx, ry, rng, home){
+    const x0 = OW_BASE_X + rx*REGION, y0 = OW_BASE_Y + ry*REGION;
+    let sx, sy, h;
+    if(home){
+      // Fixed at D 1300 on the start block's own diagonal, heading away from
+      // the plaza, so every step takes it further out and the "too close to
+      // base" stop below can never fire on the one river you are born beside.
+      const a = rng()*Math.PI*0.5;
+      sx = OW_BASE_X + Math.cos(a)*1300; sy = OW_BASE_Y + Math.sin(a)*1300; h = a;
+    } else {
+      // Only the four regions touching the base can reject at all, and they
+      // reject a 14% quarter-disc, so twenty draws is far more than enough.
+      for(let i=0;i<20;i++){
+        sx = x0 + rng()*REGION; sy = y0 + rng()*REGION;
+        if(distBase(sx, sy) >= OW_RIVER_SRC_MIN) break;
+        if(i === 19) return null;
+      }
+      h = rng()*Math.PI*2;
+    }
+    const L = 2500 + 9500*Math.pow(rng(), 1.6);
+    const w = 120 + 60*rng(), wob = 25 + 35*rng();
+    const curl = (rng() - 0.5)*0.14;              // some rivers arc for miles
+    const ctrl = [{ x: sx, y: sy }];
+    let x = sx, y = sy, budget = L;
+    while(budget > 0){
+      h += curl + (rng() + rng() - 1)*0.5;        // triangular drift, sd ~0.2 rad
+      if(rng() < 0.10) h += (rng() < 0.5 ? -1 : 1)*(0.6 + rng()*0.4);   // a real elbow
+      const nx = x + Math.cos(h)*OW_RIVER_STEP, ny = y + Math.sin(h)*OW_RIVER_STEP;
+      if(distBase(nx, ny) < OW_RIVER_STOP) break;
+      ctrl.push({ x: nx, y: ny }); x = nx; y = ny; budget -= OW_RIVER_STEP;
+    }
+    if(ctrl.length < 2) return null;
+    const pts = riverSamples(chaikin(chaikin(ctrl)), wob);
+    const id = 'v' + rx + ',' + ry;
+    const rv = { id, pts, w, shore: new Map(), mouth: null };
+    // A river that ends in a lake reads as a river that goes somewhere.
+    if(rng() < 0.45){
+      const end = pts[pts.length-1];
+      rv.mouth = { id: id+':m', x: end.x, y: end.y, r: 240 + 160*rng(), sy: 0.72 + 0.28*rng(), seed: rng()*6.283, shore: [] };
+    }
+    riverBox(rv);
+    rv.ext = w*0.5 + SHORE_TREE_GAP + 60 + TREE_MAX_R;       // registration reach, §3.4
+    rv.ex0 = rv.bx0 - rv.ext; rv.ey0 = rv.by0 - rv.ext;
+    rv.ex1 = rv.bx1 + rv.ext; rv.ey1 = rv.by1 + rv.ext;
+    return rv;
+  }
+  function chaikin(pts){
+    if(pts.length < 3) return pts.slice();
+    const out = [pts[0]];
+    for(let i=0;i<pts.length-1;i++){
+      const a = pts[i], b = pts[i+1];
+      out.push({ x: a.x*0.75 + b.x*0.25, y: a.y*0.75 + b.y*0.25 });
+      out.push({ x: a.x*0.25 + b.x*0.75, y: a.y*0.25 + b.y*0.75 });
+    }
+    out.push(pts[pts.length-1]);
+    return out;
+  }
+  // Resample to RIVER_STEP and lay the makeRiver wobble along the normal, so
+  // the water has the same grain as the arena's river rather than a smooth arc.
+  function riverSamples(ctrl, wob){
+    let total = 0;
+    for(let i=0;i<ctrl.length-1;i++) total += dist(ctrl[i].x, ctrl[i].y, ctrl[i+1].x, ctrl[i+1].y);
+    const n = Math.max(8, Math.round(total/RIVER_STEP)), out = [];
+    let seg = 0, segLen = dist(ctrl[0].x, ctrl[0].y, ctrl[1].x, ctrl[1].y), walked = 0;
+    for(let i=0;i<=n;i++){
+      const want = total*i/n;
+      while(walked + segLen < want && seg < ctrl.length-2){ walked += segLen; seg++; segLen = dist(ctrl[seg].x, ctrl[seg].y, ctrl[seg+1].x, ctrl[seg+1].y) || 1; }
+      const a = ctrl[seg], b = ctrl[seg+1], t = Math.max(0, Math.min(1, (want - walked)/(segLen||1)));
+      let nx = -(b.y - a.y), ny = (b.x - a.x);
+      const nl = Math.max(1, Math.sqrt(nx*nx + ny*ny));
+      const s = Math.sin(i/n*Math.PI*2.1)*wob;
+      out.push({ x: a.x + (b.x-a.x)*t + nx/nl*s, y: a.y + (b.y-a.y)*t + ny/nl*s });
+    }
+    return out;
+  }
+  // Every river whose source lies within OW_RIVER_SCAN regions can reach here:
+  // RIVER_MAX_LEN 12000 / REGION 4000 = 3, plus one for the wobble.
+  function riversNear(rx, ry){
+    const out = [];
+    for(let dx=-OW_RIVER_SCAN; dx<=OW_RIVER_SCAN; dx++)
+      for(let dy=-OW_RIVER_SCAN; dy<=OW_RIVER_SCAN; dy++){
+        const rv = riverFor(rx+dx, ry+dy);
+        if(rv) out.push(rv);
+      }
+    return out;
+  }
+
+  /* ---- L1: regions, and L2: the lists their features own ---------------- */
+  // A region draws its lakes and then its groves, in that order, from one
+  // stream — so the region is a pure function of (seed, rx, ry). Every feature
+  // it places is confined: its extent lies inside the region, which is what
+  // lets two regions be built in either order and still agree at their border.
+  function regionFor(rx, ry){
+    const k = keyOf(rx, ry);
+    let reg = regionCache.get(k);
+    if(reg) return reg;
+    const t0 = owNow();
+    genDepth++;
+    try { reg = buildRegion(rx, ry); } finally { genDepth--; }
+    regionCache.set(k, reg);
+    genCount.set('region:'+k, (genCount.get('region:'+k)||0) + 1);
+    lastRegionMs = owNow() - t0;
+    return reg;
+  }
+  function owNow(){ return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+  const OW_START_REGIONS = { '0,0':1, '0,-1':1, '-1,0':1, '-1,-1':1 };
+  function buildRegion(rx, ry){
+    const rng = streamFor(SALT.region, rx, ry);
+    const R = ranged(rng);
+    const x0 = OW_BASE_X + rx*REGION, y0 = OW_BASE_Y + ry*REGION;
+    const reg = { key: keyOf(rx,ry), rx, ry, x0, y0, lakes: [], groves: [], camps: [], trees: [],
+                  dirt: [], rivers: riversNear(rx, ry), features: [] };
+    // Mouth lakes belong to their river, but they are water like any other and
+    // every placer below has to keep off them.
+    const water = () => reg.lakes.concat(reg.rivers.filter(v => v.mouth).map(v => v.mouth));
+    const near = (x, y, pad) => nearWater(x, y, pad, { lakes: water(), rivers: reg.rivers });
+    const core = (ext) => [ext + 20, REGION - ext - 20];
+
+    // --- lakes: 1-3, skewed small so the world stays walkable
+    const u = rng();
+    const nLakes = u < 0.35 ? 1 : (u < 0.80 ? 2 : 3);
+    for(let i=0;i<nLakes;i++){
+      const r = 220 + 260*Math.pow(rng(), 2);
+      const sy = 0.72 + 0.28*rng(), seed = rng()*6.283;
+      const ext = 1.30*r + 262, [lo, hi] = core(ext);
+      for(let att=0; att<40; att++){
+        const x = x0 + lo + rng()*(hi - lo), y = y0 + lo + rng()*(hi - lo);
+        if(distBase(x, y) < OW_BASE_LAKE_R) continue;
+        if(near(x, y, r*1.30 + 60)) continue;
+        const lake = { id: 'r'+rx+','+ry+':l'+i, x, y, r, sy, seed, ext, shore: [] };
+        reg.lakes.push(lake); reg.features.push(lake);
+        break;
+      }
+    }
+
+    // --- groves: the farming areas. Count and camp count both grow with
+    // distance, and the four regions touching the base force their first grove
+    // into sight of the plaza so every seed opens on "a world with a farm in it".
+    const uReg = owU(x0 + REGION/2, y0 + REGION/2);
+    const nGroves = 1 + (rng() < 0.55 ? 1 : 0) + (rng() < 0.25 ? 1 : 0);
+    const opener = !!OW_START_REGIONS[keyOf(rx,ry)];
+    for(let gi=0; gi<nGroves; gi++){
+      const tri = (rng() + rng() - 1)*2.5;
+      let n = Math.max(4, Math.min(13, Math.round(6.5 + 3.5*uReg + tri)));
+      if(opener && gi === 0) n = Math.min(n, 8);
+      const Rg = 660 + 45*n, ext = 0.92*Rg + 225;
+      const [lo, hi] = core(ext);
+      if(hi <= lo) continue;                       // no room in this region for a grove this big
+      let cx = 0, cy = 0, placed = false;
+      const dLo = opener && gi === 0 ? Math.max(OW_BASE_GROVE_R + Rg, Math.SQRT2*(ext + 20)) : 0;
+      const dHi = opener && gi === 0 ? 2400 : 0;
+      for(let att=0; att<200; att++){
+        cx = x0 + lo + rng()*(hi - lo); cy = y0 + lo + rng()*(hi - lo);
+        const D = distBase(cx, cy);
+        if(D < OW_BASE_GROVE_R + Rg) continue;
+        if(dHi && (D < dLo || D > dHi)) continue;
+        // The grove's MIDDLE keeps off the water, not its whole disc. Demanding
+        // a clear 930-radius circle emptied whole regions — two lakes of their
+        // own region's making leave a 1798-wide core with nowhere legal in it,
+        // and half the start block came up with no farm at all. Camps and
+        // stands each reject water on their own (below), so a lake or a river
+        // inside a grove is scenery, and a good grove to find.
+        if(near(cx, cy, OW_GROVE_WATER_KEEP)) continue;
+        let clash = false;
+        for(const g of reg.groves){ if(dist(cx, cy, g.x, g.y) < Rg + g.R + 400){ clash = true; break; } }
+        if(clash) continue;
+        placed = true; break;
+      }
+      // The opener's band is narrow by construction; if nothing fits it, widen
+      // to the general rule rather than leaving the start block without a farm.
+      if(!placed && dHi){
+        for(let att=0; att<200; att++){
+          cx = x0 + lo + rng()*(hi - lo); cy = y0 + lo + rng()*(hi - lo);
+          const D = distBase(cx, cy);
+          if(D < OW_BASE_GROVE_R + Rg || D > 3000) continue;
+          if(near(cx, cy, OW_GROVE_WATER_KEEP)) continue;
+          placed = true; break;
+        }
+      }
+      if(!placed) continue;
+      const grove = { id: 'r'+rx+','+ry+':g'+gi, x: cx, y: cy, R: Rg, ext, n, camps: [], stands: [] };
+      // Camps: roster first, then position, because spacing depends on the
+      // roster (PR4 puts mediums in it; today every camp is three easies).
+      for(let ci=0; ci<n; ci++){
+        const camp = { id: grove.id+':c'+ci, x:0, y:0, alive:0, timer:0, n: CAMP_SIZE, roster: null, ring: [], grove };
+        let ok = false;
+        for(let att=0; att<400; att++){
+          const rad = Rg*0.92*Math.sqrt(rng()), ang = rng()*Math.PI*2;
+          const x = cx + Math.cos(ang)*rad, y = cy + Math.sin(ang)*rad;
+          if(distBase(x, y) < OW_BASE_CAMP_R) continue;
+          if(near(x, y, CAMP_RING_R + 40)) continue;
+          let clash = false;
+          for(const c of grove.camps){ if(dist(x, y, c.x, c.y) < campSpacing(camp, c)){ clash = true; break; } }
+          if(clash) continue;
+          camp.x = x; camp.y = y; ok = true; break;
+        }
+        if(!ok) continue;                            // a grove that fits only k of n keeps k
+        grove.camps.push(camp); reg.camps.push(camp);
+      }
+      // Stand centres are L1 (they come off the region's stream); their trees
+      // are L2, so a stand straddling a chunk seam is one list read by both.
+      const nStands = 3 + Math.floor(n/2);
+      for(let si=0; si<nStands; si++){
+        for(let att=0; att<60; att++){
+          const rad = (0.92*Rg - 100)*Math.sqrt(rng()), ang = rng()*Math.PI*2;
+          const x = cx + Math.cos(ang)*rad, y = cy + Math.sin(ang)*rad;
+          let clash = false;
+          for(const c of grove.camps){ if(dist(x, y, c.x, c.y) < CAMP_RING_R + 90){ clash = true; break; } }
+          if(clash || near(x, y, 325)) continue;
+          grove.stands.push({ id: grove.id+':s'+si, x, y, trees: [] });
+          break;
+        }
+      }
+      reg.groves.push(grove); reg.features.push(grove);
+    }
+
+    // --- L2, each from its own stream, in a fixed order: rings, then stands,
+    // then the lake shores (which gap-test against both).
+    for(const g of reg.groves){ for(const c of g.camps) genCampRing(c, reg); }
+    for(const g of reg.groves){ for(const s of g.stands) genStand(s, g, reg); }
+    for(const l of reg.lakes) genLakeShore(l, reg);
+    for(const v of reg.rivers) if(v.mouth && regionXOf(v.mouth.x) === rx && regionYOf(v.mouth.y) === ry) genLakeShore(v.mouth, reg);
+    return reg;
+  }
+  // PR4 gives a camp a roster of mediums; a medium's longer leash needs the
+  // wider gap, or a pulled one walks into the next ring.
+  function campSpacing(a, b){ return (a.roster || b.roster) ? 660 : OW_CAMP_SPACING; }
+
+  // The 5144 recipe, minus the floor paint the owner review dropped (A2):
+  // seven to ten berry bushes of one kind, tagged with the camp that owns them.
+  function genCampRing(camp, reg){
+    const rng = streamFor(SALT.ring, hashStr(camp.id), 0);
+    const R = ranged(rng);
+    const n = 7 + Math.floor(rng()*4);
+    const b = FOREST_BUSH_FRAMES[Math.floor(rng()*FOREST_BUSH_FRAMES.length)];
+    for(let i=0;i<n;i++){
+      const a = i/n*Math.PI*2 + R(-0.16, 0.16);
+      const rr = CAMP_RING_R + R(-22, 30);
+      const tx = camp.x + Math.cos(a)*rr, ty = camp.y + Math.sin(a)*rr*0.88;
+      if(owOnRoadway(tx, ty, 34)) continue;
+      const t = makeTree(tx, ty, R);
+      t.bush = b; t.id = camp.id+':b'+i; t.campId = camp.id; sizeTree(t);
+      camp.ring.push(t); reg.trees.push(t);
+    }
+  }
+  // A grove reads as a wood rather than rings on a lawn: the scatterTrees patch
+  // recipe run once per stand centre, from the stand's own stream.
+  function genStand(stand, grove, reg){
+    const rng = streamFor(SALT.stand, hashStr(stand.id), 0);
+    const R = ranged(rng);
+    const v = Math.floor(rng()*TREE_FRAMES.length);
+    const n = TREE_PATCH_MIN + Math.floor(rng()*(TREE_PATCH_MAX - TREE_PATCH_MIN + 1));
+    for(let i=0;i<n;i++){
+      const x = stand.x + R(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD);
+      const y = stand.y + R(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD)*0.75;
+      if(owOnRoadway(x, y, 70)) continue;
+      if(nearWater(x, y, 34, owLists(reg))) continue;
+      if(nearAnyTower(x, y, 260, owLists(reg))) continue;
+      if(owTreeCrowded(x, y, v, reg.trees)) continue;
+      let clash = false;
+      for(const c of reg.camps){ if(dist(x, y, c.x, c.y) < CAMP_RING_R + 90){ clash = true; break; } }
+      if(clash) continue;
+      const t = makeTree(x, y, R);
+      t.v = v; t.id = stand.id+':t'+i; sizeTree(t);
+      stand.trees.push(t); reg.trees.push(t);
+    }
+  }
+  function owTreeCrowded(x, y, v, list){
+    for(const t of list){
+      const gap = (t.bush === undefined && t.v !== v) ? TREE_MIX_KEEP : TREE_MIN_GAP;
+      if(dist(x, y, t.x, t.y) < gap) return true;
+    }
+    return false;
+  }
+  // The 5288 shore walk, per lake, cached on the lake.
+  function genLakeShore(lake, reg){
+    const rng = streamFor(SALT.shore, hashStr(lake.id), 0);
+    const R = ranged(rng);
+    const v = Math.floor(rng()*TREE_FRAMES.length);
+    for(let i=0;i<SHORE_LAKE_SAMPLES;i++){
+      const a = i/SHORE_LAKE_SAMPLES*Math.PI*2 + R(-0.2, 0.2);
+      for(let k=0;k<8;k++){
+        const rr = lakeRadiusAt(lake, a) + SHORE_TREE_GAP + k*26;
+        const x = lake.x + Math.cos(a)*rr, y = lake.y + Math.sin(a)*rr*lake.sy;
+        if(!owOffWater(x, y, SHORE_TREE_GAP, reg)) continue;
+        const t = owShoreTree(x, y, v, rng, R, reg, lake.id+':t'+i, [reg.trees]);
+        if(t){ lake.shore.push(t); reg.trees.push(t); }
+        break;
+      }
+    }
+  }
+  // gapLists says what this tree has to keep away from, and it is always
+  // stated by the caller rather than read off the region: a river's segment
+  // must NOT see the region's other segments, or which one was built first
+  // would change where its trees stand.
+  function owShoreTree(x, y, v, rng, R, reg, id, gapLists){
+    if(rng() > SHORE_TREE_CHANCE) return null;
+    if(owOnRoadway(x, y, 70)) return null;
+    if(nearAnyTower(x, y, 260, owLists(reg))) return null;
+    if(!owOffWater(x, y, SHORE_TREE_GAP, reg)) return null;
+    for(const list of gapLists){ if(owTreeCrowded(x, y, v, list)) return null; }
+    for(const c of reg.camps){ if(dist(x, y, c.x, c.y) < CAMP_RING_R + 90) return null; }
+    const t = makeTree(x, y, R);
+    t.v = v; t.id = id; sizeTree(t);
+    return t;
+  }
+  function owOffWater(x, y, pad, reg){
+    return !nearWater(x, y, pad, { lakes: reg.lakes.concat(reg.rivers.filter(v=>v.mouth).map(v=>v.mouth)), rivers: reg.rivers });
+  }
+  // No lanes out here. The plaza is the only roadway until PR4's dirt areas.
+  function owOnRoadway(x, y, pad){ return distBase(x, y) < SURV_PLAZA_R + pad; }
+
+  /* ---- L3: a river's shore, one segment per region it crosses ----------- */
+  // Built from the river's points inside ONE region and from that region's own
+  // features, so two segments of a river never read each other and the list is
+  // the same whichever region was built first.
+  function riverShoreFor(river, reg){
+    let seg = river.shore.get(reg.key);
+    if(seg) return seg;
+    genDepth++;
+    try {
+      seg = [];
+      const rng = streamFor(SALT.shore, hashStr(river.id+':'+reg.rx+','+reg.ry), 0);
+      const R = ranged(rng);
+      const v = Math.floor(rng()*TREE_FRAMES.length);
+      const bx = reg.x0 + 75, by = reg.y0 + 75, bx1 = reg.x0 + REGION - 75, by1 = reg.y0 + REGION - 75;
+      for(let i=1;i<river.pts.length-1;i+=2){
+        const a = river.pts[i-1], b = river.pts[i+1];
+        let nx = -(b.y - a.y), ny = (b.x - a.x);
+        const nl = Math.max(1, Math.sqrt(nx*nx + ny*ny)); nx/=nl; ny/=nl;
+        for(const s of [1,-1]){
+          const d = river.w*0.5 + SHORE_TREE_GAP + R(10, 60);
+          const x = river.pts[i].x + nx*s*d, y = river.pts[i].y + ny*s*d;
+          // Inset from the region border, so this segment and the next one are
+          // >= 150 apart without either having to look at the other.
+          if(x < bx || y < by || x > bx1 || y > by1) continue;
+          const t = owShoreTree(x, y, v, rng, R, reg, river.id+':'+reg.key+':t'+i+(s>0?'a':'b'), [reg.trees, seg]);
+          if(t) seg.push(t);
+        }
+      }
+    } finally { genDepth--; }
+    river.shore.set(reg.key, seg);
+    return seg;
+  }
+
+  /* ---- L4/L5: what a chunk owns, and the chunk record ------------------- */
+  // A chunk owns the objects whose (x,y) fall inside it and holds REFERENCES
+  // to the features that reach into it. Feature-owned lists are only filtered
+  // here, never rebuilt, so two chunks either side of a seam read one list and
+  // cannot disagree about it.
+  function buildChunk(cx, cy){
+    const t0 = owNow();
+    genDepth++;
+    try {
+      const x0 = cx*CHUNK, y0 = cy*CHUNK, x1 = x0 + CHUNK, y1 = y0 + CHUNK;
+      const reg = regionFor(regionXOf(x0), regionYOf(y0));
+      const chunk = { cx, cy, key: keyOf(cx,cy), x0, y0, trees: [], props: [], camps: [], stumps: [],
+                      lakes: [], rivers: [], groves: [], dirt: [], hash: 0, pinned: false };
+      const inside = (p) => p.x >= x0 && p.x < x1 && p.y >= y0 && p.y < y1;
+      const touches = (ax0, ay0, ax1, ay1) => ax1 >= x0 && ax0 < x1 && ay1 >= y0 && ay0 < y1;
+
+      // registration by extent bbox — a point query in this chunk then sees
+      // everything that can reach it without looking at a neighbour
+      for(const l of reg.lakes)
+        if(touches(l.x-l.ext, l.y-l.ext, l.x+l.ext, l.y+l.ext)){ chunk.lakes.push(l); for(const t of l.shore) if(inside(t)) chunk.trees.push(t); }
+      for(const g of reg.groves)
+        if(touches(g.x-g.ext, g.y-g.ext, g.x+g.ext, g.y+g.ext)){
+          chunk.groves.push(g);
+          for(const c of g.camps){
+            if(inside(c)) chunk.camps.push(c);
+            for(const t of c.ring) if(inside(t)) chunk.trees.push(t);
+          }
+          for(const s of g.stands) for(const t of s.trees) if(inside(t)) chunk.trees.push(t);
+        }
+      for(const v of reg.rivers){
+        if(!touches(v.ex0, v.ey0, v.ex1, v.ey1)) continue;
+        chunk.rivers.push(v);
+        if(v.mouth) chunk.lakes.push(v.mouth);
+        for(const t of riverShoreFor(v, reg)) if(inside(t)) chunk.trees.push(t);
+        if(v.mouth) for(const t of v.mouth.shore) if(inside(t)) chunk.trees.push(t);
+      }
+
+      // L4: loose stands, every tree of the patch inside the chunk's own inset
+      const lists = owLists(reg, chunk.trees, chunk.props, chunk.camps);
+      lists.bounds = [x0 + OW_CHUNK_INSET, y0 + OW_CHUNK_INSET, x1 - OW_CHUNK_INSET, y1 - OW_CHUNK_INSET];
+      const treeRng = streamFor(SALT.trees, cx, cy);
+      const TR = ranged(treeRng);
+      let want = owCount(OW_TREE_RATE, treeRng), made = 0;
+      for(let att=0; att<want*30 && made<want; att++){
+        const pcx = x0 + OW_CHUNK_INSET + treeRng()*(CHUNK - 2*OW_CHUNK_INSET);
+        const pcy = y0 + OW_CHUNK_INSET + treeRng()*(CHUNK - 2*OW_CHUNK_INSET);
+        const v = Math.floor(treeRng()*TREE_FRAMES.length);
+        const n = TREE_PATCH_MIN + Math.floor(treeRng()*(TREE_PATCH_MAX - TREE_PATCH_MIN + 1));
+        for(let i=0; i<n && made<want; i++){
+          const x = pcx + TR(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD);
+          const y = pcy + TR(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD)*0.75;
+          if(x < lists.bounds[0] || y < lists.bounds[1] || x > lists.bounds[2] || y > lists.bounds[3]) continue;
+          if(owOnRoadway(x, y, 70)) continue;
+          if(nearAnyTower(x, y, 260, lists)) continue;
+          if(nearWater(x, y, 34, lists)) continue;
+          if(owTreeCrowded(x, y, v, chunk.trees)) continue;
+          let clash = false;
+          for(const c of reg.camps){ if(dist(x, y, c.x, c.y) < CAMP_RING_R + 90){ clash = true; break; } }
+          if(clash) continue;
+          const t = makeTree(x, y, TR);
+          t.v = v; t.id = 'c'+chunk.key+':t'+made; sizeTree(t);
+          chunk.trees.push(t); made++;
+        }
+      }
+
+      // L5: props, today's placer with the bounds and the stream swapped
+      const propRng = streamFor(SALT.props, cx, cy);
+      lists.bounds = [x0 + OW_PROP_INSET, y0 + OW_PROP_INSET, x1 - OW_PROP_INSET, y1 - OW_PROP_INSET];
+      owPlaceDecor(propRng, 'bush', BUSH_FRAMES, owCount(OW_BUSH_RATE, propRng), 5, 0.80, 1.28, chunk, lists);
+      owPlaceDecor(propRng, 'rock', ROCK_FRAMES, owCount(OW_ROCK_RATE, propRng), 3, 0.78, 1.24, chunk, lists);
+
+      chunk.hash = hashChunk(chunk);
+      lastGenMs = owNow() - t0;
+      return chunk;
+    } finally { genDepth--; }
+  }
+  // A rate per chunk is usually fractional — 7.4 bushes, 2 trees — so the
+  // fraction is a coin the chunk's own stream tosses, not a rounding.
+  function owCount(rate, rng){ const n = Math.floor(rate); return n + (rng() < rate - n ? 1 : 0); }
+  function owPlaceDecor(RR, kind, frames, count, patchMax, jitLo, jitHi, chunk, lists){
+    const b = lists.bounds;
+    let placed = 0, guard = 0;
+    while(placed < count && guard++ < count*45){
+      const f = frames[(RR()*frames.length)|0];
+      const n = 2 + ((RR()*RR())*(patchMax-1))|0;
+      const cx = b[0] + RR()*(b[2]-b[0]), cy = b[1] + RR()*(b[3]-b[1]);
+      if(!patchRoom(cx, cy, kind, lists)) continue;
+      const spread = f[4]*DECOR_SCALE*PATCH_SPREAD;
+      for(let i=0; i<n && placed<count; i++){
+        const x = cx + (RR()*2-1)*spread, y = cy + (RR()*2-1)*spread*0.7;
+        const jit = jitLo + RR()*(jitHi-jitLo), flip = RR() < 0.5;
+        if(!decorSpotClear(x, y, lists)) continue;
+        const w = f[4]*jit*DECOR_SCALE, h = w*(f[3]/f[2]);
+        if(mixesWithNeighbour(x, y, kind, f, w, lists)) continue;
+        chunk.props.push({ x, y, kind, f, w, h, flip, id: 'c'+chunk.key+':p'+placed });
+        placed++;
+      }
+    }
+  }
+
+  /* ---- the loaded world ------------------------------------------------ */
+  // The diff is the only thing the world remembers about what you did to it
+  // (§7): terrain is regenerated, the overlay is applied on top of it. It goes
+  // on AFTER the hash, so a re-entered chunk hashes the same as a pristine one.
+  function applyDiff(chunk){
+    if(worldDiff.felled.size || worldDiff.chops.size){
+      for(let i=chunk.trees.length-1; i>=0; i--){
+        const t = chunk.trees[i];
+        if(worldDiff.felled.has(t.id)){
+          chunk.stumps.push({ x: t.x, y: t.y, r: t.r });
+          chunk.trees.splice(i, 1);
+          continue;
+        }
+        const ch = worldDiff.chops.get(t.id);
+        if(ch !== undefined){ t.chops = ch; worldDiff.chops.delete(t.id); }
+      }
+    }
+    for(const c of chunk.camps){
+      const e = worldDiff.camps.get(c.id);
+      if(!e) continue;
+      if(e.alive > 0){ c.alive = 0; c.timer = 0; }
+      else { c.alive = 0; c.timer = Math.max(0, e.timer - (timeLeft - e.at)); }
+    }
+  }
+  function loadChunk(cx, cy, spawn){
+    const k = keyOf(cx, cy);
+    let chunk = loaded.get(k);
+    if(chunk) return chunk;
+    chunk = buildChunk(cx, cy);
+    genCount.set(k, (genCount.get(k)||0) + 1);
+    applyDiff(chunk);
+    loaded.set(k, chunk);
+    if(spawn) for(const c of chunk.camps){ if(c.alive === 0 && c.timer <= 0) spawnCamp(c); }
+    return chunk;
+  }
+  // The globals every runtime consumer already loops over are rebuilt as the
+  // concatenation of the loaded chunks' lists — so nothing downstream of here
+  // had to learn what a chunk is. Lakes and rivers are deduped by id: several
+  // chunks hold the same object.
+  function rebuildWorldLists(){
+    trees = []; props = []; camps = []; stumps = []; lakes = []; rivers = [];
+    const seen = new Set();
+    for(const chunk of loaded.values()){
+      for(const t of chunk.trees) trees.push(t);
+      for(const p of chunk.props) props.push(p);
+      for(const c of chunk.camps) camps.push(c);
+      for(const s of chunk.stumps) stumps.push(s);
+      for(const l of chunk.lakes){ if(seen.has(l.id)) continue; seen.add(l.id); lakes.push(l); }
+      for(const v of chunk.rivers){ if(seen.has(v.id)) continue; seen.add(v.id); rivers.push(v); }
+    }
+    for(const t of playerTowers) t._sightTrees = null;
+  }
+  // The start block: four regions, the rivers they can see, and the 4x4 chunks
+  // covering today's arena box — built synchronously behind the loading panel,
+  // and (PR3) never unloaded, so coming home is always instant.
+  function worldInit(){
+    basePlaza = { x: OW_BASE_X, y: OW_BASE_Y, r: SURV_PLAZA_R, gravel: [] };
+    const rng = streamFor(SALT.plaza, 0, 0);
+    for(let i=0;i<170;i++){
+      const a = rng()*7, d = rng()*SURV_PLAZA_R;
+      const gx = OW_BASE_X + Math.cos(a)*d, gy = OW_BASE_Y + Math.sin(a)*d;
+      for(let k=0;k<4;k++){
+        const x = gx + (rng()-0.5)*40, y = gy + (rng()-0.5)*40;
+        const light = rng() < 0.28;
+        const col = light
+          ? 'rgba('+(132+(rng()*26|0))+','+(94+(rng()*20|0))+','+(70+(rng()*16|0))+',.5)'
+          : 'rgba('+(56+(rng()*22|0))+','+(32+(rng()*16|0))+','+(21+(rng()*12|0))+',.55)';
+        basePlaza.gravel.push({ x, y, rx: 1.6+rng()*3.4, ry: 1.2+rng()*2.2, rot: rng()*3, col });
+      }
+    }
+    for(let cx=0; cx<WORLD_W/CHUNK; cx++)
+      for(let cy=0; cy<WORLD_H/CHUNK; cy++) loadChunk(cx, cy, false).pinned = true;
+    rebuildWorldLists();
+  }
+
+  /* ---- hashes: what "the same world" means, exactly -------------------- */
+  function hashChunk(chunk){
+    let s = chunk.key;
+    for(const t of chunk.trees)
+      s += '|t'+t.id+','+Math.round(t.x)+','+Math.round(t.y)+','+Math.round(t.r)+','+t.v+','+t.bush+','+t.flip
+         + ','+Math.round(t.rot*1e3)+','+Math.round(t.sc*1e3);
+    for(const p of chunk.props)
+      s += '|p'+p.kind+','+Math.round(p.x)+','+Math.round(p.y)+','+p.f[0]+':'+p.f[1]+','+(p.flip?1:0);
+    for(const c of chunk.camps) s += '|c'+c.id+','+Math.round(c.x)+','+Math.round(c.y)+','+c.n+','+(c.roster||'-');
+    for(const l of chunk.lakes) s += '|l'+l.id+','+Math.round(l.x)+','+Math.round(l.y)+','+Math.round(l.r)+','+Math.round(l.sy*1e3)+','+Math.round(l.seed*1e3);
+    for(const v of chunk.rivers){
+      s += '|v'+v.id+','+Math.round(v.w);
+      for(let i=0;i<v.pts.length;i+=10) s += ','+Math.round(v.pts[i].x)+','+Math.round(v.pts[i].y);
+    }
+    return hashStr(s);
+  }
+  function worldHash(){
+    let s = '';
+    for(const k of [...loaded.keys()].sort()) s += k + ':' + loaded.get(k).hash + ';';
+    return hashStr(s);
+  }
+  function chunkHashOf(cx, cy){ const c = loaded.get(keyOf(cx,cy)); return c ? c.hash : 0; }
+
+
+  /* ---- the background, as tiles ---------------------------------------- */
+  // A world with no edges cannot be baked onto one 4000-square canvas, so the
+  // ground is baked in 500-unit tiles into a pool sized from the view. Every
+  // tile is drawn through the world-space transform, so a shape that crosses a
+  // tile edge is drawn identically by both tiles and simply clipped — which is
+  // what makes the seams invisible without any shape knowing about tiles.
+  //
+  // The canvas is 504 square: a 2-unit gutter on every side. The view is
+  // scaled by a fractional canvasScale and translated by a fractional camera,
+  // so a tile edge lands on fractional device pixels and would be bilinear
+  // sampled on its own; overlapping neighbours by 4 units of identical
+  // world-space pixels means no edge is ever exposed.
+  const OW_TILE_PAD = 2, OW_MOTTLE_PER_TILE = 4, OW_TUFT_PER_TILE = 40;
+  const OW_BAKE_MS = 6, OW_BAKE_MS_URGENT = 12;
+  const SHADOW_REACH = 100;        // the furthest a baked shadow reaches from its sprite
+  let owOpeningBoxes = null;       // the views the first render() after roundHold bakes
+  let owFrame = 0, owBakeMs = 0, owBakeCount = 0;
+  // ?owdebug prints a per-second breakdown to the console — on any protocol,
+  // because the build the owner tests by hand is the published one. Costs a
+  // pair of adds a frame when it is off.
+  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, ground:0, draw:0, fog:0, frames:0, t0:0 };
+  function owMark(key, t0){ if(OW_DEBUG) owProf[key] += owNow() - t0; }
+  function owProfTick(){
+    if(!OW_DEBUG) return;
+    owProf.frames++;
+    const now = owNow();
+    if(!owProf.t0){ owProf.t0 = now; return; }
+    if(now - owProf.t0 < 1000) return;
+    const f = Math.max(1, owProf.frames);
+    console.log('[ow] ' + f + 'fps'
+      + ' · tiles ' + (owProf.tiles/f).toFixed(2) + 'ms'
+      + ' · water ' + (owProf.water/f).toFixed(1)
+      + ' · sort ' + (owProf.ground/f).toFixed(1)
+      + ' · sprites ' + (owProf.draw/f).toFixed(1)
+      + ' · fog ' + (owProf.fog/f).toFixed(1)
+      + ' · minimap ' + (owProf.map/f).toFixed(2) + 'ms'
+      + ' · bake ' + owProf.bakeN + '×' + (owProf.bakeN ? (owProf.bake/owProf.bakeN).toFixed(1) : '0') + 'ms'
+      + ' · pool ' + bgTiles.size + '/' + OW_TILE_MAX
+      + ' · chunks ' + loaded.size + ' · mobs ' + neutralCreeps.length
+      + ' · rivers ' + rivers.length + '/' + riverCache.size);
+    owProf.bake = owProf.bakeN = owProf.tiles = owProf.map = owProf.water = 0;
+    owProf.ground = owProf.draw = owProf.fog = 0;
+    owProf.frames = 0; owProf.t0 = now;
+  }
+
+  // One grain source for the whole game: the Match bake and every tile stamp
+  // the same 64-pixel pattern, anchored to world (0,0) by the transform.
+  let grainCanvas = null;
+  function grainTile(){
+    if(grainCanvas) return grainCanvas;
+    const TILE = 64;
+    grainCanvas = document.createElement('canvas');
+    grainCanvas.width = grainCanvas.height = TILE;
+    const tc = grainCanvas.getContext('2d');
+    const TR = mulberry(0x51EED);
+    for(let i=0;i<300;i++){
+      const x = TR()*TILE, y = TR()*TILE, s = 1 + (TR()<0.25 ? 1 : 0);
+      tc.fillStyle = TR()<0.5 ? 'rgba(12,86,10,.16)' : 'rgba(150,232,110,.13)';
+      tc.fillRect(x, y, s, s);
+    }
+    return grainCanvas;
+  }
+  function owMottles(tx, ty){
+    const rng = streamFor(SALT.mottle, tx, ty), out = [];
+    for(let i=0;i<OW_MOTTLE_PER_TILE;i++)
+      out.push({ x: tx*OW_TILE + rng()*OW_TILE, y: ty*OW_TILE + rng()*OW_TILE,
+                 r: 90 + rng()*260, dark: rng() < 0.55 });
+    return out;
+  }
+  function owTufts(tx, ty){
+    const rng = streamFor(SALT.tufts, tx, ty), out = [];
+    for(let i=0;i<OW_TUFT_PER_TILE;i++)
+      out.push({ x: tx*OW_TILE + rng()*OW_TILE, y: ty*OW_TILE + rng()*OW_TILE,
+                 s: 5 + rng()*7, dark: rng() > 0.5 });
+    return out;
+  }
+  // Baked from render() only, never from update(): Node has no canvas, and the
+  // sim must be able to start a world without creating 48 of them.
+  function bakeTile(tx, ty){
+    const t0 = owNow();
+    const x0 = tx*OW_TILE, y0 = ty*OW_TILE;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = OW_TILE + OW_TILE_PAD*2;
+    const g = cv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, OW_TILE_PAD - x0, OW_TILE_PAD - y0);   // draw in world units
+    const prev = bgCtx;
+    bgCtx = g;                       // so bakeShadow and friends need no argument
+    try {
+      const bx = x0 - OW_TILE_PAD, by = y0 - OW_TILE_PAD, bw = OW_TILE + OW_TILE_PAD*2;
+      g.fillStyle = GRASS_COLOR; g.fillRect(bx, by, bw, bw);
+      g.fillStyle = g.createPattern(grainTile(), 'repeat');
+      g.fillRect(bx, by, bw, bw);
+      // Own mottles and the eight neighbours' — r <= 350 < OW_TILE, so one ring
+      // is enough for a straddler to be drawn the same on both sides.
+      for(let dx=-1; dx<=1; dx++) for(let dy=-1; dy<=1; dy++)
+        for(const m of owMottles(tx+dx, ty+dy)){
+          if(m.x + m.r < bx || m.x - m.r > bx+bw || m.y + m.r < by || m.y - m.r > by+bw) continue;
+          const grad = g.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+          grad.addColorStop(0, m.dark ? 'rgba(9,74,9,.10)' : 'rgba(104,206,64,.09)');
+          grad.addColorStop(1, m.dark ? 'rgba(9,74,9,0)'   : 'rgba(104,206,64,0)');
+          g.fillStyle = grad;
+          g.beginPath(); g.arc(m.x, m.y, m.r, 0, 7); g.fill();
+        }
+      // The plaza, from the gravel precomputed once at startRound — dealing it
+      // per tile would put different stones on either side of a seam.
+      if(basePlaza && Math.abs(basePlaza.x - (x0+OW_TILE/2)) < basePlaza.r + OW_TILE &&
+                      Math.abs(basePlaza.y - (y0+OW_TILE/2)) < basePlaza.r + OW_TILE){
+        const p = basePlaza;
+        g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.fillStyle = ROAD_RIM; g.fill();
+        g.save(); g.clip();
+        g.beginPath(); g.arc(p.x, p.y, p.r-9, 0, 7); g.fillStyle = ROAD_FILL; g.fill();
+        for(const q of p.gravel){
+          if(q.x < bx-8 || q.x > bx+bw+8 || q.y < by-8 || q.y > by+bw+8) continue;
+          g.fillStyle = q.col;
+          g.beginPath(); g.ellipse(q.x, q.y, q.rx, q.ry, q.rot, 0, 7); g.fill();
+        }
+        g.restore();
+        g.lineWidth = 4; g.strokeStyle = ROAD_EDGE;
+        g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.stroke();
+      }
+      // Tufts: this tile's own, plus any of the neighbours' that fall within
+      // reach of the edge, so a straddling tuft is drawn by both.
+      g.lineCap = 'round'; g.lineWidth = 1.9;
+      for(let dx=-1; dx<=1; dx++) for(let dy=-1; dy<=1; dy++)
+        for(const t of owTufts(tx+dx, ty+dy)){
+          if(t.x < bx-14 || t.x > bx+bw+14 || t.y < by-14 || t.y > by+bw+14) continue;
+          if(owOnRoadway(t.x, t.y, 10) || nearWater(t.x, t.y, 10)) continue;
+          g.strokeStyle = t.dark ? 'rgba(10,78,10,.55)' : 'rgba(126,222,86,.5)';
+          for(let k=-1;k<2;k++){
+            g.beginPath(); g.moveTo(t.x+k*3, t.y);
+            g.quadraticCurveTo(t.x+k*4.5, t.y-t.s*0.6, t.x+k*6, t.y-t.s); g.stroke();
+          }
+        }
+      // A camp's ground is a shade darker, as in every other mode.
+      g.fillStyle = 'rgba(10,74,10,.16)';
+      for(const c of camps){
+        if(c.x < bx-CAMP_RING_R || c.x > bx+bw+CAMP_RING_R || c.y < by-CAMP_RING_R || c.y > by+bw+CAMP_RING_R) continue;
+        g.beginPath(); g.ellipse(c.x, c.y, CAMP_RING_R*0.8, CAMP_RING_R*0.7, 0, 0, 7); g.fill();
+      }
+      // Shadows are the only thing a standing object leaves on the ground.
+      for(const d of props){
+        if(d.x < bx-SHADOW_REACH || d.x > bx+bw+SHADOW_REACH || d.y < by-SHADOW_REACH || d.y > by+bw+SHADOW_REACH) continue;
+        bakeShadow(d.x, d.y, d.w*0.42, d.h*0.17);
+      }
+      for(const t of trees){
+        if(t.x < bx-SHADOW_REACH || t.x > bx+bw+SHADOW_REACH || t.y < by-SHADOW_REACH || t.y > by+bw+SHADOW_REACH) continue;
+        bakeShadow(t.x, t.y + t.r*0.20, t.dw*0.23, t.dw*0.082, 0.95);
+      }
+    } finally { bgCtx = prev; }
+    owBakeMs = owNow() - t0; owBakeCount++;
+    if(OW_DEBUG){ owProf.bake += owBakeMs; owProf.bakeN++; }
+    return { canvas: cv, tx, ty, used: owFrame };
+  }
+  function owTileAt(tx, ty){
+    const k = keyOf(tx, ty);
+    let tile = bgTiles.get(k);
+    if(tile){ tile.used = owFrame; return tile; }
+    tile = bakeTile(tx, ty);
+    bgTiles.set(k, tile);
+    return tile;
+  }
+  // The window a tile has to exist in before it is looked at: the focus box
+  // with a margin, so a tile is baked before it is on screen rather than after.
+  function owBakeBox(pad){
+    const f = owFocus();
+    return [f.x - W/2 - pad, f.y - H/2 - pad, f.x + W/2 + pad, f.y + H/2 + pad];
+  }
+  function owFocus(){
+    const h = playerTeam[activePlayerIdx];
+    if(scout) return scout;
+    return { x: (h ? h.x : camera.x + W/2), y: (h ? h.y : camera.y + H/2) };
+  }
+  // Nearest to the camera first, under a time budget — 6ms normally, 12 while
+  // something inside the view is still missing, since that is a visible hole.
+  function bakeTick(){
+    const box = owBakeBox(250);
+    const tx0 = Math.floor(box[0]/OW_TILE), tx1 = Math.floor(box[2]/OW_TILE);
+    const ty0 = Math.floor(box[1]/OW_TILE), ty1 = Math.floor(box[3]/OW_TILE);
+    const cx = camera.x + W/2, cy = camera.y + H/2;
+    const want = [];
+    for(let tx=tx0; tx<=tx1; tx++) for(let ty=ty0; ty<=ty1; ty++){
+      const k = keyOf(tx, ty);
+      const tile = bgTiles.get(k);
+      if(tile){ tile.used = owFrame; continue; }
+      want.push({ tx, ty, d: dist(tx*OW_TILE+OW_TILE/2, ty*OW_TILE+OW_TILE/2, cx, cy) });
+    }
+    if(want.length){
+      want.sort((a,b) => a.d - b.d);
+      const visible = want[0].d < Math.max(W,H);
+      const budget = visible ? OW_BAKE_MS_URGENT : OW_BAKE_MS;
+      const t0 = owNow();
+      for(const w of want){
+        owTileAt(w.tx, w.ty);
+        if(owNow() - t0 > budget) break;
+      }
+    }
+    owEvictTiles(box);
+  }
+  // The pool is the real memory bound. Evict farthest from the camera first,
+  // and never a tile inside the bake window — the pool is always >= window + 8.
+  function owEvictTiles(box){
+    if(bgTiles.size <= OW_TILE_MAX) return;
+    const cx = camera.x + W/2, cy = camera.y + H/2;
+    const out = [];
+    for(const [k, t] of bgTiles){
+      const x = t.tx*OW_TILE, y = t.ty*OW_TILE;
+      if(x + OW_TILE >= box[0] && x <= box[2] && y + OW_TILE >= box[1] && y <= box[3]) continue;
+      out.push({ k, d: dist(x + OW_TILE/2, y + OW_TILE/2, cx, cy) });
+    }
+    out.sort((a,b) => b.d - a.d);
+    for(const o of out){
+      if(bgTiles.size <= OW_TILE_MAX) break;
+      bgTiles.delete(o.k);
+    }
+  }
+  // The opening glide starts at the corner and eases onto the hero, and update()
+  // is held behind the panel — so both ends of it are baked synchronously in the
+  // first frame after the round is built, or the first screen of every seed
+  // would show grass popping in.
+  function owOpeningBake(){
+    const boxes = owOpeningBoxes;
+    owOpeningBoxes = null;
+    for(const b of boxes){
+      const tx0 = Math.floor(b[0]/OW_TILE), tx1 = Math.floor(b[2]/OW_TILE);
+      const ty0 = Math.floor(b[1]/OW_TILE), ty1 = Math.floor(b[3]/OW_TILE);
+      for(let tx=tx0; tx<=tx1; tx++) for(let ty=ty0; ty<=ty1; ty++) owTileAt(tx, ty);
+    }
+  }
+  // The blit that replaces the one bgCanvas slice.
+  function owDrawTiles(g, shakeX, shakeY){
+    const x0 = camera.x - shakeX, y0 = camera.y - shakeY;
+    const tx0 = Math.floor((x0 - 2)/OW_TILE), tx1 = Math.floor((x0 + W + 2)/OW_TILE);
+    const ty0 = Math.floor((y0 - 2)/OW_TILE), ty1 = Math.floor((y0 + H + 2)/OW_TILE);
+    for(let tx=tx0; tx<=tx1; tx++) for(let ty=ty0; ty<=ty1; ty++){
+      const tile = bgTiles.get(keyOf(tx, ty));
+      if(!tile){
+        // Never a hole: flat grass until the bake catches up, which is a frame
+        // or two at most.
+        g.fillStyle = GRASS_COLOR;
+        g.fillRect(tx*OW_TILE, ty*OW_TILE, OW_TILE, OW_TILE);
+        continue;
+      }
+      tile.used = owFrame;
+      g.drawImage(tile.canvas, tx*OW_TILE - OW_TILE_PAD, ty*OW_TILE - OW_TILE_PAD);
+    }
+  }
+
+  // The pause panel is where a tester copies a seed from, so it is the source
+  // of truth for one — not the address bar, which the artifact host owns.
+  function owPauseText(){
+    const open = gameMode === 'openworld';
+    if(pauseReseedBtn) pauseReseedBtn.classList.toggle('hidden', !open);
+    if(pauseNoteEl) pauseNoteEl.textContent = open
+      ? 'Seed ' + worldSeed + ' · tap to copy'
+      : 'Nothing moves until you resume.';
+    if(pauseConfirmTitleEl) pauseConfirmTitleEl.textContent = open ? 'Leave this world?' : 'End this game?';
+    if(pauseConfirmBtn) pauseConfirmBtn.textContent = open ? 'Yes, leave' : 'Yes, end match';
+    if(pauseConfirmNoteEl) pauseConfirmNoteEl.textContent = open
+      ? 'Leave this world? Its seed is ' + worldSeed + ' — type it on the title screen to come back.'
+      : "You'll forfeit the match and return to the main menu.";
+  }
+
+  // "BASE 1.4k" — how far out the driven hero is, in thousands. Distance is
+  // the difficulty axis (§6.3), so this doubles as the danger read.
+  function owHudTick(){
+    const h = playerTeam[activePlayerIdx];
+    if(!h || !scoreWaveEl) return;
+    const d = distBase(h.x, h.y);
+    scoreWaveEl.textContent = d < 950 ? Math.round(d) + '' : (d/1000).toFixed(1) + 'k';
+  }
+
   function drawDecor(g, d){
     const rock = d.kind === 'rock';
     const img = rock ? rockSheet : bushSheet, ready = rock ? rockImgReady : bushImgReady;
@@ -7021,6 +8005,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // bears on a roadway yet — lanes and the arena's ring are fixed geometry —
   // so it is accepted and passed no further.
   function onRoadway(x,y,pad,lists){
+    // Out in the world the only roadway is the plaza you start on (PR4 adds
+    // the dirt areas to this test).
+    if(gameMode==='openworld') return owOnRoadway(x, y, pad);
     if(gameMode==='survival'){
       if(dist(x,y,WORLD_W/2,WORLD_H/2) < SURV_PLAZA_R+pad) return true;
       return survRoadDist(x,y) < LANE_HALF+pad;
@@ -8643,6 +9630,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const BIRD_W = 46, BIRD_H = 35, BIRD_SPECIES = 4, BIRD_FRAMES = 9;
   const birdImg = new Image();
   let birdReady = false;
+  let birdRng = null;      // Open World only: the flock schedule is part of the seed
   birdImg.onload = ()=>{ birdReady = true; };
   birdImg.src = 'data:image/png;base64,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';
   let birds = [], birdTimer = 5;
@@ -8654,13 +9642,23 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Purely decorative: a flock crosses the view every so often, one random
   // species per flock, drawn above the fog so it reads as sky rather than ground.
+  // Every draw first, the readiness test second. The bail used to come first,
+  // so a flock whose timer expired while the atlas was still decoding consumed
+  // nothing — and the k-th flock of a seed then depended on how fast the phone
+  // decoded a PNG. Now the schedule is pure in game seconds either way.
   function spawnFlock(){
-    if(!birdReady) return;
-    const sp = Math.floor(Math.random()*BIRD_SPECIES);
+    // Only a SEEDED schedule needs the draws taken before the bail: there the
+    // k-th flock of a seed must not depend on how fast a phone decoded the bird
+    // atlas. Everywhere else the old bail stands, because drawing a flock that
+    // will be thrown away would consume from the same Math.random stream the
+    // fight runs on — and the sim, which never decodes an atlas, would measure
+    // a different match than the one it measured yesterday.
+    if(!birdReady && !birdRng) return;
+    const sp = Math.floor(rand(0,1)*BIRD_SPECIES);
     // Bigger flocks than before (was 1-4): the spawn timer alone wasn't making
     // birds any easier to spot against a busy screen, so each flock now carries
     // more birds rather than just arriving more often.
-    const n = 2 + Math.floor(Math.random()*5);
+    const n = 2 + Math.floor(rand(0,1)*5);
     const ang = rand(0, Math.PI*2);
     const dx = Math.cos(ang), dy = Math.sin(ang)*0.4;
     const span = Math.max(W,H);
@@ -8670,10 +9668,11 @@ window.addEventListener('DOMContentLoaded', function(){
     const spd = rand(120, 215);
     // One curvature for the whole flock so they arc together rather than
     // scattering. Just under half of all flocks fly dead straight.
-    const turn = Math.random() < 0.45 ? 0
-      : (Math.random()<0.5?-1:1) * rand(0.012, 0.032);
+    const turn = rand(0,1) < 0.45 ? 0
+      : (rand(0,1)<0.5?-1:1) * rand(0.012, 0.032);
+    const flock = [];
     for(let i=0;i<n;i++){
-      birds.push({
+      flock.push({
         x: sx - dx*i*rand(55,95) + rand(-22,22),
         y: sy - dy*i*rand(55,95) + rand(-46,46),
         vx: dx*spd, vy: dy*spd, sp,
@@ -8681,10 +9680,17 @@ window.addEventListener('DOMContentLoaded', function(){
         turn: turn*rand(0.85,1.15), dropT: rand(0.2,1)
       });
     }
+    if(!birdReady) return;
+    for(const b of flock) birds.push(b);
   }
   function updateBirds(dt){
     birdTimer -= dt;
-    if(birdTimer<=0){ spawnFlock(); birdTimer = rand(4.5,12); }   // x2 rate: was rand(9,24)
+    // In Open World the schedule comes off the world's own stream, so two
+    // visits to one seed open with the same birds.
+    if(birdTimer<=0){
+      if(birdRng) withRng(birdRng, ()=>{ spawnFlock(); birdTimer = rand(4.5,12); });
+      else { spawnFlock(); birdTimer = rand(4.5,12); }
+    }
     const cx = camera.x+W/2, cy = camera.y+H/2, lim = Math.max(W,H)*1.15;
     for(let i=birds.length-1;i>=0;i--){
       const b=birds[i];
@@ -8903,7 +9909,13 @@ window.addEventListener('DOMContentLoaded', function(){
       if(d.fromLeft && !d.armed){ lastDragMoved = 0; return; }
       const lane = minimapLane(d.sx, d.sy);
       const mate = dragFollowTarget(d);
-      if(lane !== null && d.hero) laneOrder(d.hero, lane);
+      // No lanes out here, so the panel is a place to send him instead: drop a
+      // hero anywhere on the minimap and he walks to that point of the world.
+      if(gameMode==='openworld' && d.hero && overMinimap(d.sx, d.sy)){
+        const q = minimapToWorld(d.sx, d.sy);
+        soloOrder(d.hero, q.x, q.y);
+      }
+      else if(lane !== null && d.hero) laneOrder(d.hero, lane);
       else if(mate) followOrder(d.hero, mate);
       else if(d.hero && d.moved > 10) soloOrder(d.hero, d.x, d.y);
       else if(!d.fromChip && !d.fromLeft) groupOrder(d.x, d.y);
@@ -9223,7 +10235,11 @@ window.addEventListener('DOMContentLoaded', function(){
         // A thumb is fatter than a cursor, so a drop counts as "on him" from
         // further out on touch than it does under a mouse.
         const mate = dragFollowTarget(orderDrag, 40, 24);
-        if(lane !== null) laneOrder(orderDrag.hero, lane);
+        if(gameMode==='openworld' && overMinimap(orderDrag.sx, orderDrag.sy)){
+          const q = minimapToWorld(orderDrag.sx, orderDrag.sy);
+          soloOrder(orderDrag.hero, q.x, q.y);
+        }
+        else if(lane !== null) laneOrder(orderDrag.hero, lane);
         else if(mate) followOrder(orderDrag.hero, mate);
         else if(orderDrag.moved > 24) soloOrder(orderDrag.hero, orderDrag.x, orderDrag.y);
         else focusHero(playerTeam.indexOf(orderDrag.hero));
@@ -11119,7 +12135,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // see or play through.
     if(roundHold) return;
     tickScoreHud(dt);
-    if(gameMode==='survival'){
+    if(gameMode==='openworld'){
+      // No waves, no timeout, no end. The clock counts up because "how long
+      // have I been out here" is the only thing it can honestly say.
+      timeLeft += dt;
+      timerEl.textContent = fmtTime(timeLeft);
+      owHudTick();
+    } else if(gameMode==='survival'){
       // The clock still runs — the end card reports it — but the WAVE is the
       // score now, so that is what the HUD's right-hand slot reads.
       timeLeft += dt;
@@ -11165,17 +12187,19 @@ window.addEventListener('DOMContentLoaded', function(){
     // defend — so it is not a smaller version of the match AI, it is a
     // different one, and none of the match one runs.
     const arena = gameMode === 'survival';
-    if(!tutHome && !tutSpar && !arena){
+    const open  = gameMode === 'openworld';      // the enemy team is parked dead; nothing drives it
+    if(!tutHome && !tutSpar && !arena && !open){
       updateEnemyMacro(dt);
       applyEnemyMacro();
     }
     if(arena) survHeroAI(dt);
+    else if(open){ /* nobody to run */ }
     else if(tutHome) tutEnemiesHome(dt);
     else if(tutSpar) tutSparAI(dt);
     else if(!(macro.state==='push' && enemyTeam[0].alive)) updateEnemyCarryAI(dt);
     else { aiTrySkill(enemyTeam[0], dt); lanePush(enemyTeam[0], dt); tryAutoAttack(enemyTeam[0]); }
     updateIdleAI(playerTeam, activePlayerIdx, enemyTeam, enemyCreeps, dt, true);
-    if(!tutHome && !tutSpar && !arena) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
+    if(!tutHome && !tutSpar && !arena && !open) updateIdleAI(enemyTeam, 0, playerTeam, allyCreeps, dt, true);
     for(const h of playerTeam){ if(h.alive) resolveSolidCollision(h); }
     for(const h of enemyTeam){ if(h.alive) resolveSolidCollision(h); }
     // Backstop for the truce. Dash, knockback and any path I have not thought of
@@ -12791,6 +13815,9 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function checkRoundEnd(){
+    // Nothing ends an Open World round: no clock, nothing attacking the base,
+    // and death is a respawn. You leave it, and leaving shows the card (A5).
+    if(gameMode==='openworld') return;
     // Outposts are obstacles, not objectives — the round turns on the main base.
     if(gameMode==='survival'){
       if(mainDown(playerTowers)) endRound('overrun');
@@ -13377,6 +14404,11 @@ window.addEventListener('DOMContentLoaded', function(){
   let scout = null;                       // {x,y} world point, or null
   function minimapToWorld(sx, sy){
     const r = minimapRect();
+    if(gameMode === 'openworld'){
+      const h = playerTeam[activePlayerIdx];
+      const fx = h ? h.x : camera.x + W/2, fy = h ? h.y : camera.y + H/2;
+      return { x: fx + ((sx - r.x)/r.w - 0.5)*MM_WORLD, y: fy + ((sy - r.y)/r.h - 0.5)*MM_WORLD };
+    }
     return { x: (sx - r.x)/r.w * WORLD_W, y: (sy - r.y)/r.h * WORLD_H };
   }
   function overMinimap(sx, sy){
@@ -13418,16 +14450,212 @@ window.addEventListener('DOMContentLoaded', function(){
     p.y = Math.min(mmY+mmH-half, Math.max(mmY+half, p.y));
     return p;
   }
+
+  /* ---- the minimap: a window, and a map you draw by walking it ---------- */
+  // A1: the window follows the view instead of being a constant. A desktop
+  // shows 3373 world units of ground, so a fixed 4000-unit panel showed barely
+  // more than the screen already did; a phone shows 860 and 4000 is a real
+  // overview. The panel grows with the window so a ten-camp grove still reads
+  // as separate dots rather than one blob.
+  // MM_WORLD lives up with MM_W, which applyLayout reads while the script is
+  // still being evaluated.
+  function owMinimapSize(){
+    MM_WORLD = Math.max(4000, Math.min(8000, 2.2*Math.max(W, H)));
+    const px = Math.max(195, Math.min(300, Math.round(MM_WORLD/20.5)));
+    MM_W = MM_H = px;
+  }
+  // A4: what you have seen stays drawn, dimmed; what you can see right now is
+  // live; ground you have never been to is blank. The record is a set of
+  // 128-pixel canvases, one per 12,800 units of world, made as you reach them —
+  // so it is unbounded without ever re-centring or losing what you walked past.
+  const OW_FOG_RES = 100, OW_FOG_PX = 128, OW_FOG_SPAN = OW_FOG_RES*OW_FOG_PX;
+  const owFog = new Map();
+  let owMiniCv = null, owMaskCv = null;
+  function owFogSheet(fx, fy, make){
+    const k = keyOf(fx, fy);
+    let sheet = owFog.get(k);
+    if(sheet || !make) return sheet;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = OW_FOG_PX;
+    sheet = { cv, g: cv.getContext('2d'), fx, fy };
+    sheet.g.fillStyle = '#fff';
+    owFog.set(k, sheet);
+    return sheet;
+  }
+  // Painted only when a source has actually moved: standing still costs nothing.
+  function owFogTick(){
+    for(const s of visionSources){
+      if(s._fogDone) continue;
+      const r = s.r/OW_FOG_RES;
+      for(let fx = Math.floor((s.x - s.r)/OW_FOG_SPAN); fx <= Math.floor((s.x + s.r)/OW_FOG_SPAN); fx++)
+        for(let fy = Math.floor((s.y - s.r)/OW_FOG_SPAN); fy <= Math.floor((s.y + s.r)/OW_FOG_SPAN); fy++){
+          const sheet = owFogSheet(fx, fy, true);
+          sheet.g.beginPath();
+          sheet.g.arc((s.x - fx*OW_FOG_SPAN)/OW_FOG_RES, (s.y - fy*OW_FOG_SPAN)/OW_FOG_RES, r, 0, 7);
+          sheet.g.fill();
+        }
+      s._fogDone = true;
+    }
+  }
+  function owExploredKm2(){
+    if(typeof document === 'undefined') return 0;
+    let px = 0;
+    for(const sheet of owFog.values()){
+      const d = sheet.g.getImageData(0, 0, OW_FOG_PX, OW_FOG_PX).data;
+      for(let i=3;i<d.length;i+=4) if(d[i] > 8) px++;
+    }
+    return px*OW_FOG_RES*OW_FOG_RES/1e6;
+  }
+  // The terrain goes onto its own panel-sized canvas so the fog can be applied
+  // to it as a mask, leaving the heroes, the viewport and the pins untouched.
+  function owMiniStart(mmX, mmY, mmW, mmH){
+    if(!owMiniCv){ owMiniCv = document.createElement('canvas'); owMaskCv = document.createElement('canvas'); }
+    if(owMiniCv.width !== mmW || owMiniCv.height !== mmH){
+      owMiniCv.width = owMaskCv.width = mmW; owMiniCv.height = owMaskCv.height = mmH;
+    }
+    const g = owMiniCv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, -mmX, -mmY);          // so panel coordinates just work
+    g.clearRect(mmX, mmY, mmW, mmH);
+    return g;
+  }
+  function owMiniFinish(mmX, mmY, mmW, mmH, fx, fy){
+    const m = owMaskCv.getContext('2d');
+    m.setTransform(1, 0, 0, 1, 0, 0);
+    m.clearRect(0, 0, mmW, mmH);
+    // What you have seen, at a fraction of the alpha...
+    m.globalAlpha = 0.45;
+    m.imageSmoothingEnabled = true;
+    const span = MM_WORLD, x0 = fx - span/2, y0 = fy - span/2;
+    for(let f0 = Math.floor(x0/OW_FOG_SPAN); f0 <= Math.floor((x0+span)/OW_FOG_SPAN); f0++)
+      for(let f1 = Math.floor(y0/OW_FOG_SPAN); f1 <= Math.floor((y0+span)/OW_FOG_SPAN); f1++){
+        const sheet = owFogSheet(f0, f1, false);
+        if(!sheet) continue;
+        m.drawImage(sheet.cv, (f0*OW_FOG_SPAN - x0)/span*mmW, (f1*OW_FOG_SPAN - y0)/span*mmH,
+                    OW_FOG_SPAN/span*mmW, OW_FOG_SPAN/span*mmH);
+      }
+    // ...and what you can see now, at all of it.
+    m.globalAlpha = 1;
+    for(const s of visionSources){
+      const px = (s.x - x0)/span*mmW, py = (s.y - y0)/span*mmH, pr = s.r/span*mmW;
+      if(px + pr < 0 || px - pr > mmW || py + pr < 0 || py - pr > mmH) continue;
+      m.fillStyle = '#fff';
+      m.beginPath(); m.arc(px, py, pr, 0, 7); m.fill();
+    }
+    const g = owMiniCv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(owMaskCv, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    ctx.drawImage(owMiniCv, mmX, mmY);
+  }
+  // Drawn from the region and river caches rather than from the loaded chunks,
+  // so the panel covers its whole window and not just the streamed part of it.
+  function owMinimapTerrain(g, mp, mmX, mmY, mmW, mmH, fx, fy){
+    const half = MM_WORLD/2;
+    // Ground first, and it is the point: the fog mask below cuts this away
+    // everywhere you have not been, so the panel starts as an empty page and
+    // fills in as you walk. Without it only the features would be masked and
+    // unexplored ground would look exactly like explored ground.
+    g.fillStyle = '#7FAF63';
+    g.fillRect(mmX, mmY, mmW, mmH);
+    const inWin = (x, y, pad) => Math.abs(x-fx) < half+pad && Math.abs(y-fy) < half+pad;
+    // The plaza you started on.
+    if(basePlaza && inWin(basePlaza.x, basePlaza.y, basePlaza.r)){
+      const p = mp(basePlaza.x, basePlaza.y);
+      g.fillStyle = 'rgba(122,81,56,.6)';
+      g.beginPath(); g.arc(p.x, p.y, Math.max(2, basePlaza.r/MM_WORLD*mmW), 0, 7); g.fill();
+    }
+    // A river is up to 267 points and there are a hundred of them in the
+    // cache. Walking every point into a fresh path every frame was the whole
+    // cost of this panel, so each river keeps its own path in WORLD units and
+    // the panel transform does the mapping — built once, stroked thereafter.
+    const k = mmW/MM_WORLD;
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.transform(k, 0, 0, k, mmX + mmW/2 - fx*k, mmY + mmH/2 - fy*k);
+    g.strokeStyle = '#3E86C8'; g.lineJoin = 'round';
+    for(const v of riverCache.values()){
+      if(!v) continue;
+      if(v.bx1 < fx-half || v.bx0 > fx+half || v.by1 < fy-half || v.by0 > fy+half) continue;
+      if(!v._mmPath && typeof Path2D !== 'undefined'){
+        const pth = new Path2D();
+        pth.moveTo(v.pts[0].x, v.pts[0].y);
+        for(let i=1;i<v.pts.length;i++) pth.lineTo(v.pts[i].x, v.pts[i].y);
+        v._mmPath = pth;
+      }
+      g.lineWidth = Math.max(1.5/k, v.w);
+      if(v._mmPath) g.stroke(v._mmPath);
+    }
+    g.restore();
+    g.fillStyle = '#4E96D8';
+    for(const reg of regionCache.values()){
+      for(const l of reg.lakes.concat(reg.rivers.filter(v => v.mouth).map(v => v.mouth))){
+        if(!inWin(l.x, l.y, l.r)) continue;
+        const p = mp(l.x, l.y);
+        g.beginPath();
+        g.ellipse(p.x, p.y, l.r/MM_WORLD*mmW, l.r*l.sy/MM_WORLD*mmH, 0, 0, 7);
+        g.fill();
+      }
+    }
+    // Camps: alive unless your own diff says you cleared one and its respawn
+    // has not come round yet. Nothing else out here kills a camp, so this is
+    // arithmetic rather than a guess (Q11).
+    g.lineWidth = 1; g.strokeStyle = 'rgba(30,50,20,.55)';
+    for(const reg of regionCache.values())
+      for(const c of reg.camps){
+        if(!inWin(c.x, c.y, CAMP_RING_R)) continue;
+        const p = mp(c.x, c.y);
+        g.fillStyle = owCampAlive(c) ? '#6FA05A' : 'rgba(110,150,90,.3)';
+        g.beginPath(); g.arc(p.x, p.y, MM_CAMP_R, 0, 7); g.fill(); g.stroke();
+      }
+  }
+  function owCampAlive(c){
+    if(loaded.has(keyOf(Math.floor(c.x/CHUNK), Math.floor(c.y/CHUNK)))) return c.alive > 0;
+    const e = worldDiff.camps.get(c.id);
+    if(!e) return true;                              // never met: never killed
+    return e.alive > 0 || (e.timer - (timeLeft - e.at)) <= 0;
+  }
+  // A ray from the panel's centre to the rect's edge — clampToPanel clamps the
+  // axes independently and would drop a base 4000 east and 3000 north into the
+  // corner, pointing at nothing.
+  function owRimPin(p, mmX, mmY, mmW, mmH, inset){
+    const cx = mmX + mmW/2, cy = mmY + mmH/2;
+    const dx = p.x - cx, dy = p.y - cy;
+    const hx = mmW/2 - inset, hy = mmH/2 - inset;
+    if(Math.abs(dx) <= hx && Math.abs(dy) <= hy) return { x: p.x, y: p.y, out: false, a: 0 };
+    const t = Math.min(hx/Math.abs(dx || 1e-6), hy/Math.abs(dy || 1e-6));
+    return { x: cx + dx*t, y: cy + dy*t, out: true, a: Math.atan2(dy, dx) };
+  }
+  function owPinLabel(g, x, y, text){
+    g.font = "700 9px 'Baloo 2', sans-serif";
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 3; g.strokeStyle = 'rgba(40,30,12,.8)';
+    g.strokeText(text, x, y);
+    g.fillStyle = '#FFF3D6'; g.fillText(text, x, y);
+    g.textAlign = 'start'; g.textBaseline = 'alphabetic';
+  }
+
   function drawMinimap(){
+    const mmProf = OW_DEBUG ? owNow() : 0;
     const mmW=MM_W, mmH=MM_H, mmX=W-mmW-MM_RIGHT, mmY=mmTop();
     ctx.save();
     // Light grass green, like the field itself, rather than the parchment tan
     // the panel used before — the brown lanes now do the job of reading as
     // roads against ground instead of against a road-colored panel.
-    ctx.fillStyle='rgba(198,230,170,.92)';
+    // Out in the world the panel's own face is the UNEXPLORED colour, so it
+    // wants to read as blank paper rather than as ground.
+    ctx.fillStyle = gameMode==='openworld' ? 'rgba(226,232,206,.94)' : 'rgba(198,230,170,.92)';
     ctx.strokeStyle='rgba(122,150,84,.9)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.rect(mmX,mmY,mmW,mmH); ctx.fill(); ctx.stroke();
-    function mp(wx,wy){ return { x: mmX+(wx/WORLD_W)*mmW, y: mmY+(wy/WORLD_H)*mmH }; }
+    const open = gameMode === 'openworld';
+    const fh = playerTeam[activePlayerIdx];
+    // Centred on the hero you are driving — not on the scout point, which would
+    // scroll the panel under your own finger while you drag it.
+    const fx = open ? (fh ? fh.x : camera.x + W/2) : 0, fy = open ? (fh ? fh.y : camera.y + H/2) : 0;
+    function mp(wx,wy){
+      return open ? { x: mmX + ((wx-fx)/MM_WORLD + 0.5)*mmW, y: mmY + ((wy-fy)/MM_WORLD + 0.5)*mmH }
+                  : { x: mmX+(wx/WORLD_W)*mmW, y: mmY+(wy/WORLD_H)*mmH };
+    }
 
     // Dragging a hero over the minimap: light up the half under the cursor and
     // say what dropping there will do.
@@ -13455,6 +14683,14 @@ window.addEventListener('DOMContentLoaded', function(){
     // drawn at that same proportion of the panel's own width, rather than a
     // fixed few pixels, the lane reads as the same fraction of the map here
     // as it is on the field — thick enough to see it is a road, not a line.
+    let p;
+    if(open){
+      // A4: the ground you have seen, dimmed; what you can see now, live.
+      owFogTick();
+      const g = owMiniStart(mmX, mmY, mmW, mmH);
+      owMinimapTerrain(g, mp, mmX, mmY, mmW, mmH, fx, fy);
+      owMiniFinish(mmX, mmY, mmW, mmH, fx, fy);
+    } else {
     ctx.strokeStyle=ROAD_FILL; ctx.lineWidth=Math.max(2, LANE_HALF*2*(mmW/WORLD_W)); ctx.lineJoin='round';
     // The arena's roads go on the minimap too. With two snaking lanes instead of
     // four spokes, which way a wave is coming is no longer obvious from the
@@ -13465,7 +14701,6 @@ window.addEventListener('DOMContentLoaded', function(){
       for(let i=1;i<path.length;i++){ q=mp(path[i].x,path[i].y); ctx.lineTo(q.x,q.y); }
       ctx.stroke();
     }
-    let p;
     // A dark rim, not just the fill, now that the panel behind it is grass
     // green too rather than a tan that already set the camp's green apart.
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(30,50,20,.55)';
@@ -13474,6 +14709,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.fillStyle = c.alive>0 ? '#6FA05A' : 'rgba(110,150,90,.3)';
       ctx.beginPath(); ctx.arc(p.x,p.y,MM_CAMP_R,0,7); ctx.fill(); ctx.stroke();
     }
+    }
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = 'rgba(40,26,14,.65)';
     // Squares, not circles — a building on the minimap, unlike a hero, never
@@ -13481,6 +14717,21 @@ window.addEventListener('DOMContentLoaded', function(){
     // matching the round camp/hero marks.
     for(const t of playerTowers){
       const s = t.main?MM_TOWER_R_MAIN:MM_TOWER_R;
+      if(open){
+        const pin = owRimPin(mp(t.x,t.y), mmX, mmY, mmW, mmH, s+2);
+        ctx.fillStyle = t.hp>0?'#C68958':'#8a7a6a';
+        ctx.beginPath(); ctx.rect(pin.x-s,pin.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
+        if(pin.out && fh){
+          // Which way home is, and how far — the one bearing an endless world owes you.
+          ctx.save(); ctx.translate(pin.x, pin.y); ctx.rotate(pin.a);
+          ctx.beginPath(); ctx.moveTo(s+7,0); ctx.lineTo(s+1,-4.5); ctx.lineTo(s+1,4.5); ctx.closePath();
+          ctx.fillStyle = '#C68958'; ctx.fill(); ctx.stroke();
+          ctx.restore();
+          const d = distBase(fh.x, fh.y);
+          owPinLabel(ctx, pin.x, pin.y - s - 8, d < 950 ? Math.round(d)+'' : (d/1000).toFixed(1)+'k');
+        }
+        continue;
+      }
       p=clampToPanel(mp(t.x,t.y), s, mmX, mmY, mmW, mmH);
       ctx.fillStyle = t.hp>0?'#C68958':'#8a7a6a';
       ctx.beginPath(); ctx.rect(p.x-s,p.y-s,s*2,s*2); ctx.fill(); ctx.stroke();
@@ -13505,7 +14756,14 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.beginPath(); ctx.arc(p.x,p.y, c.big?3:2.2, 0,7); ctx.fill();
       }
     }
-    for(const h of playerTeam){ if(!h.alive) continue; p=mp(h.x,h.y); drawMinimapHero(p, h.type, 'player'); }
+    for(const h of playerTeam){
+      if(!h.alive) continue;
+      p = mp(h.x, h.y);
+      // An ally sent off with a MOVE order, or one who respawned at the plaza
+      // while you are 5km out, must not simply disappear from the panel.
+      if(open) p = owRimPin(p, mmX, mmY, mmW, mmH, 9);
+      drawMinimapHero(p, h.type, 'player');
+    }
     // An arena hero is part of the wave, and the wave is all on the map — the
     // whole reason the mobs are drawn unscouted is that a wave has to be
     // cleared before the next one marches, and a hero is the hardest thing in
@@ -13547,6 +14805,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
     ctx.restore();
+    owMark('map', mmProf);
   }
 
   // Four letters for what a hero is doing, short enough to sit under a 72px chip.
@@ -13655,16 +14914,30 @@ window.addEventListener('DOMContentLoaded', function(){
     // it clip; naming the visible rect instead keeps the working set to one
     // screen, which is what the GPU has to have resident.
     {
-      const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
-      const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
-      const bx1 = Math.min(WORLD_W, Math.ceil(camera.x - shakeX + W) + 2);
-      const by1 = Math.min(WORLD_H, Math.ceil(camera.y - shakeY + H) + 2);
-      if(bx1 > bx0 && by1 > by0)
-        ctx.drawImage(bgCanvas,
-          bx0*BG_DPR, by0*BG_DPR, (bx1-bx0)*BG_DPR, (by1-by0)*BG_DPR,
-          bx0, by0, bx1-bx0, by1-by0);
+      if(gameMode==='openworld'){
+        owFrame++;
+        // Both ends of the opening glide, baked in one go behind the loading
+        // panel; after that the budgeted tick keeps up with the walking.
+        if(owOpeningBoxes) owOpeningBake();
+        const tp = owNow();
+        owDrawTiles(ctx, shakeX, shakeY);
+        bakeTick();
+        owMark('tiles', tp);
+      } else {
+        const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
+        const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
+        const bx1 = Math.min(WORLD_W, Math.ceil(camera.x - shakeX + W) + 2);
+        const by1 = Math.min(WORLD_H, Math.ceil(camera.y - shakeY + H) + 2);
+        if(bx1 > bx0 && by1 > by0)
+          ctx.drawImage(bgCanvas,
+            bx0*BG_DPR, by0*BG_DPR, (bx1-bx0)*BG_DPR, (by1-by0)*BG_DPR,
+            bx0, by0, bx1-bx0, by1-by0);
+      }
     }
+    const _pw = OW_DEBUG ? owNow() : 0;
     drawWater();
+    owMark('water', _pw);
+    const _pg = OW_DEBUG ? owNow() : 0;
 
     for(const t of playerTowers){ if(t.hp>0) drawTowerRange(t); }
     for(const t of enemyTowers){ if(t.hp>0) drawTowerRange(t); }
@@ -13830,6 +15103,8 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     drawBirdShadows();
 
+    owMark('ground', _pg);
+    const _pd = OW_DEBUG ? owNow() : 0;
     ground.sort(byGroundY);
     for(const e of ground){
       const o = e.o;
@@ -14040,7 +15315,10 @@ window.addEventListener('DOMContentLoaded', function(){
     // minimap, the drag line and the rest of the overlay untouched.
     drawCamBlur();
 
+    owMark('draw', _pd);
+    const _pf = OW_DEBUG ? owNow() : 0;
     drawFog(shakeX, shakeY);
+    owMark('fog', _pf);
     ctx.save();
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
     drawBirds();          // sky layer: over the fog, not subject to vision
@@ -14054,6 +15332,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawVignetteOverlay();
     drawHurtOverlay();
     drawMinimap();
+    owProfTick();
     drawTutorialMini();
     drawHudSparks();
     drawReticle();
@@ -15343,6 +16622,8 @@ window.addEventListener('DOMContentLoaded', function(){
   function tutQuit(){
     tutStop();
     state = 'idle';
+    // The tile pool and the fog belong to the world being left.
+    bgTiles.clear(); owFog.clear();
     bottomDock.classList.add('hidden');
     partyEl.classList.add('hidden');
     skillBtnEl.style.display = 'none';
@@ -15558,6 +16839,7 @@ window.addEventListener('DOMContentLoaded', function(){
     pauseBtnEl.setAttribute('aria-label', label);
     pauseBtnEl.title = label;
     pauseScreenEl.classList.toggle('hidden', !v);
+    if(v) owPauseText();
     if(!v){
       // Whatever page the exit confirm left showing, an unpause always lands
       // back on "Paused" — so the pause button never reopens mid-confirm.
@@ -15577,7 +16859,17 @@ window.addEventListener('DOMContentLoaded', function(){
   });
   bindTap(pauseResumeBtn, ()=> setPaused(false));
   bindTap(pauseCancelBtn, ()=> setPaused(false));
-  bindTap(pauseConfirmBtn, tutQuit);
+  // A5: leaving a world is the one path that reaches its end card, so it goes
+  // through endRound rather than straight to the title screen.
+  bindTap(pauseConfirmBtn, ()=>{
+    if(gameMode === 'openworld'){ setPaused(false); endRound('quit'); return; }
+    tutQuit();
+  });
+  bindTap(pauseReseedBtn, ()=>{ const s = worldSeed; tutQuit(); guardedStart('openworld', s); });
+  bindTap(pauseNoteEl, ()=>{
+    if(gameMode !== 'openworld') return;
+    try { if(typeof navigator !== 'undefined' && navigator.clipboard) navigator.clipboard.writeText(String(worldSeed)); } catch(e){}
+  });
   for(const el of [pauseBtnEl, exitBtnEl, pauseResumeBtn, pauseCancelBtn, pauseConfirmBtn]){
     el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
   }
@@ -15618,7 +16910,13 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     setPaused(false);                  // a fresh round never opens frozen, whatever the last one left behind
     lastMode = mode;
-    gameMode = (mode==='survival') ? 'survival' : 'regular';
+    gameMode = (mode==='survival' || mode==='openworld') ? mode : 'regular';
+    // Streaming state is wiped unconditionally, before buildMap: a Match after
+    // an Open World round has to start on exactly today's world, with nothing
+    // of the last one's caches left to be read by anything.
+    regionCache.clear(); riverCache.clear(); loaded.clear(); genCount.clear();
+    bgTiles.clear(); owFog.clear(); worldDiff = blankDiff(); basePlaza = null; lastGenMs = 0;
+    birdRng = (mode === 'openworld') ? streamFor(SALT.birds, 0, 0) : null;
     tutMap = (mode === 'tutorial');    // read by buildMap below, so set it first
     survWave = 0;
     survBreak = SURV_FIRST_LEAD;
@@ -15634,7 +16932,7 @@ window.addEventListener('DOMContentLoaded', function(){
     canvas.focus();
     applyLayout(true);
     mouse.x = W/2; mouse.y = H/2;
-    timeLeft = gameMode==='survival' ? 0 : ROUND_TIME;
+    timeLeft = (gameMode==='survival' || gameMode==='openworld') ? 0 : ROUND_TIME;
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
@@ -15652,7 +16950,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // does not begin until there is something to watch it against. A tutorial
     // cuts this again in tutStart, where the camera is placed by hand.
     camera.x=0; camera.y=0; activePlayerIdx=0; camCut(); glideCam(1.15);
-    if(gameMode==='survival'){
+    if(gameMode==='survival' || gameMode==='openworld'){
       const cx=WORLD_W/2, cy=WORLD_H/2;
       resetHero(playerTeam[0], cx+140, cy);
       resetHero(playerTeam[1], cx-60, cy-120);
@@ -15661,6 +16959,8 @@ window.addEventListener('DOMContentLoaded', function(){
       // only, and survDeployHeroes walks them in from wave SURV_HERO_FROM. They
       // start dead and at level 1, which is also what a round restart has to
       // undo — a wave-20 tank must not carry its build into the next round.
+      // Open World never deploys them at all — nothing in the mode is hostile
+      // but the wildlife — and this is the recipe for "parked dead", reused.
       for(const h of enemyTeam){
         resetHero(h, WORLD_W-130, BASE_Y);
         h.alive=false; h.hp=0; h.respawnTimer=Infinity;
@@ -15678,7 +16978,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const t of playerTowers.concat(enemyTowers)){ t.hp=t.maxHp; t.flash=0; t.atkCd=0; t.hpLag=1; t.noHitT=0; }
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0 };
     xpCountEl.textContent='0';
-    timerEl.textContent = gameMode==='survival' ? 'Wave 1' : fmtTime(ROUND_TIME);
+    timerEl.textContent = gameMode==='survival' ? 'Wave 1' : (gameMode==='openworld' ? '0:00' : fmtTime(ROUND_TIME));
     // Not startScreen: guardedStart owns exactly when that gets hidden —
     // immediately for a path with no page to turn, or on a delay for one
     // that does — and startRound runs inside beginRoundLoad's RAF chain,
@@ -15694,17 +16994,32 @@ window.addEventListener('DOMContentLoaded', function(){
     // Same top-right slot either way -- a Match's blue/red score boxes, or
     // Survival's own gold one, never both at once.
     const scoreBoxYouEl = document.getElementById('scoreBoxYou'), scoreBoxFoeEl = document.getElementById('scoreBoxFoe');
-    if(scoreBoxYouEl) scoreBoxYouEl.classList.toggle('hidden', gameMode === 'survival');
-    if(scoreBoxFoeEl) scoreBoxFoeEl.classList.toggle('hidden', gameMode === 'survival');
-    if(scoreBoxWaveEl) scoreBoxWaveEl.classList.toggle('hidden', gameMode !== 'survival');
+    if(scoreBoxYouEl) scoreBoxYouEl.classList.toggle('hidden', gameMode !== 'regular');
+    if(scoreBoxFoeEl) scoreBoxFoeEl.classList.toggle('hidden', gameMode !== 'regular');
+    // The one number an endless world owes you: how far out you are, which is
+    // also the difficulty axis (§6.3). Same gold box Survival uses for its wave.
+    if(scoreBoxWaveEl) scoreBoxWaveEl.classList.toggle('hidden', gameMode === 'regular');
+    if(scoreWaveLabelEl) scoreWaveLabelEl.textContent = gameMode === 'openworld' ? 'BASE' : 'WAVE';
     if(gameMode === 'survival') scoreWaveEl.textContent = '1';
+    if(gameMode === 'openworld') owHudTick();
     resetScoreHud();
     if(isTouchDevice){
       skillBtnEl.style.display='flex';
     }
     if(mode === 'tutorial') tutStart();
     else tutStop();
-    if(mode === 'openworld') rememberSeedInUrl();
+    if(mode === 'openworld'){
+      if(seedInputEl){
+        seedInputEl.value = '';
+        seedInputEl.placeholder = 'blank = random · last ' + worldSeed;
+      }
+      // Recorded, not baked: startRound is also the sim's entry point, and Node
+      // has no canvas to create 48 of. The first render() consumes this.
+      const h = playerTeam[0];
+      owOpeningBoxes = [[camera.x - 40, camera.y - 40, camera.x + W + 40, camera.y + H + 40],
+                        [h.x - W/2 - 40, h.y - H/2 - 40, h.x + W/2 + 40, h.y + H/2 + 40]];
+      rememberSeedInUrl();
+    }
   }
   function endRound(reason){
     state='ended';
@@ -15731,6 +17046,23 @@ window.addEventListener('DOMContentLoaded', function(){
       musicSync();                     // back to an overlay: fade it up again
       return;
     }
+    if(gameMode==='openworld'){
+      resultTitleEl.textContent = 'Back from the world';
+      resultTitleEl.style.color = '#5A3E1B';
+      document.getElementById('finalLabel').textContent = 'Ground explored';
+      finalXpEl.textContent = owExploredKm2().toFixed(2) + ' km²';
+      finalHitsEl.textContent = fmtTime(timeLeft) + ' in the world · ' + xpLooted + ' xp looted';
+      towerCompareEl.textContent = 'Seed ' + worldSeed + ' · Lv '
+        + playerTeam.map(h => h.level).join('/') + ' · ' + lastHits + ' last hit' + (lastHits===1?'':'s');
+      // Leaving IS the exit out here, so the card must offer the way out as
+      // well as the way back in — otherwise Play Again is the only door and a
+      // world you have left puts you straight back into it.
+      if(menuBtn) menuBtn.classList.remove('hidden');
+      endScreen.classList.remove('hidden');
+      musicSync();
+      return;
+    }
+    if(menuBtn) menuBtn.classList.add('hidden');
     document.getElementById('finalLabel').textContent = 'Experience looted this round';
     let result;
     if(reason==='win') result='win';
@@ -15830,6 +17162,13 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function beginRoundLoad(mode, seed){
     const myToken = ++roundLoadToken;
+    if(loadTitleEl && loadNoteEl){
+      const world = mode === 'openworld';
+      loadTitleEl.textContent = world ? 'Rolling a world' : 'Building the map';
+      loadNoteEl.innerHTML = world
+        ? 'Seed ' + (seed|0) + ' &middot; forests, plains, rivers&hellip;'
+        : 'Lanes, forest, river and camps&hellip;';
+    }
     endScreen.classList.add('hidden');
     // Sky first, then the panel on top of it. Both go up in this same tick so
     // the field is never briefly naked between the click and the cover.
@@ -15954,6 +17293,21 @@ window.addEventListener('DOMContentLoaded', function(){
   bindTap(startBtn, ()=>guardedStart('regular'));
   bindTap(startSurvBtn, ()=>guardedStart('survival'));
   bindTap(startTutBtn, ()=>guardedStart('tutorial'));
+  // Blank means random, always: a box with something in it is something the
+  // player put there (or the link they opened), and the start empties it again
+  // so two Open World starts in a row are two different worlds. The seed you
+  // are in stays readable in the placeholder and on the panels.
+  bindTap(startWorldBtn, ()=>{
+    const typed = seedInputEl ? parseInt(seedInputEl.value, 10) : NaN;
+    pendingSeed = Number.isInteger(typed) ? (typed|0) : ((Math.random()*0x7fffffff)|0);
+    guardedStart('openworld', pendingSeed);
+  });
+  // A seed off a shared link fills the box once, on load; after that it is the
+  // player's box like any other.
+  if(seedInputEl){
+    const fromUrl = seedFromUrl();
+    if(fromUrl !== null) seedInputEl.value = String(fromUrl);
+  }
   // Keyboard and a whole-panel fallback, so there is always a way in even if the
   // button itself is unreachable on your device.
   window.addEventListener('keydown', (e)=>{
@@ -15964,6 +17318,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!introScreen.classList.contains('hidden')){ introDismiss(); return; }
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
   });
+  bindTap(menuBtn, ()=>{ endScreen.classList.add('hidden'); tutQuit(); });
   // Play Again goes through the load screen too, like every other way in.
   // Play Again replays the world you were in, not a new one.
   bindTap(restartBtn, ()=>guardedStart(lastMode, worldSeed));

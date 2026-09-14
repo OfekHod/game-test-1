@@ -68,7 +68,66 @@ const HOOKS = [
     // since load() wraps each one so the game's timers stay unref'd.
     world: {
       rngLeaked: () => genRng !== null,
-      genDepth:  () => genDepth
+      genDepth:  () => genDepth,
+      hash:      () => worldHash(),
+      chunkHash: (cx, cy) => chunkHashOf(cx, cy),
+      loaded:    () => [...loaded.keys()].sort(),
+      genCount:  (key) => genCount.get(key) || 0,
+      genMs:     () => lastGenMs,
+      regionMs:  () => lastRegionMs,
+      counts:    () => ({ trees: trees.length, props: props.length, camps: camps.length,
+                          lakes: lakes.length, rivers: rivers.length, mobs: neutralCreeps.length }),
+      // A pristine build: what the chunk is before the diff overlay, which is
+      // what test 3b compares a streamed chunk against.
+      gen: (cx, cy) => {
+        if(gameMode !== 'openworld') throw new Error('world.gen needs an open world round');
+        const c = buildChunk(cx, cy);
+        return { hash: c.hash, props: c.props.map(p => p.id), trees: c.trees.map(t => t.id),
+                 camps: c.camps.map(k => k.id) };
+      },
+      // Every feature of every built region, plus the rivers, with the extent
+      // box registration uses and the complete member list a chunk filters.
+      features: () => {
+        const out = [];
+        for(const reg of regionCache.values()){
+          for(const l of reg.lakes) out.push({ id: l.id, kind: 'lake', region: reg.key,
+            box: [l.x-l.ext, l.y-l.ext, l.x+l.ext, l.y+l.ext], members: l.shore.map(t => t.id) });
+          for(const g of reg.groves){
+            const members = [];
+            for(const c of g.camps){ members.push(c.id); for(const t of c.ring) members.push(t.id); }
+            for(const st of g.stands) for(const t of st.trees) members.push(t.id);
+            out.push({ id: g.id, kind: 'grove', region: reg.key, n: g.camps.length,
+              box: [g.x-g.ext, g.y-g.ext, g.x+g.ext, g.y+g.ext], members,
+              stands: g.stands.map(st => ({ id: st.id, trees: st.trees.map(t => t.id) })) });
+          }
+        }
+        for(const v of riverCache.values()){
+          if(!v) continue;
+          out.push({ id: v.id, kind: 'river', box: [v.ex0, v.ey0, v.ex1, v.ey1],
+            segments: [...v.shore.keys()].sort(),
+            // The mouth lake belongs to the river, so its shore is the river's
+            // too — it carries the river's id and lands in the river's chunks.
+            members: [].concat(...[...v.shore.values()].map(seg => seg.map(t => t.id)),
+                               v.mouth ? v.mouth.shore.map(t => t.id) : []) });
+        }
+        return out;
+      },
+      // The ids of one feature's members that landed in one chunk.
+      chunkMembers: (cx, cy, featureId) => {
+        const c = loaded.get(cx+','+cy) || buildChunk(cx, cy);
+        const pre = featureId + ':';
+        const hit = (id) => id === featureId || (id && id.indexOf(pre) === 0);
+        return c.trees.filter(t => hit(t.id)).map(t => t.id)
+          .concat(c.camps.filter(k => hit(k.id)).map(k => k.id));
+      },
+      riverObj: (id) => rivers.find(r => r.id === id) || null,
+      teleport: (x, y, idx) => {
+        for(let i=0;i<playerTeam.length;i++){
+          if(idx !== undefined && i !== idx) continue;
+          const h = playerTeam[i];
+          h.x = x; h.y = y; h.homeX = x; h.homeY = y;
+        }
+      }
     }
   };`]
 ];
