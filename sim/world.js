@@ -152,6 +152,107 @@ test(' 4  Features straddle seams without disagreeing (PR2)', () => {
   assert.deepStrictEqual(forward, backward.reverse(), 'chunk hashes depend on build order');
 });
 
+// ---------------------------------------------------------------- PR3 -----
+// The world streams now, so these are about what survives coming and going.
+
+// Walk a squad to a place and let the loader catch up.
+function goTo(G, x, y, secs, idx){
+  G.world.teleport(x, y, idx);
+  for(let i=0;i<secs*20;i++) G.step(0.05);
+}
+
+test(' 3b A streamed chunk is the chunk built in isolation (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 7500, -2500, 10);
+  assert.ok(G2.world.loaded().includes('7,-3'), 'walking there did not load 7,-3');
+  assert.strictEqual(G2.world.chunkHash(7, -3), G2.world.gen(7, -3).hash,
+    'the chunk that streamed in during play differs from the same chunk built alone');
+});
+
+test(' 5  A chunk round trip keeps the stump and loses nothing else (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 6500, 2000, 8);
+  assert.ok(G2.world.loaded().includes('6,2'), '6,2 never loaded');
+  const pristine = G2.world.gen(6, 2);
+  assert.strictEqual(G2.world.chunkHash(6, 2), pristine.hash, 'the hash is taken after the diff');
+  const felled = G2.world.fellAt(6500, 2000);
+  assert.ok(felled, 'nothing to chop');
+  const stumpsAfter = G2.world.stumps();
+  assert.ok(stumpsAfter > 0, 'felling left no stump');
+  // A nudge, so the wanted set actually changes rather than being waited on.
+  goTo(G2, 6800, 2000, 3);
+  assert.ok(G2.world.stumps() > 0, 'the stump went with the first rebuild of the lists');
+  goTo(G2, 12000, -6000, 14);
+  assert.ok(!G2.world.loaded().includes('6,2'), '6,2 never unloaded — nothing was tested');
+  goTo(G2, 6500, 2000, 14);
+  assert.ok(G2.world.loaded().includes('6,2'), '6,2 did not come back');
+  assert.strictEqual(G2.world.chunkHash(6, 2), pristine.hash, 'the chunk came back different');
+  assert.ok(G2.world.stumps() > 0, 'the stump did not survive the round trip');
+  const back = G2.world.gen(6, 2);
+  assert.deepStrictEqual(back.props, pristine.props, 'props moved into the felled trees hole');
+});
+
+test('10  A partial chop survives a round trip too (A3) (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 6500, 2000, 8);
+  const id = G2.world.chop(6500, 2000, 2);
+  assert.ok(id, 'nothing to chop');
+  assert.strictEqual(G2.world.chopsOf(id), 2);
+  goTo(G2, 12000, -6000, 14);
+  goTo(G2, 6500, 2000, 14);
+  assert.strictEqual(G2.world.chopsOf(id), 2, 'the two swings were forgotten');
+});
+
+test(' 7  A Match after a world is a Match (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 12000, 2000, 5);
+  G2.start();                                    // no mode: a Match
+  assert.strictEqual(G2.world.rngLeaked(), false, 'genRng survived the mode change');
+  assert.strictEqual(G2.state().left, 600, 'the Match clock did not reset');
+  assert.deepStrictEqual(G2.world.loaded(), [], 'chunks survived into the Match');
+  assert.deepStrictEqual(G2.world.envelope(), [0, 0, 4000, 4000], 'the envelope was left open');
+  // The clamps apply on MOVEMENT, so the hero has to actually be moved.
+  G2.world.teleport(3900, 3900, 0);
+  G2.world.order(0, 5300, 5300);
+  for(let i=0;i<20;i++) G2.step(0.05);
+  const h = G2.world.heroAt(0);
+  assert.ok(h.x <= 4000 && h.y <= 4000, 'a Match hero walked out of the map at ' + JSON.stringify(h));
+});
+
+test(' 8  A split squad never builds a chunk twice (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  G2.world.teleport(14000, 3000, 1);             // one hero only, far away
+  for(let i=0;i<200;i++) G2.step(0.05);
+  const loaded = G2.world.loaded(), wanted = G2.world.wanted();
+  for(const k of wanted) assert.ok(loaded.includes(k), 'wanted chunk ' + k + ' is not loaded');
+  for(const k of loaded) assert.ok(G2.world.genCount(k) <= 1, k + ' was built ' + G2.world.genCount(k) + ' times');
+});
+
+test(' 9  One object per river, however far you walk along it (PR3)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  const river = G2.world.features().filter(f => f.kind === 'river' && f.members.length)
+                  .sort((a, b) => b.members.length - a.members.length)[0];
+  assert.ok(river, 'no river with a shore to walk');
+  const first = G2.world.riverObj(river.id);
+  const box = river.box;
+  let hops = 0;
+  for(let x = box[0] + 200; x < box[2]; x += 1500){
+    const y = box[1] + (box[3]-box[1])*0.5;
+    goTo(G2, x, y, 2);
+    const here = G2.world.riverObj(river.id);
+    if(!here) continue;
+    hops++;
+    assert.strictEqual(here, first || here, 'the river was rebuilt as a second object');
+  }
+  assert.ok(hops > 1, 'never walked along the river');
+});
+
 test('12  Timings and sizes (PR2)', () => {
   const G2 = load();
   const t0 = Date.now();

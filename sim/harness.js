@@ -121,6 +121,34 @@ const HOOKS = [
           .concat(c.camps.filter(k => hit(k.id)).map(k => k.id));
       },
       riverObj: (id) => rivers.find(r => r.id === id) || null,
+      wanted:   () => [...wantedSet()].sort(),
+      stumps:   () => stumps.length,
+      envelope: () => [WX0, WY0, WX1, WY1],
+      // A real chop, through the same path a hero's axe takes.
+      fellAt: (x, y) => {
+        let best = null, bd = Infinity;
+        for(const t of trees){ const d = (t.x-x)*(t.x-x) + (t.y-y)*(t.y-y); if(d < bd){ bd = d; best = t; } }
+        if(!best) return null;
+        const id = best.id, at = { x: best.x, y: best.y, r: best.r };
+        fellTree(best, playerTeam[0]);
+        return { id, at };
+      },
+      chop: (x, y, n) => {
+        let best = null, bd = Infinity;
+        for(const t of trees){ const d = (t.x-x)*(t.x-x) + (t.y-y)*(t.y-y); if(d < bd){ bd = d; best = t; } }
+        if(!best) return null;
+        best.chops = n;
+        return best.id;
+      },
+      chopsOf: (id) => { const t = trees.find(t => t.id === id); return t ? (t.chops || 0) : null; },
+      // A real MOVE order, so the movement clamps actually run.
+      order: (idx, x, y) => soloOrder(playerTeam[idx], x, y),
+      heroAt: (idx) => ({ x: playerTeam[idx].x, y: playerTeam[idx].y,
+        vx: playerTeam[idx].vx, vy: playerTeam[idx].vy, alive: playerTeam[idx].alive,
+        mode: playerTeam[idx].mode, hp: Math.round(playerTeam[idx].hp) }),
+      // Drive the hero the way a keyboard does, so a stall that only happens
+      // under player input can be reproduced without a browser.
+      press: (k, down) => { if(down) keys[k] = true; else delete keys[k]; },
       teleport: (x, y, idx) => {
         for(let i=0;i<playerTeam.length;i++){
           if(idx !== undefined && i !== idx) continue;
