@@ -4621,6 +4621,7 @@ window.addEventListener('DOMContentLoaded', function(){
   let camps = [];
   let lakes = [];     // solid, organic outline
   let rivers = [];    // shallow: you can ford them, and they have a direction
+  let dirt = [];      // Open World only: packed-earth bowls with a giant in them
   const WATER_LINE = '#1E5468', WATER_SAND = '#C4C98C', WATER_SHALLOW = '#8FE2EF', WATER_MID = '#4CB4D2', WATER_DEEP = '#27789B';
   // A river now has a direction, and wading it is not one number any more.
   // Go with the water and it carries you; do anything else — fight it, or cross
@@ -5484,7 +5485,13 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Trees are solid: push anything that ends a frame inside one back out.
   function resolveSolidCollision(e){
-    for(const d of props) pushOutOfProp(e, d);
+    // A mob does not collide with the ring it spawned inside, and a giant
+    // tramples the rim of its own bowl — otherwise it jams in a 60-unit gap it
+    // is 120 wide. Heroes collide with both, which is the point of them.
+    for(const d of props){
+      if(e.huge && e.area && d.rimId === e.area) continue;
+      pushOutOfProp(e, d);
+    }
     for(const l of lakes){
       let dx = e.x-l.x, dy = (e.y-l.y)/l.sy;
       const lim = l.r*1.35 + e.r;
@@ -5499,6 +5506,8 @@ window.addEventListener('DOMContentLoaded', function(){
       e.kx = 0; e.ky = 0; e.kt = 0;
     }
     for(const t of trees){
+      if(e.camp && t.campId === e.camp.id) continue;
+      if(e.huge && e.area && t.rimId === e.area) continue;
       const rr = e.r + t.r*TREE_COLLIDE_FACTOR;
       let dx = e.x-t.x, dy = e.y-t.y;
       const q = dx*dx+dy*dy;
@@ -7152,6 +7161,48 @@ window.addEventListener('DOMContentLoaded', function(){
   const OW_RIVER_STOP = 1100, OW_RIVER_SRC_MIN = 1700;      // rivers keep off the base
   const OW_BASE_CAMP_R = 1000, OW_BASE_LAKE_R = 1200, OW_BASE_GROVE_R = 1000;
   const OW_CAMP_SPACING = 510;    // no chain pulls at the ring (§11 q.18)
+  // Req 8. Two kinds of neutral: the easy one every mode has, and the medium,
+  // which is the big creep the game already owns — same sprite, same bar, same
+  // 880 hp — given a longer leash so it can actually reach a carry standing at
+  // max range. What makes it "harder" is that it comes to you (§6.3).
+  const NEUTRAL_BIG_XP = 160, OW_APEX_XP_FAR = 480;
+  const NEUTRAL_KINDS = [
+    { hp:NEUTRAL_HP,   dmg:NEUTRAL_DMG,   r:NEUTRAL_R,   speed:NEUTRAL_SPEED, atk:NEUTRAL_ATK_INTERVAL, leash:NEUTRAL_LEASH, xp:NEUTRAL_XP,     big:false },
+    { hp:BIG_CREEP_HP, dmg:BIG_CREEP_DMG, r:BIG_CREEP_R, speed:62,            atk:1.1,                  leash:480,           xp:NEUTRAL_BIG_XP, big:true  }
+  ];
+  // A grove's own bias, faded in with distance so the home ring cannot roll a
+  // rough one: two groves the same distance out differ ("the easy one", "the
+  // rough one"), but at u < 0.25 the bias is scaled away to nothing.
+  function owBiasedU(u, bias){ return Math.max(0, Math.min(1, u + bias*Math.min(1, u/0.25))); }
+  function owRoster(n, u, rng){
+    const pTouched = 0.02 + 0.98*Math.pow(u, 1.3);
+    if(rng() >= pTouched) return null;                       // every slot easy: no record at all
+    const pWhole = 0.15 + 0.85*u*u;
+    let mediums = rng() < pWhole ? n : (rng() < 0.75 ? 1 : 2);
+    mediums = Math.min(n, mediums);
+    const roster = [];
+    // Medium-first, so the spawn angle of a medium is predictable and two of
+    // them are never adjacent while an easy slot is still free.
+    for(let i=0;i<n;i++) roster.push(i < mediums ? 1 : 0);
+    return roster;
+  }
+  function owHasMedium(camp){ return !!(camp.roster && camp.roster.indexOf(1) >= 0); }
+
+  // Dirt areas (req 6): the lake trick with more harmonics, so one radial
+  // function serves the bake, the rim and every point test.
+  const DIRT_WOBBLE_MAX = 1.46;
+  const OW_DIRT_BASE_R = 2200;        // no bowl closer to home than this
+  const OW_APEX_RESPAWN = 120;        // Match's 60 is tuned for a ten-minute round
+  function dirtRadiusAt(d, a){ return d.r*(1 + 0.24*Math.sin(2*a + d.s1) + 0.15*Math.sin(3*a - d.s2) + 0.07*Math.sin(6*a + d.s3)); }
+  function inDirt(d, x, y, pad){
+    const dx = x-d.x, dy = (y-d.y)/d.sy;
+    return Math.sqrt(dx*dx + dy*dy) < dirtRadiusAt(d, Math.atan2(dy, dx)) + (pad||0);
+  }
+  function nearDirt(x, y, pad, lists){
+    const list = lists ? lists.dirt : dirt;
+    for(const d of list) if(inDirt(d, x, y, pad)) return true;
+    return false;
+  }
   const OW_GROVE_WATER_KEEP = 300;   // the grove's centre, not its whole disc
   const OW_TREE_RATE = TREE_COUNT/16, OW_BUSH_RATE = BUSH_COUNT/16, OW_ROCK_RATE = ROCK_COUNT/16;
   const OW_CHUNK_INSET = TREE_MIN_GAP/2;                    // so two chunks' trees are >= TREE_MIN_GAP apart
@@ -7377,8 +7428,16 @@ window.addEventListener('DOMContentLoaded', function(){
       const grove = { id: 'r'+rx+','+ry+':g'+gi, x: cx, y: cy, R: Rg, ext, n, camps: [], stands: [] };
       // Camps: roster first, then position, because spacing depends on the
       // roster (PR4 puts mediums in it; today every camp is three easies).
+      // Bias is per grove and faded by distance (§6.3).
+      const bias = (() => { const b = rng(); return b < 0.25 ? -0.12 : (b < 0.75 ? 0 : 0.12); })();
+      const uG = owBiasedU(owU(cx, cy), bias);
       for(let ci=0; ci<n; ci++){
-        const camp = { id: grove.id+':c'+ci, x:0, y:0, alive:0, timer:0, n: CAMP_SIZE, roster: null, ring: [], grove };
+        // Size and roster FIRST: the spacing a camp needs depends on whether it
+        // holds a medium, whose longer leash would otherwise walk it into the
+        // next ring when you pull it.
+        const size = 3 + Math.floor(uG*1.4 + rng()*0.8);
+        const roster = owRoster(size, uG, rng);
+        const camp = { id: grove.id+':c'+ci, x:0, y:0, alive:0, timer:0, n: size, roster, ring: [], grove };
         let ok = false;
         for(let att=0; att<400; att++){
           const rad = Rg*0.92*Math.sqrt(rng()), ang = rng()*Math.PI*2;
@@ -7410,17 +7469,59 @@ window.addEventListener('DOMContentLoaded', function(){
       reg.groves.push(grove); reg.features.push(grove);
     }
 
+    // --- dirt areas: 0-2 a region, never near home, never on water and never
+    // on a grove. A bowl is a landmark you find, with something in it.
+    const nDirt = (() => { const u2 = rng(); return u2 < 0.45 ? 0 : (u2 < 0.85 ? 1 : 2); })();
+    for(let di=0; di<nDirt; di++){
+      const r = 420 + 260*rng(), sy = 0.72 + 0.28*rng();
+      const ext = 1.664*r + 60, [lo, hi] = core(ext);
+      if(hi <= lo) continue;
+      const area = { id: 'r'+rx+','+ry+':d'+di, x:0, y:0, r, sy,
+                     s1: rng()*6.283, s2: rng()*6.283, s3: rng()*6.283,
+                     ext, gravel: [], rim: [], gaps: [], apexN: 0 };
+      let placed = false;
+      for(let att=0; att<60; att++){
+        const x = x0 + lo + rng()*(hi - lo), y = y0 + lo + rng()*(hi - lo);
+        if(distBase(x, y) < OW_DIRT_BASE_R) continue;
+        if(near(x, y, ext)) continue;
+        let clash = false;
+        for(const g of reg.groves){ if(dist(x, y, g.x, g.y) < ext + g.ext + 200){ clash = true; break; } }
+        if(clash) continue;
+        area.x = x; area.y = y; placed = true; break;
+      }
+      if(!placed) continue;
+      const ap = rng();
+      area.apexN = ap < 0.45 ? 1 : (ap < 0.80 ? 2 : 3);
+      // Gravel, precomputed from the region's stream: dealing it at bake time
+      // would put different stones on either side of a tile seam.
+      const n = Math.round(170*(r*r*sy)/(SURV_PLAZA_R*SURV_PLAZA_R));
+      for(let i=0;i<n;i++){
+        const a = rng()*6.283, d = Math.sqrt(rng())*r;
+        const gx = area.x + Math.cos(a)*d, gy = area.y + Math.sin(a)*d*area.sy;
+        for(let k=0;k<4;k++){
+          const px = gx + (rng()-0.5)*40, py = gy + (rng()-0.5)*40;
+          const light = rng() < 0.28;
+          area.gravel.push({ x: px, y: py,
+            rx: 1.6+rng()*3.4, ry: 1.2+rng()*2.2, rot: rng()*3,
+            col: light ? 'rgba('+(132+(rng()*26|0))+','+(94+(rng()*20|0))+','+(70+(rng()*16|0))+',.5)'
+                       : 'rgba('+(56+(rng()*22|0))+','+(32+(rng()*16|0))+','+(21+(rng()*12|0))+',.55)' });
+        }
+      }
+      reg.dirt.push(area); reg.features.push(area);
+    }
+
     // --- L2, each from its own stream, in a fixed order: rings, then stands,
     // then the lake shores (which gap-test against both).
     for(const g of reg.groves){ for(const c of g.camps) genCampRing(c, reg); }
     for(const g of reg.groves){ for(const s of g.stands) genStand(s, g, reg); }
+    for(const d of reg.dirt) genDirtRim(d, reg);
     for(const l of reg.lakes) genLakeShore(l, reg);
     for(const v of reg.rivers) if(v.mouth && regionXOf(v.mouth.x) === rx && regionYOf(v.mouth.y) === ry) genLakeShore(v.mouth, reg);
     return reg;
   }
   // PR4 gives a camp a roster of mediums; a medium's longer leash needs the
   // wider gap, or a pulled one walks into the next ring.
-  function campSpacing(a, b){ return (a.roster || b.roster) ? 660 : OW_CAMP_SPACING; }
+  function campSpacing(a, b){ return (owHasMedium(a) || owHasMedium(b)) ? 660 : OW_CAMP_SPACING; }
 
   // The 5144 recipe, minus the floor paint the owner review dropped (A2):
   // seven to ten berry bushes of one kind, tagged with the camp that owns them.
@@ -7459,6 +7560,42 @@ window.addEventListener('DOMContentLoaded', function(){
       const t = makeTree(x, y, R);
       t.v = v; t.id = stand.id+':t'+i; sizeTree(t);
       stand.trees.push(t); reg.trees.push(t);
+    }
+  }
+  // Slots every ~110 units of perimeter, with two to four real gaps so a bowl
+  // is always enterable, then a ragged skip on top. Bush-trees and rocks, both
+  // solid and sight-blocking, so what is inside is hidden until you walk in.
+  function genDirtRim(area, reg){
+    const rng = streamFor(SALT.ring, hashStr(area.id), 0);
+    const R = ranged(rng);
+    const nGaps = 2 + Math.floor(rng()*3);
+    for(let i=0;i<nGaps;i++) area.gaps.push({ a: rng()*6.283, w: 0.35 + rng()*0.25 });
+    const b = FOREST_BUSH_FRAMES[Math.floor(rng()*FOREST_BUSH_FRAMES.length)];
+    // Every ~80 units of perimeter: at the planned 110 a 420-radius bowl came
+    // out with eleven objects on it, which reads as litter rather than as a
+    // hedge you cannot see over.
+    const slots = Math.max(24, Math.round(2*Math.PI*area.r/80));
+    for(let i=0;i<slots;i++){
+      const a = i/slots*Math.PI*2;
+      let inGap = false;
+      for(const g of area.gaps){
+        let d = Math.abs(((a - g.a + Math.PI*3) % (Math.PI*2)) - Math.PI);
+        if(d < g.w){ inGap = true; break; }
+      }
+      if(inGap) continue;
+      if(rng() < 0.12) continue;                  // ragged, not a fence
+      const rr = dirtRadiusAt(area, a)*(1.02 + rng()*0.12);
+      const x = area.x + Math.cos(a)*rr, y = area.y + Math.sin(a)*rr*area.sy;
+      if(rng() < 0.60){
+        const t = makeTree(x, y, R);
+        t.bush = b; t.id = area.id+':b'+i; t.rimId = area.id; sizeTree(t);
+        area.rim.push(t); reg.trees.push(t);
+      } else {
+        const f = ROCK_FRAMES[(rng()*ROCK_FRAMES.length)|0];
+        const jit = 0.78 + rng()*0.46, w = f[4]*jit*DECOR_SCALE;
+        area.rim.push({ x, y, kind:'rock', f, w, h: w*(f[3]/f[2]), flip: rng() < 0.5,
+                        id: area.id+':k'+i, rimId: area.id, prop: true });
+      }
     }
   }
   function owTreeCrowded(x, y, v, list){
@@ -7504,7 +7641,10 @@ window.addEventListener('DOMContentLoaded', function(){
     return !nearWater(x, y, pad, { lakes: reg.lakes.concat(reg.rivers.filter(v=>v.mouth).map(v=>v.mouth)), rivers: reg.rivers });
   }
   // No lanes out here. The plaza is the only roadway until PR4's dirt areas.
-  function owOnRoadway(x, y, pad){ return distBase(x, y) < SURV_PLAZA_R + pad; }
+  function owOnRoadway(x, y, pad, lists){
+    if(distBase(x, y) < SURV_PLAZA_R + pad) return true;
+    return nearDirt(x, y, pad, lists);
+  }
 
   /* ---- L3: a river's shore, one segment per region it crosses ----------- */
   // Built from the river's points inside ONE region and from that region's own
@@ -7559,6 +7699,14 @@ window.addEventListener('DOMContentLoaded', function(){
       // everything that can reach it without looking at a neighbour
       for(const l of reg.lakes)
         if(touches(l.x-l.ext, l.y-l.ext, l.x+l.ext, l.y+l.ext)){ chunk.lakes.push(l); for(const t of l.shore) if(inside(t)) chunk.trees.push(t); }
+      for(const d of reg.dirt)
+        if(touches(d.x-d.ext, d.y-d.ext, d.x+d.ext, d.y+d.ext)){
+          chunk.dirt.push(d);
+          for(const o of d.rim){
+            if(!inside(o)) continue;
+            if(o.prop) chunk.props.push(o); else chunk.trees.push(o);
+          }
+        }
       for(const g of reg.groves)
         if(touches(g.x-g.ext, g.y-g.ext, g.x+g.ext, g.y+g.ext)){
           chunk.groves.push(g);
@@ -7663,6 +7811,57 @@ window.addEventListener('DOMContentLoaded', function(){
       else { c.alive = 0; c.timer = Math.max(0, e.timer - (timeLeft - e.at)); }
     }
   }
+  // An area's apex slots are created the first time any chunk holding it is
+  // loaded — "first sight" is that load, not seeing it, so the giants are
+  // already roaming when you walk in. Staggered, so a three-apex bowl does not
+  // pop all at once.
+  function owAreaSlots(area){
+    let e = worldDiff.areas.get(area.id);
+    if(!e){
+      e = { slots: [] };
+      // The first one is placed as soon as the bowl's chunk loads, which is
+      // ~1800 units before a hero can see it — so a giant is ALREADY roaming
+      // when you walk in, rather than appearing once you are beside it. (With
+      // a spawn-only-when-near rule the "never spawn in sight" guard blocked
+      // it for ever on a bowl small enough to see across.)
+      for(let i=0;i<area.apexN;i++) e.slots.push({ mob:null, timer: i*26 });
+      worldDiff.areas.set(area.id, e);
+    }
+    return e;
+  }
+  function owAreaOf(id){ for(const d of dirt) if(d.id === id) return d; return null; }
+  function apexAreaPoint(area){
+    const a = rand(0, Math.PI*2), rr = 0.85*dirtRadiusAt(area, a)*Math.sqrt(rand(0,1));
+    return { x: area.x + Math.cos(a)*rr, y: area.y + Math.sin(a)*rr*area.sy };
+  }
+  function spawnApexIn(area, p){
+    const c = { x:p.x, y:p.y, hp:APEX_HP, maxHp:APEX_HP, flash:0, engaged:false, r:APEX_R,
+      dmg:APEX_DMG, big:false, huge:true, neutral:true, area: area.id, xp:OW_APEX_XP_FAR, atkCd:rand(0,0.5),
+      kx:0, ky:0, kt:0, hitT:0, hpLag:1, levelGlow:0, glowCol:null,
+      animDist:0, apx:p.x, apy:p.y, moving:0, face:1, atkT:0,
+      wpX:p.x, wpY:p.y, wpT:0, chasing:false, chaseX:0, chaseY:0,
+      lastAttacker:null, lastAttackerT:0 };
+    neutralCreeps.push(c);
+    return c;
+  }
+  // A bowl with nobody near it does not roam: its giants are standing in it
+  // whatever happens, and on wake they take a fresh patch point — they were
+  // walking about while you were away.
+  const OW_APEX_TICK_R = 1500;
+  function owApexTick(dt){
+    for(const area of dirt){
+      const e = owAreaSlots(area);
+      for(const slot of e.slots){
+        if(slot.mob && neutralCreeps.indexOf(slot.mob) < 0){ slot.mob = null; slot.timer = OW_APEX_RESPAWN; }
+        if(slot.mob) continue;
+        slot.timer -= dt;
+        if(slot.timer > 0) continue;
+        const p = apexAreaPoint(area);
+        if(isVisible(p.x, p.y, APEX_R+120)){ slot.timer = APEX_RETRY; continue; }   // never appears in front of you
+        slot.mob = spawnApexIn(area, p);
+      }
+    }
+  }
   function loadChunk(cx, cy, spawn){
     const k = keyOf(cx, cy);
     let chunk = loaded.get(k);
@@ -7679,7 +7878,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // had to learn what a chunk is. Lakes and rivers are deduped by id: several
   // chunks hold the same object.
   function rebuildWorldLists(){
-    trees = []; props = []; camps = []; stumps = []; lakes = []; rivers = [];
+    trees = []; props = []; camps = []; stumps = []; lakes = []; rivers = []; dirt = [];
     const seen = new Set();
     for(const chunk of loaded.values()){
       for(const t of chunk.trees) trees.push(t);
@@ -7688,6 +7887,7 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const s of chunk.stumps) stumps.push(s);
       for(const l of chunk.lakes){ if(seen.has(l.id)) continue; seen.add(l.id); lakes.push(l); }
       for(const v of chunk.rivers){ if(seen.has(v.id)) continue; seen.add(v.id); rivers.push(v); }
+      for(const d of chunk.dirt){ if(seen.has(d.id)) continue; seen.add(d.id); dirt.push(d); }
     }
     for(const t of playerTowers) t._sightTrees = null;
     owSetEnvelope();
@@ -7915,6 +8115,19 @@ window.addEventListener('DOMContentLoaded', function(){
   function owDirtyAround(cx, cy){
     const x0 = cx*CHUNK - SHADOW_REACH, y0 = cy*CHUNK - SHADOW_REACH;
     const x1 = cx*CHUNK + CHUNK + SHADOW_REACH, y1 = cy*CHUNK + CHUNK + SHADOW_REACH;
+    owDirtyBox(x0, y0, x1, y1);
+    // A dirt area is painted into the ground and reaches far further than a
+    // shadow does, so the first chunk that brings one in has to drop every
+    // tile the whole bowl touches — several of them were baked as plain grass
+    // before the area existed to be drawn.
+    const chunk = loaded.get(keyOf(cx, cy));
+    if(chunk) for(const d of chunk.dirt){
+      if(d._painted) continue;
+      d._painted = true;
+      owDirtyBox(d.x - d.ext, d.y - d.ext, d.x + d.ext, d.y + d.ext);
+    }
+  }
+  function owDirtyBox(x0, y0, x1, y1){
     for(let tx=Math.floor(x0/OW_TILE); tx<=Math.floor(x1/OW_TILE); tx++)
       for(let ty=Math.floor(y0/OW_TILE); ty<=Math.floor(y1/OW_TILE); ty++) bgTiles.delete(keyOf(tx, ty));
   }
@@ -8088,6 +8301,31 @@ window.addEventListener('DOMContentLoaded', function(){
         g.restore();
         g.lineWidth = 4; g.strokeStyle = ROAD_EDGE;
         g.beginPath(); g.arc(p.x, p.y, p.r, 0, 7); g.stroke();
+      }
+      // Dirt areas: bakePlaza's recipe on the wobble outline, in the same
+      // colours as a lane and none of its shape.
+      for(const d of dirt){
+        if(d.x + d.ext < bx || d.x - d.ext > bx+bw || d.y + d.ext < by || d.y - d.ext > by+bw) continue;
+        const outline = (shrink) => {
+          g.beginPath();
+          for(let i=0;i<=72;i++){
+            const a = i/72*Math.PI*2, rr = dirtRadiusAt(d, a) - shrink;
+            const px = d.x + Math.cos(a)*rr, py = d.y + Math.sin(a)*rr*d.sy;
+            if(i) g.lineTo(px, py); else g.moveTo(px, py);
+          }
+          g.closePath();
+        };
+        outline(0); g.fillStyle = ROAD_RIM; g.fill();
+        g.save(); g.clip();
+        outline(9); g.fillStyle = ROAD_FILL; g.fill();
+        for(const q of d.gravel){
+          if(q.x < bx-8 || q.x > bx+bw+8 || q.y < by-8 || q.y > by+bw+8) continue;
+          g.fillStyle = q.col;
+          g.beginPath(); g.ellipse(q.x, q.y, q.rx, q.ry, q.rot, 0, 7); g.fill();
+        }
+        g.restore();
+        g.lineWidth = 4; g.strokeStyle = ROAD_EDGE;
+        outline(0); g.stroke();
       }
       // Tufts: this tile's own, plus any of the neighbours' that fall within
       // reach of the edge, so a straddling tuft is drawn by both.
@@ -8315,7 +8553,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function onRoadway(x,y,pad,lists){
     // Out in the world the only roadway is the plaza you start on (PR4 adds
     // the dirt areas to this test).
-    if(gameMode==='openworld') return owOnRoadway(x, y, pad);
+    if(gameMode==='openworld') return owOnRoadway(x, y, pad, lists);
     if(gameMode==='survival'){
       if(dist(x,y,WORLD_W/2,WORLD_H/2) < SURV_PLAZA_R+pad) return true;
       return survRoadDist(x,y) < LANE_HALF+pad;
@@ -11241,12 +11479,24 @@ window.addEventListener('DOMContentLoaded', function(){
 
   // ---------- neutral jungle camps ----------
   function spawnCamp(camp){
-    for(let i=0;i<CAMP_SIZE;i++){
-      const a = i/CAMP_SIZE*Math.PI*2;
-      neutralCreeps.push({ x: camp.x+Math.cos(a)*28, y: camp.y+Math.sin(a)*28,
-        hp:NEUTRAL_HP, maxHp:NEUTRAL_HP, flash:0, engaged:false, r:NEUTRAL_R, dmg:NEUTRAL_DMG,
-        big:false, neutral:true, camp, xp:NEUTRAL_XP, atkCd:rand(0,0.5), kx:0, ky:0, kt:0, hitT:0, hpLag:1,
-        levelGlow:0, glowCol:null,
+    const roster = camp.roster;
+    const n = roster ? camp.n : CAMP_SIZE;
+    // Today's fixed 28 would stack four or five r-29 mediums inside one
+    // another — the chord between neighbours at 28 is 47 against a 58 diameter,
+    // and creeps are never pushed apart from each other. A camp with a roster
+    // gets a ring wide enough for what is standing in it; a camp without one
+    // is every other mode's camp, at exactly 28.
+    let rMax = NEUTRAL_R;
+    if(roster) for(const k of roster) rMax = Math.max(rMax, NEUTRAL_KINDS[k].r);
+    const rad = roster ? Math.max(28, rMax/Math.sin(Math.PI/Math.max(2, n)) + 4) : 28;
+    for(let i=0;i<n;i++){
+      const kind = NEUTRAL_KINDS[roster ? roster[i] : 0];
+      const a = i/n*Math.PI*2;
+      neutralCreeps.push({ x: camp.x+Math.cos(a)*rad, y: camp.y+Math.sin(a)*rad,
+        hp:kind.hp, maxHp:kind.hp, flash:0, engaged:false, r:kind.r, dmg:kind.dmg,
+        big:kind.big, neutral:true, camp, xp:kind.xp, atkCd:rand(0,0.5), kx:0, ky:0, kt:0, hitT:0, hpLag:1,
+        speed:kind.speed, atk:kind.atk, leash:kind.leash,
+        levelGlow:0, glowCol:null, lastAttacker:null, lastAttackerT:0,
         animDist:0, apx:camp.x, apy:camp.y, moving:0, face:1 });
       camp.alive++;
     }
@@ -11321,12 +11571,20 @@ window.addEventListener('DOMContentLoaded', function(){
       // does not wander home either. This check was missing entirely, so the
       // rocket's stun mark appeared over forest mobs that carried on as normal.
       if(isStunned(n)){ resolveSolidCollision(n); continue; }
-      if(target && homeD < NEUTRAL_LEASH){
+      // A medium keeps chasing whoever last hit it, the way the apex does —
+      // without it, every camp in the game is shot from beyond its 250 aggro at
+      // no risk at all, and an 880-hp mob under that rule is a 35-second
+      // stationary target rather than a harder fight.
+      if(n.lastAttackerT > 0){
+        n.lastAttackerT -= dt;
+        if(!target && n.lastAttacker && n.lastAttacker.alive) target = n.lastAttacker;
+      }
+      if(target && homeD < (n.leash || NEUTRAL_LEASH)){
         const d = dist(n.x,n.y,target.x,target.y);
         if(d > n.r+target.r+4){
           if(n.kt<=0){
             const dx=target.x-n.x, dy=target.y-n.y, len=Math.max(1,Math.sqrt(dx*dx+dy*dy));
-            n.x += dx/len*NEUTRAL_SPEED*dt; n.y += dy/len*NEUTRAL_SPEED*dt;
+            n.x += dx/len*(n.speed || NEUTRAL_SPEED)*dt; n.y += dy/len*(n.speed || NEUTRAL_SPEED)*dt;
           }
         } else if(n.atkCd<=0){
           n.atkCd = NEUTRAL_ATK_INTERVAL;
@@ -11372,7 +11630,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // SURV_APEX_FROM in survivalWave.
   function updateApexRoam(dt){
     if(tut.on) return;
-    for(const band of ['top','bottom']){
+    if(gameMode === 'openworld') owApexTick(dt);
+    else for(const band of ['top','bottom']){
       const slot = apexSlots[band];
       if(slot.mob && neutralCreeps.indexOf(slot.mob) < 0) slot.mob = null;   // died since
       if(slot.mob) continue;
@@ -11385,8 +11644,17 @@ window.addEventListener('DOMContentLoaded', function(){
       spawnApex(band, p);
       slot.timer = APEX_RESPAWN;
     }
+    // A giant far from every hero stays where it is; its bowl is not a place
+    // anything is happening in.
+    const apexAwake = (n) => {
+      if(!n.area) return true;
+      for(const h of playerTeam){ if(h.alive && dist(h.x, h.y, n.x, n.y) < OW_APEX_TICK_R) return true; }
+      return false;
+    };
     for(const n of neutralCreeps){
       if(!n.huge) continue;
+      if(!apexAwake(n)) continue;
+      const area = n.area ? owAreaOf(n.area) : null;
       let target=null, bd=APEX_AGGRO;
       for(const h of playerTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
       for(const h of enemyTeam){ if(h.alive){ const d=dist(n.x,n.y,h.x,h.y); if(d<bd){bd=d;target=h;} } }
@@ -11400,9 +11668,21 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       if(n.atkCd>0) n.atkCd -= dt;
       if(isStunned(n)){ resolveSolidCollision(n); continue; }
+      // The point leash is not a bound: clearing it re-anchors at the apex's
+      // current spot on the next frame, so a hero who stays inside 300 can kite
+      // a giant any distance at all. An area apex is bounded by its BOWL — it
+      // keeps a target only while that target is in the bowl (or within two
+      // body-widths of it, which is as far as the apex itself may go).
+      if(target && area && !inDirt(area, target.x, target.y, 2*APEX_R)){
+        target = null; n.lastAttacker = null; n.lastAttackerT = 0;
+        n.chasing = false;
+        // Walk out of range rather than stand there being poked: at 10%/s it
+        // heals faster than a level-1 carry's sustained fire anyway.
+        if(dist(n.x, n.y, n.wpX, n.wpY) < 500){ const p = apexAreaPoint(area); n.wpX = p.x; n.wpY = p.y; n.wpT = rand(8,14); }
+      }
       if(target){
         if(!n.chasing){ n.chaseX=n.x; n.chaseY=n.y; n.chasing=true; }
-        if(dist(n.x,n.y,n.chaseX,n.chaseY) < APEX_LEASH){
+        if(area || dist(n.x,n.y,n.chaseX,n.chaseY) < APEX_LEASH){
           const d = dist(n.x,n.y,target.x,target.y);
           if(d > n.r+target.r+4){
             if(n.kt<=0){
@@ -11420,7 +11700,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       n.wpT -= dt;
       if(dist(n.x,n.y,n.wpX,n.wpY) < 24 || n.wpT<=0){
-        const p = apexPatchPoint(n.band);
+        const p = area ? apexAreaPoint(area) : apexPatchPoint(n.band);
         n.wpX=p.x; n.wpY=p.y; n.wpT = rand(8,14);
       }
       if(n.kt<=0){
@@ -11428,6 +11708,14 @@ window.addEventListener('DOMContentLoaded', function(){
         if(len>4){ n.x += dx/len*APEX_SPEED*dt; n.y += dy/len*APEX_SPEED*dt; }
       }
       if(n.hp < n.maxHp) n.hp = Math.min(n.maxHp, n.hp + n.maxHp*APEX_REGEN*dt);
+      // The bound itself: whatever happened this frame — a chase, a knockback,
+      // a push out of a trunk — the giant ends it inside its own bowl.
+      if(area && !inDirt(area, n.x, n.y, APEX_R)){
+        const a = Math.atan2((n.y-area.y)/area.sy, n.x-area.x);
+        const rr = dirtRadiusAt(area, a) + APEX_R - 8;
+        n.x = area.x + Math.cos(a)*rr; n.y = area.y + Math.sin(a)*rr*area.sy;
+        n.chasing = false;
+      }
       resolveSolidCollision(n);
     }
   }
@@ -12585,7 +12873,7 @@ window.addEventListener('DOMContentLoaded', function(){
     applyCreepKnockback(allyCreeps,dt);
     applyCreepKnockback(enemyCreeps,dt);
     updateNeutrals(dt);
-    if(gameMode==='regular') updateApexRoam(dt);
+    if(gameMode==='regular' || gameMode==='openworld') updateApexRoam(dt);
     updateCreepAnim(allyCreeps, dt);
     updateCreepAnim(enemyCreeps, dt);
     updateCreepAnim(neutralCreeps, dt);
@@ -14089,7 +14377,9 @@ window.addEventListener('DOMContentLoaded', function(){
     // a hero's attack range (RNG ~367+) -- without this, poking it from max
     // range never registers as a target, so it stands there "unaware" and
     // regens between hits instead of retaliating.
-    if(creep.huge && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
+    // The medium is a neutral big creep; a Match's big LANE creep is big but
+    // not neutral, so it keeps today's behaviour exactly.
+    if((creep.huge || (creep.neutral && creep.big)) && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
     sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
     addFloater(creep.x, creep.y-creep.r-6, String(dmg), dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit, false, isCrit);
     addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
@@ -14941,6 +15231,16 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     // A river is up to 267 points and there are a hundred of them in the
     // cache. Walking every point into a fresh path every frame was the whole
+    // A bowl is a landmark, so the panel shows it the way it shows water.
+    g.fillStyle = 'rgba(122,81,56,.55)';
+    for(const reg of regionCache.values())
+      for(const d of reg.dirt){
+        if(!inWin(d.x, d.y, d.r*DIRT_WOBBLE_MAX)) continue;
+        const p = mp(d.x, d.y);
+        g.beginPath();
+        g.ellipse(p.x, p.y, d.r/MM_WORLD*mmW, d.r*d.sy/MM_WORLD*mmH, 0, 0, 7);
+        g.fill();
+      }
     // cost of this panel, so each river keeps its own path in WORLD units and
     // the panel transform does the mapping — built once, stroked thereafter.
     const k = mmW/MM_WORLD;
@@ -18605,6 +18905,15 @@ window.addEventListener('DOMContentLoaded', function(){
       if(!e.alive) continue;
       sum += threatShare(dist(x, y, e.x, e.y));
     }
+    // Out in the world there is no enemy team, so the play theme would sit at
+    // zero intensity for the whole session. What is dangerous there is the
+    // wildlife that has decided to come for you: a medium or a giant with a
+    // target counts exactly as an enemy hero does.
+    if(gameMode === 'openworld')
+      for(const n of neutralCreeps){
+        if(!(n.big || n.huge) || !n.target && !(n.lastAttackerT > 0)) continue;
+        sum += threatShare(dist(x, y, n.x, n.y));
+      }
     return Math.min(1, sum);
   }
 

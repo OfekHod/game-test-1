@@ -92,6 +92,10 @@ const HOOKS = [
         for(const reg of regionCache.values()){
           for(const l of reg.lakes) out.push({ id: l.id, kind: 'lake', region: reg.key,
             box: [l.x-l.ext, l.y-l.ext, l.x+l.ext, l.y+l.ext], members: l.shore.map(t => t.id) });
+          for(const d of reg.dirt) out.push({ id: d.id, kind: 'dirt', region: reg.key,
+            box: [d.x-d.ext, d.y-d.ext, d.x+d.ext, d.y+d.ext],
+            at: { x: d.x, y: d.y, r: d.r, sy: d.sy }, apexN: d.apexN,
+            gaps: d.gaps.length, members: d.rim.map(o => o.id) });
           for(const g of reg.groves){
             const members = [];
             for(const c of g.camps){ members.push(c.id); for(const t of c.ring) members.push(t.id); }
@@ -121,6 +125,25 @@ const HOOKS = [
           .concat(c.camps.filter(k => hit(k.id)).map(k => k.id));
       },
       riverObj: (id) => rivers.find(r => r.id === id) || null,
+      inDirt: (id, x, y, pad) => { const d = dirt.find(d => d.id === id); return d ? inDirt(d, x, y, pad||0) : null; },
+      mixedCamp: () => {
+        for(const c of camps){
+          if(!c.roster) continue;
+          const m = c.roster.filter(k => k === 1).length;
+          if(m > 0 && m < c.n) return { id: c.id, x: c.x, y: c.y, n: c.n, mediums: m };
+        }
+        return null;
+      },
+      apexes: () => neutralCreeps.filter(n => n.huge).map(n => ({ x:n.x, y:n.y, area:n.area, hp:Math.round(n.hp) })),
+      campKinds: (x0, y0, x1, y1) => {
+        const out = { easy: 0, mixed: 0, whole: 0 };
+        for(const reg of regionCache.values()) for(const c of reg.camps){
+          if(c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) continue;
+          const m = c.roster ? c.roster.filter(k => k === 1).length : 0;
+          if(!m) out.easy++; else if(m >= c.n) out.whole++; else out.mixed++;
+        }
+        return out;
+      },
       wanted:   () => [...wantedSet()].sort(),
       stumps:   () => stumps.length,
       envelope: () => [WX0, WY0, WX1, WY1],

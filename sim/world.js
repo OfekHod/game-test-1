@@ -253,6 +253,58 @@ test(' 9  One object per river, however far you walk along it (PR3)', () => {
   assert.ok(hops > 1, 'never walked along the river');
 });
 
+// ---------------------------------------------------------------- PR4 -----
+// The gradient and the giants: what "further out is harder" means in numbers.
+
+test(' 6  The difficulty gradient, over ten seeds (PR4)', () => {
+  let near = { easy: 0, mixed: 0, whole: 0 }, far = { easy: 0, mixed: 0, whole: 0 };
+  for(let i=0;i<10;i++){
+    const G2 = load();
+    G2.start('openworld', 100 + i);
+    const n = G2.world.campKinds(0, 0, 4000, 4000);
+    near.easy += n.easy; near.mixed += n.mixed; near.whole += n.whole;
+    // Past the saturation distance, where §6.3 expects almost every camp to
+    // be all-medium. teleport rather than walk: no seed has a walkable route
+    // 92,000 units long inside one test.
+    G2.world.teleport(66000, 66000);
+    for(let k=0;k<300;k++) G2.step(0.05);
+    const f = G2.world.campKinds(62000, 62000, 70000, 70000);
+    far.easy += f.easy; far.mixed += f.mixed; far.whole += f.whole;
+  }
+  const nTot = near.easy + near.mixed + near.whole, fTot = far.easy + far.mixed + far.whole;
+  assert.ok(nTot > 80, 'only ' + nTot + ' camps in the start blocks');
+  assert.ok(fTot > 40, 'only ' + fTot + ' camps out at the far end');
+  const nEasy = near.easy/nTot, fWhole = far.whole/fTot;
+  console.log('        home ring: ' + (nEasy*100).toFixed(0) + '% all-easy of ' + nTot + ' camps'
+    + ' · 93k out: ' + (fWhole*100).toFixed(0) + '% all-medium, '
+    + (far.mixed/fTot*100).toFixed(0) + '% mixed of ' + fTot);
+  assert.ok(nEasy >= 0.95, 'the home ring is only ' + (nEasy*100).toFixed(0) + '% all-easy');
+  assert.ok(fWhole >= 0.55, 'the far end is only ' + (fWhole*100).toFixed(0) + '% all-medium');
+});
+
+test('11  An apex stays in its own bowl (PR4)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 11302, 16241, 12);
+  const area = G2.world.features().filter(f => f.kind === 'dirt')[0];
+  assert.ok(area, 'no dirt area out there to test');
+  assert.ok(area.gaps >= 2, 'a bowl with fewer than two ways in');
+  assert.ok(area.members.length > 12, 'a rim of only ' + area.members.length + ' objects');
+  // Stand outside the rim and poke at it, the way a hero kiting one would.
+  G2.world.teleport(area.at.x, area.at.y - area.at.r*1.6);
+  let samples = 0, out = 0;
+  for(let i=0;i<60*20;i++){
+    G2.step(0.05);
+    for(const a of G2.world.apexes()){
+      if(a.area !== area.id) continue;
+      samples++;
+      if(!G2.world.inDirt(area.id, a.x, a.y, 120)) out++;
+    }
+  }
+  assert.ok(samples > 100, 'no apex ever appeared in the bowl (' + samples + ' samples)');
+  assert.strictEqual(out, 0, 'an apex left its bowl on ' + out + ' of ' + samples + ' samples');
+});
+
 test('12  Timings and sizes (PR2)', () => {
   const G2 = load();
   const t0 = Date.now();
