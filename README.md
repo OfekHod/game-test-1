@@ -20,6 +20,8 @@ sim/               headless simulation harness (Node, no dependencies)
 tools/
   artifact-html.js  strips the document skeleton for a Claude Artifact build
   shoot.js          drives the game headless and photographs it
+  music-demo.js     the music on a page with both of its dials and a voice picker
+  sfx-demo.js       every sound effect on a soundboard
 docs/
   GAMEPLAY.md      screenshots from a played match and a survival round
   FINDINGS.md      what was measured, including what did NOT work
@@ -100,6 +102,43 @@ A match is pure CPU work, so one process only ever uses one core. `parallel.js`
 forks one worker per available core and hands out matches from a shared queue;
 on a 4-core machine it finishes a batch in roughly a third of the time. It
 detects the core count itself (`--workers N` or `SIM_WORKERS=N` to override).
+
+## Adaptive music
+
+The match theme answers two questions about where you are standing, on two
+separate axes, and it answers them differently on purpose.
+
+**Enemy heroes — the threat.** A share per living enemy hero, one over the
+distance, 1 at 250 units and 0 at 1600, added and capped. It brings a celeste
+above everything else in the piece, then a pulse, then a heartbeat and a held
+minor ninth. The layer you can hear is a head count: one hero gets the celeste
+and cannot reach the pulse, two get the pulse, only three get the dread.
+
+**Mobs — the forest.** The same arithmetic over the neutral camps: 1 at 300
+units and 0 at 1100, with the apex counted from 1.8× further out. This is good
+news, not bad, so it never touches the celeste and never sours anything. It
+plays one of four forest voices instead, and there is exactly one live at a
+time:
+
+| | |
+|---|---|
+| `grove` | **Rosewood** — a marimba lilting three against the four-beat bar |
+| `hunt` | **Hand drums** — palm, heel and fingers, no pitch at all, and a bass that walks |
+| `glade` | **Glass hum** — a held hum over the chord with a low bell in the gaps |
+| `horns` | **Horn call** — two long calls a chord, a fifth apart, answered at the top |
+
+`index.html?mob=grove` (or `hunt`, `glade`, `horns`) picks one, on any protocol
+including the published build. The forest fades out completely as the threat
+rises and is silent from the beat the celeste speaks, so the two cues can never
+argue — in Open World, where there are no enemy heroes, it is open all round.
+
+`?musicdebug` draws both rings around the hero you are driving and prints both
+numbers, which voice is live, and how many mobs are feeding the second one.
+
+To hear it without playing, `node tools/music-demo.js out.html` writes a page
+with both dials, the voice picker and a meter per layer. The synth and both
+pieces are lifted out of `index.html` between the `music:engine` markers, so
+what is auditioned there is what plays in the game.
 
 ## Fast-forward
 
