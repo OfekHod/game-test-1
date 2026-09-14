@@ -51,7 +51,7 @@ const HOOKS = [
   ['  window.__laneLoaded = true;',
    `  window.__laneLoaded = true;
   globalThis.__GAME = {
-    start: (mode) => { globalThis.__M = blankMetrics(); startRound(mode || 'regular'); },
+    start: (mode, seed) => { globalThis.__M = blankMetrics(); startRound(mode || 'regular', seed); },
     step:  (dt)   => update(dt),
     state: () => ({
       t: ROUND_TIME - timeLeft, left: timeLeft, dur: ROUND_TIME,
@@ -62,7 +62,14 @@ const HOOKS = [
         hp: Math.round(h.maxHp), range: Math.round(attackRange(h)) })),
       orbsOnField: xpOrbs.length,
       m: globalThis.__M
-    })
+    }),
+    // What sim/world.js asks the world about itself. Generation state only —
+    // a match report has no use for it, and nothing here may be a getter,
+    // since load() wraps each one so the game's timers stay unref'd.
+    world: {
+      rngLeaked: () => genRng !== null,
+      genDepth:  () => genDepth
+    }
   };`]
 ];
 
@@ -106,7 +113,12 @@ function load(edits){
   // here, and inside each call the script makes into the game.
   const G = inGame(() => { require(file); return globalThis.__GAME; })();
   fs.unlinkSync(file);
-  return { start: inGame(G.start), step: inGame(G.step), state: inGame(G.state) };
+  // world is wrapped the same way, one function at a time — it is game code
+  // like any other, and an unwrapped call would leave a timer holding Node
+  // open after the script is done.
+  const world = {};
+  for(const k of Object.keys(G.world || {})) world[k] = inGame(G.world[k]);
+  return { start: inGame(G.start), step: inGame(G.step), state: inGame(G.state), world };
 }
 function inGame(fn){
   return (...args) => {

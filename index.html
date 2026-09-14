@@ -4626,7 +4626,35 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.fillRect(x, y, w*Math.max(0,Math.min(1,frac)), h);
   }
 
-  function rand(a,b){ return a + Math.random()*(b-a); }
+  // Open World builds its world out of a seed, and the one thing that can
+  // silently break "same seed, same world" is a draw that did not come from
+  // that seed. So generation runs with an explicit stream in genRng and a
+  // depth counter raised around it: a rand() taken while genDepth is up is a
+  // leak, and ?owdebug turns it into a throw rather than a world that quietly
+  // differs the second time you visit it. sim/world.js poisons Math.random
+  // the same way. Match, Survival and the tutorial generate at depth 0 with
+  // genRng null, which is exactly what they did before any of this existed.
+  //
+  // OW_DEBUG is parsed like FF further down — typeof-guarded, because
+  // sim/stub.js has no location — but on any protocol, since the published
+  // build is where a hand test wants the asserts. It is declared up here
+  // rather than beside FF so that rand() can never read it through the
+  // temporal dead zone, and it is a let read at every use: OW_DEBUG = true in
+  // the console arms it for the rest of the page's life.
+  let OW_DEBUG = typeof location !== 'undefined' && /(?:^|[?&])owdebug(?:=|&|$)/.test(location.search || '');
+  let worldSeed = 0;        // the seed of the Open World round being played
+  let pendingSeed = null;   // what the title screen's seed box asked for
+  let genRng = null, genDepth = 0;
+  function rand(a,b){
+    if(OW_DEBUG && genDepth > 0) throw new Error('unseeded draw inside generation');
+    return a + (genRng ? genRng() : Math.random())*(b-a);
+  }
+  // Runs fn with r as the ambient stream. Kept for exactly two jobs: the bird
+  // schedule, and seeding another mode's terrain later if that is ever
+  // wanted. Generation proper hands its streams down explicitly instead, so
+  // nothing has to remember to unset anything.
+  function withRng(r, fn){ const prev = genRng; genRng = r; try { return fn(); } finally { genRng = prev; } }
+  function ranged(rng){ return (a,b) => a + rng()*(b-a); }   // a stream, as a (lo,hi) draw
   function dist(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return Math.sqrt(dx*dx+dy*dy); }
   function fmtTime(t){ const m=Math.floor(t/60), s=Math.floor(t%60); return m+':'+String(s).padStart(2,'0'); }
   function angleDiff(a,b){ let d=b-a; while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2; return d; }
@@ -4635,9 +4663,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // its own r times the variant's k times its jitter, so two trees of the same
   // collision radius still come out different heights. r itself is untouched —
   // what a tree blocks is exactly what it blocked before it had a shape.
-  function makeTree(x,y){
-    const t = { x, y, r: rand(TREE_MIN_R,TREE_MAX_R), v: Math.floor(Math.random()*TREE_FRAMES.length),
-      flip: Math.random()<0.5 ? -1 : 1, rot: rand(-0.08,0.08), sc: rand(0.9,1.16),
+  //
+  // R is the draw a tree is made of: rand for the maps that were always
+  // unseeded, a grove's or a chunk's own stream once a world has one. Same
+  // draws in the same order either way, so a Match tree comes out of this
+  // exactly as it did before the argument existed.
+  function makeTree(x,y,R){
+    R = R || rand;
+    const t = { x, y, r: R(TREE_MIN_R,TREE_MAX_R), v: Math.floor(R(0,1)*TREE_FRAMES.length),
+      flip: R(0,1)<0.5 ? -1 : 1, rot: R(-0.08,0.08), sc: R(0.9,1.16),
       chops: 0, barT: 0, shakeT: 0 };
     sizeTree(t);
     return t;
@@ -4763,14 +4797,23 @@ window.addEventListener('DOMContentLoaded', function(){
     const a = flowAlign(x, y, dx, dy);
     return a <= 0 ? 1 : (WATER_SLOW + (WATER_WITH - WATER_SLOW)*a)/WATER_SLOW;
   }
-  function nearWater(x,y,pad){
+  // The keep-out tests below read the world's lists, and every one of them
+  // takes an optional bundle — {lakes, rivers, camps, trees, props, dirt,
+  // towers} — to read instead. Generation in an endless world is not looking
+  // at the world on screen: a chunk is built before anything can see it, out
+  // of features the globals do not hold and may never hold at once. Leave the
+  // argument off and they read the globals, which is every call that exists
+  // today. The bundle is consulted at call time rather than captured in a
+  // default, because buildMap replaces these arrays instead of emptying them.
+  function nearWater(x,y,pad,lists){
+    const _lakes = lists ? lists.lakes : lakes, _rivers = lists ? lists.rivers : rivers;
     // Measured in the lake's round space and then charged the squash, so the
     // keep-out hugs a squashed lake instead of the circle it was cut from.
-    for(const l of lakes){
+    for(const l of _lakes){
       const dx = x-l.x, dy = (y-l.y)/l.sy;
       if((Math.sqrt(dx*dx+dy*dy) - l.r*LAKE_WOBBLE_MAX)*l.sy < pad) return true;
     }
-    for(const rv of rivers){
+    for(const rv of _rivers){
       const p=rv.pts;
       for(let i=0;i<p.length-1;i++)
         if(pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y) < rv.w*0.5+pad) return true;
@@ -4947,8 +4990,16 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     return false;
   }
-  function nearAnyTower(x,y,pad){
-    for(const t of playerTowers.concat(enemyTowers)){ if(dist(x,y,t.x,t.y) < pad) return true; }
+  // The towers an Open World chunk keeps away from: the one base at the middle
+  // of the start map, as a constant rather than the live arrays. A chunk built
+  // before the round is up — or after a Match has left its own towers in the
+  // globals — has to see the same keep-outs as one built while the world is
+  // running, or the same seed stops meaning the same world.
+  const OW_TOWERS = [{ x: 2000, y: 2000 }];
+  function nearAnyTower(x,y,pad,lists){
+    for(const t of (lists ? lists.towers : playerTowers.concat(enemyTowers))){
+      if(dist(x,y,t.x,t.y) < pad) return true;
+    }
     return false;
   }
   // Camps sit in a clearing ringed by trees, so a camp is invisible from
@@ -5084,7 +5135,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const CLUMP_COUNT = 6, CLUMP_MIN = 3, CLUMP_MAX = 4, CLUMP_GAP = 46;
   function scatterClumps(){
     for(let i=0;i<CLUMP_COUNT;i++){
-      const n = CLUMP_MIN + Math.floor(Math.random()*(CLUMP_MAX-CLUMP_MIN+1));
+      const n = CLUMP_MIN + Math.floor(rand(0,1)*(CLUMP_MAX-CLUMP_MIN+1));
       const half = (n-1)/2;
       for(let att=0; att<140; att++){
         const cx = rand(WORLD_W*0.30, WORLD_W*0.70);
@@ -5103,7 +5154,7 @@ window.addEventListener('DOMContentLoaded', function(){
           if(ok) for(const t of trees){ if(dist(x,y,t.x,t.y) < 120){ ok = false; break; } }
         }
         if(!ok) continue;
-        const v = Math.floor(Math.random()*TREE_FRAMES.length);   // one line, one kind
+        const v = Math.floor(rand(0,1)*TREE_FRAMES.length);   // one line, one kind
         for(let k=0;k<n;k++){
           const t = makeTree(cx + ux*(k-half)*CLUMP_GAP, cy + uy*(k-half)*CLUMP_GAP);
           t.v = v; sizeTree(t);
@@ -5142,8 +5193,8 @@ window.addEventListener('DOMContentLoaded', function(){
     // walk through is set by the collide radius, which never moved, so the camp
     // is as enterable as it always was.
     for(const c of camps){
-      const n = 7 + Math.floor(Math.random()*4);
-      const b = FOREST_BUSH_FRAMES[Math.floor(Math.random()*FOREST_BUSH_FRAMES.length)];
+      const n = 7 + Math.floor(rand(0,1)*4);
+      const b = FOREST_BUSH_FRAMES[Math.floor(rand(0,1)*FOREST_BUSH_FRAMES.length)];
       for(let i=0;i<n;i++){
         const a = i/n*Math.PI*2 + rand(-0.16,0.16);
         const rr = CAMP_RING_R + rand(-22,30);
@@ -5185,8 +5236,8 @@ window.addEventListener('DOMContentLoaded', function(){
     while(loose < TREE_COUNT && attempts < TREE_COUNT*30){
       attempts++;
       const cx = rand(220, WORLD_W-220), cy = rand(220, WORLD_H-220);
-      const v = Math.floor(Math.random()*TREE_FRAMES.length);
-      const n = TREE_PATCH_MIN + Math.floor(Math.random()*(TREE_PATCH_MAX-TREE_PATCH_MIN+1));
+      const v = Math.floor(rand(0,1)*TREE_FRAMES.length);
+      const n = TREE_PATCH_MIN + Math.floor(rand(0,1)*(TREE_PATCH_MAX-TREE_PATCH_MIN+1));
       for(let i=0; i<n && loose<TREE_COUNT; i++){
         const x = cx + rand(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD);
         const y = cy + rand(-TREE_PATCH_SPREAD, TREE_PATCH_SPREAD)*0.75;
@@ -5242,7 +5293,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // different ones reads as clutter that happened to land near water.
     let v = 0;
     function tryAt(x, y){
-      if(Math.random() > SHORE_TREE_CHANCE) return;
+      if(rand(0,1) > SHORE_TREE_CHANCE) return;
       if(x<220 || y<220 || x>WORLD_W-220 || y>WORLD_H-220) return;
       if(extra && !extra(x, y)) return;
       if(onRoadway(x, y, pad)) return;
@@ -5258,7 +5309,7 @@ window.addEventListener('DOMContentLoaded', function(){
       trees.push(t);
     }
     for(const l of lakes){
-      v = Math.floor(Math.random()*TREE_FRAMES.length);
+      v = Math.floor(rand(0,1)*TREE_FRAMES.length);
       for(let i=0;i<SHORE_LAKE_SAMPLES;i++){
         const a = i/SHORE_LAKE_SAMPLES*Math.PI*2 + rand(-0.2, 0.2);
         // Step outward from the shoreline until the trunk is clear of it: on a
@@ -5274,7 +5325,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
     for(const rv of rivers){
-      v = Math.floor(Math.random()*TREE_FRAMES.length);
+      v = Math.floor(rand(0,1)*TREE_FRAMES.length);
       for(let i=1;i<rv.pts.length-1;i+=2){
         const a = rv.pts[i-1], b = rv.pts[i+1];
         let nx = -(b.y-a.y), ny = (b.x-a.x);
@@ -6719,6 +6770,18 @@ window.addEventListener('DOMContentLoaded', function(){
       return ((t ^ t>>>14) >>> 0) / 4294967296;
     };
   }
+  // One stream per concern, named by what it draws and where — never by when
+  // it was drawn, because the order a world is walked into is the player's
+  // business and not the map's. hashInt folds the seed, a salt and the
+  // feature's own coordinates into the state; hashStr does the same for the
+  // string ids that name a feature inside a region ('r1,0:g2:c3'), so that a
+  // camp's ring of bushes and that camp's slot in its grove draw from
+  // different places whichever chunk asked for them first. Two discards after
+  // seeding: mulberry's first output leans on the low bits of its state.
+  function hashInt(...ns){ let h = 0x811C9DC5|0; for(const n of ns){ h ^= n|0; h = Math.imul(h, 0x01000193); h ^= h>>>13; } return h|0; }
+  function hashStr(str){ let h = 0x811C9DC5|0; for(let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h|0; }   // FNV-1a, int32
+  function streamFor(salt, ax, ay){ const r = mulberry(hashInt(worldSeed, salt, ax, ay)); r(); r(); return r; }
+  const SALT = { river:1, region:2, ring:3, trees:4, shore:5, props:6, mottle:7, tufts:8, birds:9, plaza:10, stand:11 };
   function roadOutline(pts, half){
     const L=[], R=[];
     for(let i=0;i<pts.length;i++){
@@ -6846,15 +6909,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // ten fewer bases in a hundred and twenty. At TOWER_RANGE + 120 it goes away.
   const DECOR_ROAD_KEEP = 130, DECOR_TOWER_KEEP = TOWER_RANGE + 120, DECOR_WATER_KEEP = 24;
   const DECOR_CAMP_KEEP = 90;      // beyond the camp ring, so a clearing stays clear
-  function decorSpotClear(x, y){
+  function decorSpotClear(x, y, lists){
     if(x < 200 || y < 200 || x > WORLD_W-200 || y > WORLD_H-200) return false;
-    if(onRoadway(x, y, DECOR_ROAD_KEEP)) return false;
-    if(nearWater(x, y, DECOR_WATER_KEEP)) return false;
-    if(nearAnyTower(x, y, DECOR_TOWER_KEEP)) return false;
-    for(const c of camps){ if(dist(x,y,c.x,c.y) < CAMP_RING_R + DECOR_CAMP_KEEP) return false; }
+    if(onRoadway(x, y, DECOR_ROAD_KEEP, lists)) return false;
+    if(nearWater(x, y, DECOR_WATER_KEEP, lists)) return false;
+    if(nearAnyTower(x, y, DECOR_TOWER_KEEP, lists)) return false;
+    for(const c of (lists ? lists.camps : camps)){ if(dist(x,y,c.x,c.y) < CAMP_RING_R + DECOR_CAMP_KEEP) return false; }
     // Never inside a trunk. A prop and a tree both push you out, and two
     // keep-outs on the same spot is a corner a hero can wedge into.
-    for(const t of trees){ if(dist(x,y,t.x,t.y) < t.r + 60) return false; }
+    for(const t of (lists ? lists.trees : trees)){ if(dist(x,y,t.x,t.y) < t.r + 60) return false; }
     // The tutorial's practice ground stays clear of anything solid, on the same
     // rule as its trees: a step aims at where you stand, and a lesson has no
     // business putting a boulder between you and its target.
@@ -6872,8 +6935,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // bushes is what a hillside looks like; it is a bush beside a different bush
   // that looks like a mistake.
   const SAME_KIND_KEEP = 1.25;   // in units of the wider of the two sprites
-  function mixesWithNeighbour(x, y, kind, f, w){
-    for(const d of props){
+  function mixesWithNeighbour(x, y, kind, f, w, lists){
+    for(const d of (lists ? lists.props : props)){
       if(d.kind !== kind || d.f === f) continue;
       const reach = (d.w > w ? d.w : w)*SAME_KIND_KEEP;
       if(Math.abs(d.x-x) > reach || Math.abs(d.y-y) > reach) continue;   // cheap reject first
@@ -6889,8 +6952,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // patches. Spacing the centres means the count is a ceiling rather than a
   // quota: what does not fit with room around it simply does not get placed.
   const PATCH_CLEAR = 320;
-  function patchRoom(x, y, kind){
-    for(const d of props){
+  function patchRoom(x, y, kind, lists){
+    for(const d of (lists ? lists.props : props)){
       if(d.kind !== kind) continue;
       if(Math.abs(d.x-x) > PATCH_CLEAR || Math.abs(d.y-y) > PATCH_CLEAR) continue;
       if(dist(x, y, d.x, d.y) < PATCH_CLEAR) return false;
@@ -6953,7 +7016,11 @@ window.addEventListener('DOMContentLoaded', function(){
     g.fillStyle='rgba(240,243,247,.55)';
     g.beginPath(); g.ellipse(-w*0.12, -h*0.52, w*0.22, h*0.16, -0.3, 0, 7); g.fill();
   }
-  function onRoadway(x,y,pad){
+  // lists comes in from the decor helpers so a generated chunk can be tested
+  // against its own world rather than the one on screen. Nothing in a bundle
+  // bears on a roadway yet — lanes and the arena's ring are fixed geometry —
+  // so it is accepted and passed no further.
+  function onRoadway(x,y,pad,lists){
     if(gameMode==='survival'){
       if(dist(x,y,WORLD_W/2,WORLD_H/2) < SURV_PLAZA_R+pad) return true;
       return survRoadDist(x,y) < LANE_HALF+pad;
@@ -15516,7 +15583,39 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   let lastMode = 'regular';
-  function startRound(mode){
+  // A seed off a shared link. Read at call time rather than at load, and
+  // typeof-guarded like FF: there is no location under Node. Not file-only,
+  // unlike ?speed — a seed is the one thing about a world that has to survive
+  // being pasted into a chat.
+  function seedFromUrl(){
+    if(typeof location === 'undefined') return null;
+    const m = /(?:^|[?&])seed=(-?\d+)/.exec(location.search || '');
+    return m ? (parseInt(m[1], 10) | 0) : null;
+  }
+  // Best-effort, and silent when it cannot: file:// raises a SecurityError on
+  // an origin-null document, and inside the artifact host the address bar
+  // belongs to the host. So the seed a tester copies is the one printed on the
+  // HUD and the pause panel, never this. ?speed and the rest of the query
+  // survive, since only the one parameter is set.
+  function rememberSeedInUrl(){
+    try{
+      if(typeof history === 'undefined' || typeof location === 'undefined') return;
+      if(!/^https?:/.test(location.protocol)) return;
+      const u = new URL(location.href);
+      u.searchParams.set('seed', worldSeed);
+      history.replaceState(null, '', u);
+    }catch(e){}
+  }
+  // An Open World round IS its seed, so one that arrives without an integer is
+  // a bug rather than a world: throw before anything is touched, instead of
+  // quietly building seed 0 and handing it over as the world somebody asked
+  // for. Every way in — the title button, "Play this world again", Play Again,
+  // the harness — passes it explicitly; the other three modes ignore it.
+  function startRound(mode, seed){
+    if(mode === 'openworld'){
+      if(!Number.isInteger(seed)) throw new Error('openworld needs an integer seed');
+      worldSeed = seed | 0;
+    }
     setPaused(false);                  // a fresh round never opens frozen, whatever the last one left behind
     lastMode = mode;
     gameMode = (mode==='survival') ? 'survival' : 'regular';
@@ -15605,6 +15704,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     if(mode === 'tutorial') tutStart();
     else tutStop();
+    if(mode === 'openworld') rememberSeedInUrl();
   }
   function endRound(reason){
     state='ended';
@@ -15699,7 +15799,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // menu's life on screen match. Leaving the end screen (Play Again) does
   // not: that panel never had a page to turn, so it still cuts straight to
   // the loading panel underneath, as it always has.
-  function guardedStart(mode){
+  // The seed rides all the way in untouched — guardedStart to beginRoundLoad
+  // to the double rAF to startRound — and is undefined for Match, Survival and
+  // the tutorial, which never look at it. Without the whole chain carrying it,
+  // startRound's throw above would fire on every Open World start from a
+  // button.
+  function guardedStart(mode, seed){
     if(loadingRound) return;
     loadingRound = true;
     if(!startScreen.classList.contains('hidden')){
@@ -15712,7 +15817,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // for the turn to finish — nothing else in beginRoundLoad needs to.
       startScreen.classList.add('turning');
       sfxPageTurn();
-      beginRoundLoad(mode);
+      beginRoundLoad(mode, seed);
       clearTimeout(turnTimer);
       turnTimer = setTimeout(()=>{
         startScreen.classList.add('hidden');
@@ -15720,10 +15825,10 @@ window.addEventListener('DOMContentLoaded', function(){
       }, INTRO_TURN_MS);
     } else {
       startScreen.classList.add('hidden');
-      beginRoundLoad(mode);
+      beginRoundLoad(mode, seed);
     }
   }
-  function beginRoundLoad(mode){
+  function beginRoundLoad(mode, seed){
     const myToken = ++roundLoadToken;
     endScreen.classList.add('hidden');
     // Sky first, then the panel on top of it. Both go up in this same tick so
@@ -15787,7 +15892,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // the panel never appears at all.
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       try{
-        startRound(mode);
+        startRound(mode, seed);
         roundHold = true;
         warmFrames = 0;
         warmRoundCaches();
@@ -15860,7 +15965,8 @@ window.addEventListener('DOMContentLoaded', function(){
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
   });
   // Play Again goes through the load screen too, like every other way in.
-  bindTap(restartBtn, ()=>guardedStart(lastMode));
+  // Play Again replays the world you were in, not a new one.
+  bindTap(restartBtn, ()=>guardedStart(lastMode, worldSeed));
 
   // The round length is ROUND_TIME and nowhere else. The button and the idle
   // clock used to be hand-typed, and both read 5:00 against a ten-minute round.
