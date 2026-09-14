@@ -14144,7 +14144,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
     try { for(let i=1;i<FF;i++) update(dt);
-          update(dt); render(); syncThemeColor(); if(roundHold) warmFrames++; }
+          update(dt); render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
@@ -16395,7 +16395,209 @@ window.addEventListener('DOMContentLoaded', function(){
       tone(master, t2 + 0.15, 'triangle', 165 * j, 80 * j, 0.15, 0.18, 0.02);
     }
 
-    return { impact, shot, pickup, teleport, pageTurn, levelUp, heal, master, kinds: Object.keys(IMPACT) };
+    /* ------------------------------------------------------- river voice
+
+       Everything above is a one-shot: something happened, here is the sound
+       of it. Wading is not an event, it is a place you are standing in, so
+       this is the one sustained thing in the file — a graph built once, left
+       running, and steered by a level the frame loop sets every frame. It is
+       never scheduled and never torn down, because a voice rebuilt each time
+       you enter the water clicks on every bank, and a river you cross four
+       times in a push would click eight times.
+
+       It is the only thing in the file that is heard CONTINUOUSLY, and that
+       changes what a level means: a tick you hear for 90ms and a drone you
+       hear for a minute at the same number are not the same sound at all. So
+       it is set against measurements off this same bus, rendered offline,
+       rather than against a feeling. A creep hit — the quietest thing in the
+       game you actually have to react to — peaks around -24.6dBFS and
+       measures -45 RMS across its 300ms. The river lands at -28.4 peak and
+       -39.4 RMS over the same window: four decibels under that tick's peak,
+       so it can never mask one, and nowhere near the bus compressor's -15dB
+       threshold, so standing in a river never ducks anything.
+
+       Two passes to get there, and the errors went opposite ways, which is
+       why both numbers are written down. The first sat 13dB above where it is
+       now — LOUDER in peak than being hit is, and hot enough to lean on that
+       compressor and duck every sound in the game for as long as you were in
+       the water. Correcting it by ear-free arithmetic then overshot: at
+       -34.4 peak the river was inaudible under the match track, which for an
+       ambience is the same as not shipping it. This is that reading plus
+       6dB, tested by the person who could not hear the quiet one.
+
+       Three layers:
+
+        - The voice. Three of them, on D, the A above it and the D above that
+          — an open fifth and its octave, rooted on the note both pieces of
+          music are written on (D major over the menu, D mixolydian under a
+          match), so the drone is consonant with whatever is playing rather
+          than a second key arguing with the first. Each note
+          is a sine for the body and a sawtooth a few cents off it for the
+          formants to bite on; the beating between the two is most of the
+          difference between a choir and an organ. The sawtooth is shaped by
+          a pair of bandpasses at 600 and 1100Hz, which is roughly where an
+          "ooh" lives, and the whole thing breathes on a 0.23Hz vibrato —
+          slow enough to read as a held breath rather than as a singer.
+        - The water under it: looped noise through a lowpass that two slow
+          LFOs wander. The rates (0.071 and 0.113Hz) are deliberately not
+          related, so the pattern never comes round on an interval an ear can
+          catch, which is the whole reason it reads as a river rather than as
+          a loop of one.
+        - The wade, the only layer that knows you are MOVING: a brighter band
+          over the top, opened by how fast you are going. Standing in the
+          water is a burble; walking through it is the same water with the
+          tops of the ripples turned up. Against a control render that never
+          starts walking it is worth between 1.6 and 2.3dB of level — the
+          spread is the bed's own LFO, which is at a different point of its
+          wander in each window — and about 15dB of the band above 1kHz:
+          walking changes the COLOUR of the river far more
+          than its loudness, which is what a stride through water actually
+          does, and which is also why a layer you can hear plainly costs the
+          mix nothing.
+
+       Its own noise buffer rather than the half-second one the transients
+       share: half a second held under a filter is a 2Hz flutter, and once
+       you have heard it you cannot stop. Four and a bit seconds, read at two
+       unrelated rates by the two noise layers, is long enough that there is
+       nothing left to hear. */
+    const RIVER_NOTES = [50, 57, 62];       // D3, A3, D4 — an open fifth and its octave
+    const RIVER_BED_HZ = 620;               // where the water sits before the LFOs move it
+    const RIVER_BED_SWING = 300;            // and how far they move it either way
+    let riverRig = null;
+    function riverVoice(){
+      if(riverRig) return riverRig;
+
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      let pan = null;
+      if(ctx.createStereoPanner){
+        pan = ctx.createStereoPanner();
+        out.connect(pan); pan.connect(master);
+      } else out.connect(master);
+
+      // Deterministic, like every other noise in the file: two builds must
+      // sound identical.
+      const bedBuf = (function(){
+        const n = Math.floor(sr * 4.3);
+        const b = ctx.createBuffer(1, n, sr);
+        const d = b.getChannelData(0);
+        const r = rng(51724);
+        // One pole of smoothing on the way in. White noise under a lowpass is
+        // a hiss being muffled; this is already water before the filter gets
+        // to it, and the filter then only has to decide how far away it is.
+        let v = 0;
+        for(let i = 0; i < n; i++){ v += (r() * 2 - 1 - v) * 0.22; d[i] = v * 2.6; }
+        return b;
+      })();
+
+      function noiseLayer(rate, offset, filt, hz, q, amp){
+        const s = ctx.createBufferSource();
+        s.buffer = bedBuf; s.loop = true; s.playbackRate.value = rate;
+        const f = ctx.createBiquadFilter();
+        f.type = filt; f.frequency.value = hz; f.Q.value = q;
+        const g = ctx.createGain();
+        g.gain.value = amp;
+        s.connect(f); f.connect(g);
+        s.start(ctx.currentTime, offset);
+        return { f, g };
+      }
+
+      // The bed, and a highpass on the way out of it: a river has no rumble
+      // in it, and what little the noise has down there only muddies the
+      // guitar sitting in the same place.
+      const bed = noiseLayer(0.83, 0.0, 'lowpass', RIVER_BED_HZ, 0.9, 0.034);
+      const bedHp = ctx.createBiquadFilter();
+      bedHp.type = 'highpass'; bedHp.frequency.value = 150; bedHp.Q.value = 0.6;
+      bed.g.connect(bedHp); bedHp.connect(out);
+
+      // Two LFOs on the bed's cutoff rather than one, at rates with no common
+      // multiple worth the name. One is a wobble; two is weather.
+      for(const [rate, depth] of [[0.071, RIVER_BED_SWING], [0.113, RIVER_BED_SWING * 0.45]]){
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine'; lfo.frequency.value = rate;
+        const amt = ctx.createGain();
+        amt.gain.value = depth;
+        lfo.connect(amt); amt.connect(bed.f.frequency);
+        lfo.start();
+      }
+
+      // The wade. Its gain is what the frame loop opens and closes, so it
+      // starts shut: stepping into a river you are already standing still in
+      // should be the burble alone.
+      const wade = noiseLayer(1.27, 1.7, 'bandpass', 1500, 0.75, 0.0);
+      wade.g.connect(out);
+
+      // The singers. Quiet enough that on a first listen it is the water that
+      // has gone warm rather than a second instrument having started.
+      const voiceBus = ctx.createGain();
+      voiceBus.gain.value = 0.012;
+      voiceBus.connect(out);
+      const body = ctx.createBiquadFilter();
+      body.type = 'lowpass'; body.frequency.value = 1400; body.Q.value = 0.7;
+      body.connect(voiceBus);
+      const formants = [[600, 4.5, 0.9], [1100, 6.0, 0.45]].map(([hz, q, amp]) => {
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass'; f.frequency.value = hz; f.Q.value = q;
+        const g = ctx.createGain();
+        g.gain.value = amp;
+        f.connect(g); g.connect(voiceBus);
+        return f;
+      });
+      const vib = ctx.createOscillator();
+      vib.type = 'sine'; vib.frequency.value = 0.23;
+      const vibAmt = ctx.createGain();
+      vibAmt.gain.value = 6;                 // cents: a sixteenth of a tone, a breath rather than a wobble
+      vib.connect(vibAmt); vib.start();
+      RIVER_NOTES.forEach((note, i) => {
+        const f = mtof(note);
+        // The octave is a third the weight of the fifth below it: it is there
+        // for air, not for another note to hear.
+        const w = i === 2 ? 0.34 : 1;
+        const sine = ctx.createOscillator();
+        sine.type = 'sine'; sine.frequency.value = f; sine.detune.value = -5;
+        const sg = ctx.createGain(); sg.gain.value = 0.30 * w;
+        sine.connect(sg); sg.connect(body);
+        const saw = ctx.createOscillator();
+        saw.type = 'sawtooth'; saw.frequency.value = f; saw.detune.value = 5;
+        const wg = ctx.createGain(); wg.gain.value = 0.10 * w;
+        saw.connect(wg);
+        for(const fmt of formants) wg.connect(fmt);
+        vibAmt.connect(sine.detune); vibAmt.connect(saw.detune);
+        sine.start(); saw.start();
+      });
+
+      // Fast in, slow out, for the same reason the music's threat is: a bank
+      // crossed in one stride should arrive, and a hero who steps out and
+      // straight back in should not hear the river blink.
+      const IN = 0.22, OUT = 0.55;
+      let lastLevel = -1, lastPan = -9, lastMotion = -1;
+      function ramp(param, to, tau){
+        param.setTargetAtTime(to, ctx.currentTime, tau);
+      }
+      // Called every rendered frame while the graph exists, so it does its own
+      // filtering: an automation event per parameter per frame is a great deal
+      // of bookkeeping to describe a number that has not moved.
+      function set(level, p, motion){
+        if(Math.abs(level - lastLevel) > 0.004){
+          ramp(out.gain, level, level > lastLevel ? IN : OUT);
+          lastLevel = level;
+        }
+        if(pan && Math.abs(p - lastPan) > 0.01){
+          ramp(pan.pan, clamp(p, -1, 1), 0.18);
+          lastPan = p;
+        }
+        // The splash rides the walk, so it has to move as fast as the walk
+        // does — but not faster, or every step-and-stop reads as a gust.
+        if(Math.abs(motion - lastMotion) > 0.01){
+          ramp(wade.g.gain, 0.028 * motion, 0.14);
+          lastMotion = motion;
+        }
+      }
+      return (riverRig = { set });
+    }
+
+    return { impact, shot, pickup, teleport, pageTurn, levelUp, heal, riverVoice,
+             master, kinds: Object.keys(IMPACT) };
   }
   /* sfx:engine end */
 
@@ -16517,6 +16719,63 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!sfxReady()) return;
     sfxRig.pageTurn();
   }
+
+  /* ------------------------------------------------------- the river voice
+
+     The only sound in the game that is a PLACE rather than an event, so it is
+     the only one driven from the frame loop instead of from the thing that
+     happened. Every frame it answers one question — is the hero you are
+     driving standing in a river, and is he walking — and hands the answer to
+     the sustained graph up in the engine, which does the fading itself.
+
+     It is the hero you are DRIVING and no one else, for the same reason the
+     music's threat is measured from him: an ally crossing the river at the
+     top of the screen is scenery, and three heroes fording at once would be
+     three drones in three keys. The ambience follows the camera because the
+     camera follows him.
+
+     The foot position, not the centre, so the water is heard exactly when the
+     splash under him is drawn (see the wet/wasWet pair in updateHeroFx) — a
+     sound that starts a stride before the picture reads as a bug in the
+     picture. inRiver rather than inWater: a lake is solid and cannot be stood
+     in, and a river is the only water the game lets you walk on.
+
+     Called once per RENDERED frame, never from update(). Two reasons. A fade
+     is paced by real time, and update() runs FF times a frame under
+     ?speed=N — this would swell eight times as fast as it was tuned to. And
+     update() returns early when the round ends, when the pause menu is up and
+     while the load panel holds the round: all three are moments when the
+     water has to STOP, and a hook inside update() is a hook that never hears
+     about any of them. */
+  let riverVoice = null;
+  function syncRiverVoice(){
+    let level = 0, pan = 0, motion = 0;
+    const live = state === 'playing' && !paused && !roundHold;
+    const me = live ? playerTeam[activePlayerIdx] : null;
+    if(me && me.alive && inRiver(me.x, me.y + me.r * 0.75)){
+      // Placed like any other world sound, which also decides the fade-out
+      // when the camera leaves him behind — riding the tank's shell across
+      // the map should not drag the river along with it.
+      const p = sfxPlace(me.x, me.y);
+      if(p){
+        level = p.gain;
+        pan = p.pan;
+        // Against his DRY speed, so being carried downstream at 1.5x reads as
+        // walking flat out rather than as something the legs are doing.
+        motion = Math.min(1, Math.hypot(me.vx || 0, me.vy || 0) / (SPEED_BASE + me.stats.agi));
+      }
+    }
+    // A graph, a four-second noise buffer and eleven running oscillators is
+    // not much, but it is not nothing either, and a player who never crosses
+    // a river should never pay for one. So it waits for the first step into
+    // the water — and once it exists it is kept, because the fade out is the
+    // whole difference between leaving a river and the sound being cut.
+    if(!level && !riverVoice) return;
+    if(!sfxReady()){ if(riverVoice) riverVoice.set(0, 0, 0); return; }
+    if(!riverVoice) riverVoice = sfxRig.riverVoice();
+    riverVoice.set(level, pan, motion);
+  }
+
   // The end screen is a menu too: after a match the player is sitting on an
   // overlay deciding whether to go again, and the match track under a
   // scoreboard would be the wrong piece.
@@ -16744,8 +17003,14 @@ window.addEventListener('DOMContentLoaded', function(){
     window.addEventListener(ev, musicUnlock, true);
   }
   // Nothing else in this game pauses for a hidden tab. Music is the one thing
-  // that genuinely annoys people from a background tab, so it does.
-  document.addEventListener('visibilitychange', ()=>musicSync(1.2));
+  // that genuinely annoys people from a background tab, so it does — and so
+  // does the river, which is worse: a one-shot in a hidden tab is over before
+  // anyone minds, and a drone is not. It cannot wait for the frame loop to
+  // notice either, because a hidden tab is exactly the state a browser stops
+  // running rAF in, so the water would be left sounding at whatever level the
+  // last visible frame set. Hence the explicit call: sfxReady is already false
+  // by the time this fires, which is what makes syncRiverVoice hand it a zero.
+  document.addEventListener('visibilitychange', ()=>{ musicSync(1.2); syncRiverVoice(); });
 
   // Take over whatever the early script managed on its own.
   //

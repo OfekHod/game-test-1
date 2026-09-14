@@ -108,8 +108,8 @@ const page = `<title>Lane Soundboard</title>
 <div class="wrap">
   <header>
     <h1>Lane — <em>sound effects</em></h1>
-    <p class="lede">Six one-shots, synthesised on the spot from a handful of oscillators and one shared
-      noise buffer: no samples, no files, a few hundred bytes in all. This page runs the same code the
+    <p class="lede">Six one-shots and one river, synthesised on the spot from a handful of oscillators
+      and two shared noise buffers: no samples, no files, a few hundred bytes in all. This page runs the same code the
       game does. The traces are each sound's real envelope, rendered offline.</p>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Press a button or a key to start audio</span></div>
   </header>
@@ -131,6 +131,12 @@ const page = `<title>Lane Soundboard</title>
   <h2>Ability</h2>
   <div class="rows">
     <div class="row" style="--rail:var(--blink)"><span class="key">7</span><span class="t"><b>Blink</b><span>Two sounds, 120 ms apart: air closing over where you were, then a landing where you are.</span></span><canvas data-wave="blink"></canvas><button data-t="1">Play</button></div>
+  </div>
+
+  <h2>Ambience</h2>
+  <div class="rows">
+    <div class="row" style="--rail:var(--mana)"><span class="key">8</span><span class="t"><b>Standing in the river</b><span>The one sustained sound in the game. Open fifths on D &mdash; the note both pieces of music are written on &mdash; over water that never quite repeats.</span></span><button data-r="0">Play</button></div>
+    <div class="row" style="--rail:var(--mana)"><span class="key">9</span><span class="t"><b>Wading across it</b><span>The same water with the tops of the ripples turned up. In a match this layer rides your walking speed.</span></span><button data-r="1">Play</button></div>
   </div>
 
   <h2>How they land in a match</h2>
@@ -173,7 +179,7 @@ ${engine}
     const el = statusEl(), t = statusTx();
     el.classList.remove('live', 'blocked');
     if(failed || !ctx){ el.classList.add('blocked'); t.textContent = 'This browser will not start audio on this page'; return; }
-    if(ctx.state === 'running'){ el.classList.add('live'); t.textContent = 'Audio running — keys 1-7, Q W E R T Y'; return; }
+    if(ctx.state === 'running'){ el.classList.add('live'); t.textContent = 'Audio running — keys 1-9, Q W E R T Y'; return; }
     el.classList.add('blocked');
     t.textContent = 'Audio is ' + ctx.state + ' — press a button again to start it';
   }
@@ -202,6 +208,20 @@ ${engine}
   const hit = (k, p) => { const r = ready(); if(r) r.impact(k, p || mid); };
   const pick = (k, n, p) => { const r = ready(); if(r) r.pickup(k, n || 0, p || mid); };
   const blink = (a, b) => { const r = ready(); if(r) r.teleport(a || mid, b || mid, 0.12); };
+  // The river is a place, not an event, so its two buttons are toggles rather
+  // than triggers, and they share one voice: pressing "wading" while the river
+  // is already running opens the splash layer instead of starting a second
+  // one, which is exactly what walking does in the game.
+  let riverRig = null, riverOn = false, riverMotion = 0;
+  function river(motion){
+    const r = ready();
+    if(!r) return;
+    if(!riverRig) riverRig = r.riverVoice();
+    if(riverOn && riverMotion === motion){ riverOn = false; riverRig.set(0, 0, 0); }
+    else { riverOn = true; riverMotion = motion; riverRig.set(1, 0, motion); }
+    for(const b of document.querySelectorAll('button[data-r]'))
+      b.textContent = (riverOn && +b.dataset.r === riverMotion) ? 'Stop' : 'Play';
+  }
   // Independent of whether a sound came out.
   function flash(el){
     const row = el && el.closest ? el.closest('.row') : null;
@@ -238,10 +258,12 @@ ${engine}
     if(b.dataset.i) hit(b.dataset.i);
     else if(b.dataset.p) pick(b.dataset.p, 0);
     else if(b.dataset.t) blink();
+    else if(b.dataset.r) river(+b.dataset.r);
     else if(b.dataset.d) DEMOS[b.dataset.d]();
   });
   const KEYS = { '1':()=>hit('creep'), '2':()=>hit('crit'), '3':()=>hit('hero'), '4':()=>hit('hurt'),
                  '5':()=>pick('gold',0), '6':()=>pick('mana',0), '7':()=>blink(),
+                 '8':()=>river(0), '9':()=>river(1),
                  q:DEMOS.goldrun, w:DEMOS.manarun, e:DEMOS.wave, r:DEMOS.trade, t:DEMOS.pan,
                  y:DEMOS.blinkfar };
   document.addEventListener('keydown', e => {
