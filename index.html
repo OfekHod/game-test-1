@@ -16405,19 +16405,25 @@ window.addEventListener('DOMContentLoaded', function(){
        you enter the water clicks on every bank, and a river you cross four
        times in a push would click eight times.
 
-       The brief is RELAXING, and the way to lose that is to make the river
-       loud. It is the only thing in the file that is heard CONTINUOUSLY, and
-       that changes what "quiet" has to mean: a tick you hear for 90ms and a
-       drone you hear for a minute at the same level are not the same sound at
-       all. Rendered offline off this same bus, a creep hit — the quietest
-       thing in the game you actually have to react to — peaks between -23 and
-       -25dBFS and measures -44.8 RMS across its 300ms. The river is set to
-       land at -34.4 peak and -45.4 RMS over the same window: ten decibels
-       under the tick it must never mask, and level with it over time, which
-       is what an ambience is. The first pass sat 13dB hotter than that. It
-       measured LOUDER in peak than being hit does, and it would have leant on
-       the bus compressor hard enough to duck every sound in the game for as
-       long as you stood in the water.
+       It is the only thing in the file that is heard CONTINUOUSLY, and that
+       changes what a level means: a tick you hear for 90ms and a drone you
+       hear for a minute at the same number are not the same sound at all. So
+       it is set against measurements off this same bus, rendered offline,
+       rather than against a feeling. A creep hit — the quietest thing in the
+       game you actually have to react to — peaks around -24.6dBFS and
+       measures -45 RMS across its 300ms. The river lands at -28.4 peak and
+       -39.4 RMS over the same window: four decibels under that tick's peak,
+       so it can never mask one, and nowhere near the bus compressor's -15dB
+       threshold, so standing in a river never ducks anything.
+
+       Two passes to get there, and the errors went opposite ways, which is
+       why both numbers are written down. The first sat 13dB above where it is
+       now — LOUDER in peak than being hit is, and hot enough to lean on that
+       compressor and duck every sound in the game for as long as you were in
+       the water. Correcting it by ear-free arithmetic then overshot: at
+       -34.4 peak the river was inaudible under the match track, which for an
+       ambience is the same as not shipping it. This is that reading plus
+       6dB, tested by the person who could not hear the quiet one.
 
        Three layers:
 
@@ -16441,8 +16447,10 @@ window.addEventListener('DOMContentLoaded', function(){
           over the top, opened by how fast you are going. Standing in the
           water is a burble; walking through it is the same water with the
           tops of the ripples turned up. Against a control render that never
-          starts walking it is worth 2.3dB of level and about 15dB of the
-          band above 1kHz: walking changes the COLOUR of the river far more
+          starts walking it is worth between 1.6 and 2.3dB of level — the
+          spread is the bed's own LFO, which is at a different point of its
+          wander in each window — and about 15dB of the band above 1kHz:
+          walking changes the COLOUR of the river far more
           than its loudness, which is what a stride through water actually
           does, and which is also why a layer you can hear plainly costs the
           mix nothing.
@@ -16497,7 +16505,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // The bed, and a highpass on the way out of it: a river has no rumble
       // in it, and what little the noise has down there only muddies the
       // guitar sitting in the same place.
-      const bed = noiseLayer(0.83, 0.0, 'lowpass', RIVER_BED_HZ, 0.9, 0.017);
+      const bed = noiseLayer(0.83, 0.0, 'lowpass', RIVER_BED_HZ, 0.9, 0.034);
       const bedHp = ctx.createBiquadFilter();
       bedHp.type = 'highpass'; bedHp.frequency.value = 150; bedHp.Q.value = 0.6;
       bed.g.connect(bedHp); bedHp.connect(out);
@@ -16522,7 +16530,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // The singers. Quiet enough that on a first listen it is the water that
       // has gone warm rather than a second instrument having started.
       const voiceBus = ctx.createGain();
-      voiceBus.gain.value = 0.006;
+      voiceBus.gain.value = 0.012;
       voiceBus.connect(out);
       const body = ctx.createBiquadFilter();
       body.type = 'lowpass'; body.frequency.value = 1400; body.Q.value = 0.7;
@@ -16581,7 +16589,7 @@ window.addEventListener('DOMContentLoaded', function(){
         // The splash rides the walk, so it has to move as fast as the walk
         // does — but not faster, or every step-and-stop reads as a gust.
         if(Math.abs(motion - lastMotion) > 0.01){
-          ramp(wade.g.gain, 0.014 * motion, 0.14);
+          ramp(wade.g.gain, 0.028 * motion, 0.14);
           lastMotion = motion;
         }
       }
