@@ -66,13 +66,15 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i playwright
 
 **Use `tools/shoot.js` rather than writing the boot sequence again.** It knows
 all of the below — the executable path, the flags, the consent click, the clock
-polling — and takes a picture at the end:
+polling — and takes a picture at the end. `--seed N` fills the title screen's
+seed box, so an Open World shot is of a world you can ask for again:
 
 ```bash
 export NODE_PATH="$SCRATCH/node_modules"
 node tools/shoot.js --shot title.png                              # the title screen
 node tools/shoot.js --start match --at 45 --speed 8 --shot a.png  # 45s into a match
 node tools/shoot.js --start tutorial --phone --shot tut.png       # touch layout
+node tools/shoot.js --start openworld --seed 42 --shot w.png      # a named world
 ```
 
 Reach for raw Playwright only when a change needs input the driver cannot give
@@ -116,6 +118,10 @@ so read the path off the filesystem rather than asking the library for it.
 
 ## Before pushing
 
+- `node sim/world.js` must print every test green and exit on its own. It is
+  the Open World gate: same seed same world, no unseeded draw inside
+  generation, and feature lists that add up across a chunk seam. Any change to
+  generation runs it; `docs/OPEN_WORLD.md` says which PR each test belongs to.
 - `node sim/run.js 3` must exit on its own and print the headline table.
   A hang means a timer is keeping Node alive; see `sim/stub.js`.
   This gate is worth more than it looks: it evaluates the game under Node,
