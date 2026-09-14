@@ -2657,7 +2657,14 @@ window.addEventListener('DOMContentLoaded', function(){
     // The tile pool follows the view rather than being a constant: one extra
     // column and row for a fractional camera, plus eight of slack so a tile
     // inside the bake window is never the one evicted.
-    OW_TILE_MAX = Math.ceil((W + OW_TILE + 4)/OW_TILE + 1) * Math.ceil((H + OW_TILE + 4)/OW_TILE + 1) + 8;
+    // The pool has to be bigger than the bake window, not equal to it: at
+    // window + 8 the first step in any direction evicted a tile and the step
+    // back re-baked it, and a 4000-square world (64 tiles) against a 62-tile
+    // pool re-baked six tiles a second while walking. A whole extra ring of
+    // tiles is the hysteresis — 77 on this desktop (78MB, against the 64MB
+    // bgCanvas it replaces), 42 on a phone (43MB against the same 64MB).
+    const cols = Math.ceil((W + OW_TILE + 4)/OW_TILE + 1), rows = Math.ceil((H + OW_TILE + 4)/OW_TILE + 1);
+    OW_TILE_MAX = cols*rows + cols + rows + 8;
     owMinimapSize();
     setupCanvas(canvas, ctx, W, H, canvasScale);
     // The fog is a screen-space overlay, so it follows the same budget. drawFog
@@ -4884,6 +4891,11 @@ window.addEventListener('DOMContentLoaded', function(){
       if((Math.sqrt(dx*dx+dy*dy) - l.r*LAKE_WOBBLE_MAX)*l.sy < pad) return true;
     }
     for(const rv of _rivers){
+      // A river is up to 267 points long and this is called per tuft, per tree
+      // and per placement attempt. Its own box rejects it in four compares —
+      // which is most calls, since a river is a line through a big box.
+      riverBox(rv);
+      if(x < rv.bx0-pad || x > rv.bx1+pad || y < rv.by0-pad || y > rv.by1+pad) continue;
       const p=rv.pts;
       for(let i=0;i<p.length-1;i++)
         if(pointSegDist(x,y,p[i].x,p[i].y,p[i+1].x,p[i+1].y) < rv.w*0.5+pad) return true;
@@ -7698,6 +7710,28 @@ window.addEventListener('DOMContentLoaded', function(){
   const SHADOW_REACH = 100;        // the furthest a baked shadow reaches from its sprite
   let owOpeningBoxes = null;       // the views the first render() after roundHold bakes
   let owFrame = 0, owBakeMs = 0, owBakeCount = 0;
+  // ?owdebug prints a per-second breakdown to the console — on any protocol,
+  // because the build the owner tests by hand is the published one. Costs a
+  // pair of adds a frame when it is off.
+  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, frames:0, t0:0 };
+  function owMark(key, t0){ if(OW_DEBUG) owProf[key] += owNow() - t0; }
+  function owProfTick(){
+    if(!OW_DEBUG) return;
+    owProf.frames++;
+    const now = owNow();
+    if(!owProf.t0){ owProf.t0 = now; return; }
+    if(now - owProf.t0 < 1000) return;
+    const f = Math.max(1, owProf.frames);
+    console.log('[ow] ' + f + 'fps'
+      + ' · tiles ' + (owProf.tiles/f).toFixed(2) + 'ms'
+      + ' · minimap ' + (owProf.map/f).toFixed(2) + 'ms'
+      + ' · bake ' + owProf.bakeN + '×' + (owProf.bakeN ? (owProf.bake/owProf.bakeN).toFixed(1) : '0') + 'ms'
+      + ' · pool ' + bgTiles.size + '/' + OW_TILE_MAX
+      + ' · chunks ' + loaded.size + ' · mobs ' + neutralCreeps.length
+      + ' · rivers ' + rivers.length + '/' + riverCache.size);
+    owProf.bake = owProf.bakeN = owProf.tiles = owProf.map = owProf.water = 0;
+    owProf.frames = 0; owProf.t0 = now;
+  }
 
   // One grain source for the whole game: the Match bake and every tile stamp
   // the same 64-pixel pattern, anchored to world (0,0) by the transform.
@@ -7804,6 +7838,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     } finally { bgCtx = prev; }
     owBakeMs = owNow() - t0; owBakeCount++;
+    if(OW_DEBUG){ owProf.bake += owBakeMs; owProf.bakeN++; }
     return { canvas: cv, tx, ty, used: owFrame };
   }
   function owTileAt(tx, ty){
@@ -14577,6 +14612,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function drawMinimap(){
+    const mmProf = OW_DEBUG ? owNow() : 0;
     const mmW=MM_W, mmH=MM_H, mmX=W-mmW-MM_RIGHT, mmY=mmTop();
     ctx.save();
     // Light grass green, like the field itself, rather than the parchment tan
@@ -14745,6 +14781,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
     ctx.restore();
+    owMark('map', mmProf);
   }
 
   // Four letters for what a hero is doing, short enough to sit under a 72px chip.
@@ -14858,8 +14895,11 @@ window.addEventListener('DOMContentLoaded', function(){
         // Both ends of the opening glide, baked in one go behind the loading
         // panel; after that the budgeted tick keeps up with the walking.
         if(owOpeningBoxes) owOpeningBake();
+        const tp = owNow();
         owDrawTiles(ctx, shakeX, shakeY);
         bakeTick();
+        owMark('tiles', tp);
+        owProfTick();
       } else {
         const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
         const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
