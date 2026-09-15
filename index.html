@@ -784,6 +784,19 @@
     letter-spacing:.2em;text-indent:.2em;color:#FF9E80;margin-top:2px;}
   .waveBanner i.on{display:block;}
   @media (prefers-reduced-motion:reduce){ .waveBanner{transition:opacity .3s ease;transform:none;} }
+  /* A hero kill by your side. Same recipe as the wave call, smaller and a
+     little higher, and gone inside a second so a streak reads as a rhythm and
+     not as a wall of words. A streak goes hot. */
+  .killBanner{position:absolute;left:0;right:0;top:22%;text-align:center;z-index:9;pointer-events:none;
+    opacity:0;transform:scale(.8) translateY(6px);transition:opacity .16s ease, transform .16s ease;
+    font-family:'Baloo 2',sans-serif;text-shadow:0 3px 0 rgba(48,28,8,.55), 0 0 22px rgba(0,0,0,.5);}
+  .killBanner.show{opacity:1;transform:scale(1) translateY(0);}
+  .killBanner b{display:block;font-size:54px;line-height:1.05;font-weight:800;color:#FFD54F;letter-spacing:.04em;}
+  .killBanner i{display:block;font-style:normal;font-size:15px;font-weight:800;letter-spacing:.2em;
+    text-indent:.2em;color:#FFF3D6;margin-top:2px;}
+  .killBanner.streak b{color:#FF9E80;}
+  @media (max-width:640px){ .killBanner b{font-size:38px;} .killBanner i{font-size:12px;} }
+  @media (prefers-reduced-motion:reduce){ .killBanner{transition:opacity .16s ease;transform:none;} }
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
      height is measured in JS, because the HUD is a percentage of a stage whose
@@ -1025,6 +1038,7 @@ window.addEventListener('DOMContentLoaded', function(){
     </div>
     <div class="skillBtn" id="skillBtn"><div class="skillIcon skill-dash" id="skillBtnIcon"></div><div class="cd" id="skillBtnCd"></div></div>
     <div class="waveBanner" id="waveBanner"><span>WAVE</span><b id="waveBannerNum">1</b><i id="waveBannerSub"></i></div>
+    <div class="killBanner" id="killBanner"><b id="killBannerText"></b><i id="killBannerSub"></i></div>
     <div class="tutPointer hidden" id="tutPointer"></div>
     <div class="tutPinch hidden" id="tutPinch"><i class="tutPinchDot a"></i><i class="tutPinchDot b"></i></div>
     <div class="tutCard hidden" id="tutCard">
@@ -2740,6 +2754,9 @@ window.addEventListener('DOMContentLoaded', function(){
   const pauseCancelBtn = document.getElementById('pauseCancelBtn');
   const pauseConfirmBtn = document.getElementById('pauseConfirmBtn');
   const waveBannerEl = document.getElementById('waveBanner');
+  const killBannerEl = document.getElementById('killBanner');
+  const killBannerTextEl = document.getElementById('killBannerText');
+  const killBannerSubEl = document.getElementById('killBannerSub');
   const waveBannerNumEl = document.getElementById('waveBannerNum');
   const waveBannerSubEl = document.getElementById('waveBannerSub');
   const scoreBoxWaveEl = document.getElementById('scoreBoxWave');
@@ -3444,6 +3461,36 @@ window.addEventListener('DOMContentLoaded', function(){
   let lastHits = 0;
   let spawnTimer = 0;   // first wave marches the moment the round starts
   let shake = 0;
+  // A kill you landed stops the world for a few frames. The freeze is what
+  // makes the flash, the number and the burst land as ONE event instead of a
+  // flicker on the way to the next frame. It lives in the frame loop and
+  // nowhere near update(): the sim under Node never sees it, and a
+  // fast-forwarded frame is frozen in wall time, not in game seconds.
+  let hitStop = 0;
+  function hitStopFor(secs){ hitStop = Math.max(hitStop, secs); }
+  // Game seconds since the round began, in one direction whatever the mode's
+  // own clock does (a Match counts down, the arena counts up).
+  let roundSeconds = 0;
+  // A camera kick: a directional, decaying thump measured in CSS PIXELS. The
+  // old shake was a random offset of a few world units per frame, which on a
+  // desktop view came out under two pixels and read as blur, not as impact. A
+  // kick has a direction (the shot's, the blow's), a size the eye can see on
+  // any screen, and two oscillations before it is gone. The scalar `shake`
+  // stays for the sources that have no direction, squared so small values
+  // (a coin landing) vanish and big ones (a level-up) still register.
+  const SHAKE_PX = 14;        // css px of jitter at full trauma
+  const KICK_DECAY = 0.12;    // seconds for a kick to fall to 1/e
+  const KICK_HZ = 9;
+  let kick = { x:0, y:0, amp:0, t:9 };
+  function kickCam(dx, dy, px){
+    const len = Math.sqrt(dx*dx+dy*dy) || 1;
+    const left = kick.amp*Math.exp(-kick.t/KICK_DECAY);   // what the last kick still has in it
+    kick = { x:dx/len, y:dy/len, amp:Math.max(px, left), t:0 };
+  }
+  function camKickTick(dt){ if(kick.t < 9) kick.t += dt; }
+  // World units per css pixel: what a screen-space size is multiplied by so it
+  // comes out the same on a phone and on a desktop.
+  function unitsPerPx(){ return layoutW > 0 ? W/layoutW : 2.5; }
   let isMouseDown = false;
   let camera = { x: 0, y: 0 };
   let activePlayerIdx = 0;
@@ -8880,6 +8927,10 @@ window.addEventListener('DOMContentLoaded', function(){
   function updateCreepAnim(list, dt){
     for(const c of list){
       updateBars(c, dt);
+      // The white hit flash counts down in game time, here, for every creep
+      // list. It used to lose a sixtieth per DRAWN frame, so its length was
+      // whatever the monitor's refresh happened to be.
+      if(c.flash>0) c.flash = Math.max(0, c.flash - dt);
       if(c.levelGlow>0) c.levelGlow = Math.max(0, c.levelGlow-dt);
       if(c.atkT>0) c.atkT = Math.max(0, c.atkT-dt);
       if(c.stunT>0) c.stunT = Math.max(0, c.stunT-dt);
@@ -9754,16 +9805,26 @@ window.addEventListener('DOMContentLoaded', function(){
   // you are driving — the screen. Every path that damages a hero comes through
   // here, so the sprite's flinch goes ABOVE the early return that keeps the red
   // wash and the shake yours alone.
-  function registerHurt(target, dmg){
+  function registerHurt(target, dmg, dirX, dirY){
     if(target.hurtCd <= 0){ target.hurtT = HERO_HURT_ANIM; target.hurtCd = HERO_HURT_GAP; }
     if(target !== playerTeam[activePlayerIdx]) return;
     const frac = Math.min(1, dmg / Math.max(1, target.maxHp*0.22));
     hurtFlash = Math.min(0.85, hurtFlash + 0.3 + frac*0.42);
     shake = Math.max(shake, 0.1 + frac*0.2);
+    // The view is shoved the way the blow was going, so a hit from off-screen
+    // still says which side it came from.
+    if(dirX !== undefined) kickCam(dirX, dirY, 2.5 + frac*4);
   }
   function drawHurtOverlay(){
-    if(hurtFlash <= 0.004) return;
-    const a = hurtFlash;
+    let a = hurtFlash;
+    // Under 30% the rim breathes on its own, deeper the lower you are, so
+    // being nearly dead is a state you can see and not just a hit you saw.
+    const me = playerTeam[activePlayerIdx];
+    if(state==='playing' && me && me.alive){
+      const f = me.hp/me.maxHp;
+      if(f < 0.3) a = Math.max(a, (0.3-f)/0.3*0.35*(0.6+0.4*Math.sin(performance.now()/1000*4)));
+    }
+    if(a <= 0.004) return;
     const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.26, W/2,H/2, Math.max(W,H)*0.6);
     g.addColorStop(0,    'rgba(198,26,26,0)');
     g.addColorStop(0.62, 'rgba(188,20,20,'+(a*0.2).toFixed(3)+')');
@@ -10382,6 +10443,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // A melee hero gains reach at a third the rate, so investing in range still
     // helps it connect without ever turning the sword into a rifle.
     const reach = attackRange(h), dmg = heroBasicDmg(h);
+    addSlash(h, ang, reach);
     const inArc = (x,y,r)=> dist(h.x,h.y,x,y) <= reach + r &&
       Math.abs(angleDiff(ang, Math.atan2(y-h.y, x-h.x))) <= MELEE_HALF_ARC;
     addBurst(h.x+Math.cos(ang)*h.r*1.6, h.y+Math.sin(ang)*h.r*1.6, '#FFE9A6', 9);
@@ -10800,6 +10862,20 @@ window.addEventListener('DOMContentLoaded', function(){
   // and blinks past on a fast one. Every entry point that leaves the arena —
   // a new round, the end card — clears it, or it survives the round it announced.
   let waveBannerTimer = 0;
+  let killBannerTimer = 0;
+  function showKillBanner(text, sub, streak){
+    if(!killBannerEl) return;
+    killBannerTextEl.textContent = text;
+    killBannerSubEl.textContent = sub || '';
+    killBannerEl.classList.toggle('streak', !!streak);
+    // A second kill inside the first one's second restarts the pop rather than
+    // quietly swapping the words under a banner already on screen.
+    killBannerEl.classList.remove('show'); void killBannerEl.offsetWidth;
+    killBannerEl.classList.add('show');
+    clearTimeout(killBannerTimer);
+    killBannerTimer = setTimeout(()=>killBannerEl.classList.remove('show'), 1000);
+  }
+  function hideKillBanner(){ clearTimeout(killBannerTimer); if(killBannerEl) killBannerEl.classList.remove('show'); }
   function showWaveBanner(w, sub){
     waveBannerNumEl.textContent = w;
     waveBannerSubEl.textContent = sub || '';
@@ -10935,15 +11011,16 @@ window.addEventListener('DOMContentLoaded', function(){
     const dmg = Math.round(c.dmg*rand(0.85,1.15)*defenseMult(target)*stunDmgMult(target));
     target.hp -= dmg; target.flash = 0.2;
     sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
-    registerHurt(target, dmg);
+    registerHurt(target, dmg, target.x-c.x, target.y-c.y);
     addHitFloater(target, dmg, dmgColor(target.side==='player', false), false);
     applyKnockbackImpulse(target, target.x-c.x, target.y-c.y, KNOCKBACK_HERO*0.45);
     if(target.hp<=0){
       target.alive=false; target.respawnTimer=RESPAWN_TIME; target.hp=0;
       addScore(target.side==='player' ? 'enemy' : 'player', PTS.hero, target.x, target.y);
-      addBurst(target.x, target.y, '#FF6B6B', 20);
+      addBurst(target.x, target.y, '#FF6B6B', 24, 2.2);
       spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL, target.maxHp);
       if(target===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.35);
+      noteHeroKill(target, null);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
   }
@@ -11329,6 +11406,31 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   let pings = [];
+  // A swing's arc, drawn for a few frames: the sword used to resolve its whole
+  // cone on the frame of the click with nothing on screen but a puff at the
+  // hand, so the reach and the shape of a hit were a guess.
+  let slashes = [];
+  function addSlash(h, ang, reach){ slashes.push({ h, ang, reach, life:0, max:0.16 }); }
+  function updateSlashes(dt){
+    for(let i=slashes.length-1;i>=0;i--){ slashes[i].life+=dt; if(slashes[i].life>slashes[i].max) slashes.splice(i,1); }
+  }
+  function drawSlashes(){
+    for(const sl of slashes){
+      const t = sl.life/sl.max, h = sl.h;
+      if(!onScreen(h.x, h.y, sl.reach+40)) continue;
+      const a0 = sl.ang - MELEE_HALF_ARC, sweep = MELEE_HALF_ARC*2*Math.min(1, t/0.6 + 0.25);
+      const R = sl.reach + h.r*0.6;
+      ctx.save();
+      ctx.globalAlpha = (1-t)*0.9;
+      ctx.strokeStyle = h.side==='player' ? '#FFE9A6' : '#FFB39E';
+      ctx.lineCap = 'round'; ctx.lineWidth = 6*(1-t) + 2;
+      ctx.beginPath(); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.stroke();
+      ctx.globalAlpha = (1-t)*0.22;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
   function addPing(x,y,col,r0,grow,dur){
     pings.push({ x, y, life:0, col:col||'#5AC8E8', r0:r0||8, grow:grow||22, dur:dur||0.4 });
   }
@@ -11345,9 +11447,13 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
   }
-  function addBurst(x,y,color,n){
+  // Full white for the first frames of a hit, then a quick fade — the pop is
+  // the part that reads; a flash that starts at 70% and fades never quite says
+  // "struck".
+  function flashAlpha(f){ return f > 0.12 ? 1 : f/0.12; }
+  function addBurst(x,y,color,n,spd){
     for(let i=0;i<n;i++){
-      const a=Math.random()*Math.PI*2, sp=rand(40,140);
+      const a=Math.random()*Math.PI*2, sp=rand(40,140)*(spd||1);
       particles.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0, maxLife:rand(0.35,0.6), color });
     }
   }
@@ -12135,6 +12241,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // see or play through.
     if(roundHold) return;
     tickScoreHud(dt);
+    roundSeconds += dt;
     if(gameMode==='openworld'){
       // No waves, no timeout, no end. The clock counts up because "how long
       // have I been out here" is the only thing it can honestly say.
@@ -12228,8 +12335,8 @@ window.addEventListener('DOMContentLoaded', function(){
     resolveCreepTowerCombat(dt);
     resolveTowerAttacks(dt);
 
-    for(const t of playerTowers) updateBars(t, dt);
-    for(const t of enemyTowers) updateBars(t, dt);
+    for(const t of playerTowers){ updateBars(t, dt); if(t.flash>0) t.flash = Math.max(0, t.flash - dt); }
+    for(const t of enemyTowers){ updateBars(t, dt); if(t.flash>0) t.flash = Math.max(0, t.flash - dt); }
     updateProjectiles(dt);
     updateXpOrbs(dt);
     updateManaOrbs(dt);
@@ -12242,6 +12349,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateAssembleAuras(dt);
     updateDashFx(dt);
     updatePings(dt);
+    updateSlashes(dt);
     updateFireBlasts(dt);
     updateBirds(dt);
     updateHudSparks(dt);
@@ -12273,7 +12381,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateSmoke(dt);
     updateBurns(dt);
     updateClouds(dt);
-    if(shake>0) shake=Math.max(0,shake-dt*4);
+    if(shake>0){ shake *= Math.exp(-dt*7); if(shake < 0.03) shake = 0; }
     if(assembleCd>0) assembleCd=Math.max(0,assembleCd-dt);
     tutUpdate(dt);
 
@@ -12332,13 +12440,25 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     if(h.muzzleT>0) h.muzzleT=Math.max(0,h.muzzleT-dt);
     if(h.recoil>0) h.recoil=Math.max(0,h.recoil-dt*9);
+    if(h.flash>0) h.flash = Math.max(0, h.flash - dt);
     if(h.dashing){
       h.dashElapsed += dt;
       const t=Math.min(1, h.dashElapsed/DASH_DURATION);
       const e=1-Math.pow(1-t,3);
       h.x = h.dashFrom.x + (h.dashTo.x-h.dashFrom.x)*e;
       h.y = h.dashFrom.y + (h.dashTo.y-h.dashFrom.y)*e;
-      if(t>=1) h.dashing=false;
+      if(t>=1){
+        h.dashing=false;
+        // The landing is the half of the blink that used to have nothing: a
+        // burst at the feet, a ring, and the camera kicked along the line of
+        // travel. Only for the hero you are driving — an AI blink across the
+        // screen must not shove your view.
+        if(h===playerTeam[activePlayerIdx] && h.side==='player'){
+          addBurst(h.x, h.y, '#8FE3FF', 14, 2);
+          addPing(h.x, h.y, '#8FE3FF', 8, 40, 0.3);
+          kickCam(h.dashTo.x-h.dashFrom.x, h.dashTo.y-h.dashFrom.y, 5);
+        }
+      }
     }
     updateKnockback(h, dt);
   }
@@ -13704,7 +13824,14 @@ window.addEventListener('DOMContentLoaded', function(){
     // shake each time would be unbearable. The blast used to print "BOOM" over
     // itself as well; the flipbook and the shake already say it, and the word sat
     // on top of the damage numbers that actually carry information.
-    if(attackerHero){ shake=Math.max(shake,0.5); }
+    if(attackerHero){
+      shake=Math.max(shake,0.5);
+      const ah = playerTeam[activePlayerIdx];
+      if(ah && ah.alive){
+        const d = dist(x,y,ah.x,ah.y);
+        if(d < 700) kickCam(ah.x-x, ah.y-y, 3 + 8*(1-d/700));
+      }
+    }
     else {
       const ah = playerTeam[activePlayerIdx];
       if(ah && dist(x,y,ah.x,ah.y) < 430) shake = Math.max(shake, 0.14);
@@ -13717,18 +13844,24 @@ window.addEventListener('DOMContentLoaded', function(){
     if(isCrit) dmg*=CRIT_MULT;
     dmg*=stunDmgMult(creep);
     dmg=Math.round(dmg);
-    creep.hp-=dmg; creep.flash=0.18;
+    creep.hp-=dmg; creep.flash=0.2;
+    const lethal = creep.hp<=0;
     // The apex's own aggro scan only reaches APEX_AGGRO (300), well short of
     // a hero's attack range (RNG ~367+) -- without this, poking it from max
     // range never registers as a target, so it stands there "unaware" and
     // regens between hits instead of retaliating.
     if(creep.huge && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
     sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
-    addFloater(creep.x, creep.y-creep.r-6, String(dmg), dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit, false, isCrit);
-    addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
+    // The killing blow prints gold and big: at a glance, that number was the
+    // one that mattered.
+    addFloater(creep.x, creep.y-creep.r-6, String(dmg), lethal ? '#FFD54F' : dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit || lethal, false, isCrit);
+    addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5, 1.4);
     applyKnockbackImpulse(creep, dirX, dirY, KNOCKBACK_CREEP*(isCrit?1.7:1));
     if(isCrit && side==='player') shake=Math.max(shake,0.25);
-    if(creep.hp<=0) killCreep(creep, list, idx, side, isCrit, attackerHero);
+    if(lethal){
+      if(attackerHero && attackerHero===playerTeam[activePlayerIdx]) kickCam(dirX, dirY, creep.huge?9:(creep.big?7:5));
+      killCreep(creep, list, idx, side, isCrit, attackerHero);
+    }
   }
 
   // Every creep death funnels through here, whoever landed the blow — a hero,
@@ -13741,11 +13874,19 @@ window.addEventListener('DOMContentLoaded', function(){
     // whoever killed them, and a big one is worth more. The apex outbids the
     // whole forest bracket it's otherwise part of.
     addScore(side, creep.huge ? PTS.apex : (creep.neutral ? PTS.forest : (creep.big ? PTS.bigCreep : PTS.creep)), creep.x, creep.y);
-    if(attackerHero && attackerHero===playerTeam[activePlayerIdx]) shake = Math.max(shake, creep.huge?0.6:(creep.big?0.45:0.3));
+    if(attackerHero && attackerHero===playerTeam[activePlayerIdx]){
+      shake = Math.max(shake, creep.huge?0.6:(creep.big?0.45:0.3));
+      hitStopFor(creep.huge ? 0.14 : (creep.big ? 0.07 : 0.045));
+      addPing(creep.x, creep.y, '#FFD54F', 10, 60, 0.35);
+      // Two kills inside six tenths of a second is a run, and a run gets a word.
+      const run = roundSeconds - (attackerHero.lastKillT||-9) < 0.6 ? (attackerHero.killRun||1)+1 : 1;
+      attackerHero.killRun = run; attackerHero.lastKillT = roundSeconds;
+      if(run>=2) addFloater(attackerHero.x, heroAnchorY(attackerHero), run===2?'DOUBLE':(run===3?'TRIPLE':'x'+run), '#FFD54F', true, false, false, attackerHero);
+    }
     // the multiplier is the mana-orb count, so a big creep pays double there
     // too, and the apex -- a whole camp's worth of xp in one kill -- pays 4x
     spawnKillDrops(creep.x, creep.y, creep.huge?APEX_MANA_MULT:(creep.big?2:1), isCrit, creep.xp || XP_SMALL_CREEP);
-    addBurst(creep.x, creep.y, side==='player'?'#FFD54F':'#ffcccc', creep.huge?36:(creep.big?24:14));
+    addBurst(creep.x, creep.y, side==='player'?'#FFD54F':'#ffcccc', creep.huge?36:(creep.big?24:14), 2.2);
     addCorpse(creep, creep.huge ? 'apex' : (creep.neutral ? 'neutral' : (list === allyCreeps ? 'ally' : 'enemy')));
     if(list && idx>=0) list.splice(idx,1);
   }
@@ -13761,24 +13902,49 @@ window.addEventListener('DOMContentLoaded', function(){
     dmg *= defenseMult(target);
     dmg *= stunDmgMult(target);
     dmg=Math.round(dmg);
-    target.hp-=dmg; target.flash=0.18;
+    target.hp-=dmg; target.flash=0.2;
+    const lethal = target.hp<=0;
     // Whose bar just moved is the one thing this has to say. Your own hero
     // taking one is a different sound from every hit you land, including the
     // ones your team-mates take: it is the only one you have to react to.
     sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
-    registerHurt(target, dmg);
-    addHitFloater(target, dmg, dmgColor(target.side==='player', isCrit), isCrit);
-    addBurst(target.x, target.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5);
+    registerHurt(target, dmg, dirX, dirY);
+    addHitFloater(target, dmg, lethal ? '#FFD54F' : dmgColor(target.side==='player', isCrit), isCrit || lethal);
+    addBurst(target.x, target.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5, 1.4);
     applyKnockbackImpulse(target, dirX, dirY, KNOCKBACK_HERO*(isCrit?1.5:1));
     if(isCrit) shake=Math.max(shake,0.25);
-    if(target.hp<=0){
+    if(lethal){
       target.alive=false; target.respawnTimer=RESPAWN_TIME; target.hp=0;
       addScore(target.side==='player' ? 'enemy' : 'player', PTS.hero, target.x, target.y);
-      addFloater(target.x, target.y-target.r-34, 'KILL!', '#FF6B6B', true);
-      addBurst(target.x,target.y,'#FF6B6B',22);
+      addBurst(target.x,target.y,'#FF6B6B',26, 2.2);
       shake=Math.max(shake,0.4);
+      if(attackerHero && attackerHero===playerTeam[activePlayerIdx]) kickCam(dirX, dirY, 7);
       spawnKillDrops(target.x, target.y, 3, isCrit, XP_HERO_KILL, target.maxHp);
+      noteHeroKill(target, attackerHero);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
+    }
+  }
+
+  // Every hero death, whoever dealt it, comes through here, so the banner, the
+  // streak and the freeze are decided in one place rather than once per damage
+  // source. A kill by your side is the one thing worth taking the eye off the
+  // fight for a second; your own death is a beat, not a cut.
+  function noteHeroKill(target, attackerHero){
+    const me = playerTeam[activePlayerIdx];
+    if(target.side === 'enemy'){
+      if(attackerHero && attackerHero.side === 'player'){
+        const mine = attackerHero === me;
+        attackerHero.streak = (attackerHero.streak||0) + 1;
+        const n = attackerHero.streak;
+        const text = n>=4 ? 'RAMPAGE x'+n : n===3 ? 'TRIPLE KILL' : n===2 ? 'DOUBLE KILL' : 'KILL';
+        showKillBanner(text, (mine ? '' : attackerHero.type.toUpperCase()+' \u00b7 ') + '+' + PTS.hero, n>=2);
+        if(mine){ hitStopFor(0.12); addPing(target.x, target.y, '#FFD54F', 14, 90, 0.5); }
+      } else {
+        showKillBanner('ENEMY DOWN', attackerHero ? '' : 'TOWER', false);
+      }
+    } else {
+      target.streak = 0;
+      if(target === me) hitStopFor(0.10);
     }
   }
 
@@ -13875,7 +14041,6 @@ window.addEventListener('DOMContentLoaded', function(){
       const bw = c.r*1.9, bh = 6;
       drawBar(-bw/2, -c.r*2.55-12, bw, bh, c.hp/c.maxHp, c.hpLag, HP_COLOR);
       ctx.restore();
-      if(c.flash>0) c.flash-=1/60;
       return;
     }
     ctx.beginPath(); ctx.arc(0,0,c.r+6,0,7);
@@ -13886,7 +14051,6 @@ window.addEventListener('DOMContentLoaded', function(){
     const fw = c.r*1.9;
     drawBar(-fw/2, -c.r-10, fw, 6, c.hp/c.maxHp, c.hpLag, HP_COLOR);
     ctx.restore();
-    if(c.flash>0) c.flash-=1/60;
   }
   function drawCreep(c, color, team){
     if(c.huge){ drawApexCreep(c); return; }
@@ -13938,7 +14102,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if((c.face||1) < 0) ctx.scale(-1,1);
       ctx.drawImage(sheet, f*MOB_FRAME_W, row*MOB_FRAME_H, MOB_FRAME_W, MOB_FRAME_H, dx0, dy0, sw, sh);
       if(c.flash>0 && mobFlash){
-        ctx.globalAlpha = Math.min(1, c.flash*5);
+        ctx.globalAlpha = flashAlpha(c.flash);
         ctx.drawImage(mobFlash, f*MOB_FRAME_W, row*MOB_FRAME_H, MOB_FRAME_W, MOB_FRAME_H, dx0, dy0, sw, sh);
         ctx.globalAlpha = 1;
       }
@@ -13949,7 +14113,6 @@ window.addEventListener('DOMContentLoaded', function(){
       const bw = c.r*1.9, bh = c.big?6:4;
       drawBar(-bw/2, c.r*MOB_FOOT - sh*MOB_HEAD - 10 - bh, bw, bh, c.hp/c.maxHp, c.hpLag, HP_COLOR);
       ctx.restore();
-      if(c.flash>0) c.flash-=1/60;
       return;
     }
     if(c.big){
@@ -13964,7 +14127,6 @@ window.addEventListener('DOMContentLoaded', function(){
     const fw = c.r*1.9;
     drawBar(-fw/2, -c.r-10, fw, c.big?6:4, c.hp/c.maxHp, c.hpLag, HP_COLOR);
     ctx.restore();
-    if(c.flash>0) c.flash-=1/60;
   }
 
   // Coins draw in tight as they land, so the last stretch reads as absorption.
@@ -14160,7 +14322,7 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.lineWidth=3; ctx.strokeStyle=mainColor; ctx.stroke();
       ctx.drawImage(towerSheets[t.side] || towerImg, -sw/2, foot-sh, sw, sh);
       if(t.flash>0 && towerFlash){
-        ctx.globalAlpha = Math.min(1, t.flash*4);
+        ctx.globalAlpha = flashAlpha(t.flash);
         ctx.drawImage(towerFlash, -sw/2, foot-sh, sw, sh);
         ctx.globalAlpha = 1;
       }
@@ -14172,7 +14334,6 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(0,0,vr*0.5,0,7); ctx.fillStyle=coreColor; ctx.fill();
     }
     ctx.restore();
-    if(t.flash>0) t.flash-=1/60;
     const w=vr*2.2;
     drawBar(t.x-w/2, t.y+barTop, w, 7, t.hp/t.maxHp, t.hpLag, HP_COLOR);
   }
@@ -14225,12 +14386,11 @@ window.addEventListener('DOMContentLoaded', function(){
       const top = h.r*sdef.foot - sh - heroBob(h, sdef);
       ctx.drawImage(sheet, f*sdef.w, row*sdef.h, sdef.w, sdef.h, -sw/2, top, sw, sh);
       if(h.flash>0 && sdef.flash){
-        ctx.globalAlpha = Math.min(1, h.flash*4);
+        ctx.globalAlpha = flashAlpha(h.flash);
         ctx.drawImage(sdef.flash, f*sdef.w, row*sdef.h, sdef.w, sdef.h, -sw/2, top, sw, sh);
       }
       ctx.restore();
       ctx.restore();
-      if(h.flash>0) h.flash-=1/60;
       return;
     }
     ctx.beginPath(); ctx.arc(0,0,h.r,0,7);
@@ -14239,7 +14399,6 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.beginPath(); ctx.arc(-h.r*0.3,-h.r*0.3,h.r*0.4,0,7);
     ctx.fillStyle='rgba(255,255,255,.45)'; ctx.fill();
     ctx.restore();
-    if(h.flash>0) h.flash-=1/60;
   }
   // A cone along the barrel rather than a dot on the end of it, so the flash
   // says which way the shot went. The carry's burns the colour of what it
@@ -14905,7 +15064,15 @@ window.addEventListener('DOMContentLoaded', function(){
     const worldMouseX = mouse.x + camera.x, worldMouseY = mouse.y + camera.y;
 
     let shakeX=0, shakeY=0;
-    if(shake>0){ shakeX=rand(-shake,shake)*10; shakeY=rand(-shake,shake)*10; }
+    if(shake>0 || kick.t < 1){
+      const u = unitsPerPx();
+      const tr = Math.min(1, shake), tr2 = tr*tr;
+      if(tr2 > 0){ shakeX = rand(-1,1)*tr2*SHAKE_PX*u; shakeY = rand(-1,1)*tr2*SHAKE_PX*u; }
+      if(kick.t < 1){
+        const k = kick.amp*u*Math.exp(-kick.t/KICK_DECAY)*Math.cos(2*Math.PI*KICK_HZ*kick.t);
+        shakeX += kick.x*k; shakeY += kick.y*k;
+      }
+    }
     ctx.save();
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
 
@@ -14949,6 +15116,7 @@ window.addEventListener('DOMContentLoaded', function(){
     drawAimLine(worldMouseX, worldMouseY);
     drawOrders();
     drawPings();
+    drawSlashes();
     drawRocketSplashRings();   // an aim marker, so it sits with the ranges and under the units
 
     drawBurns();            // scorched ground, under everything that walks on it
@@ -15422,8 +15590,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // fast-forwarded frame has to be as loud as a crash in a real one.
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
-    try { for(let i=1;i<FF;i++) update(dt);
-          update(dt); render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
+    try {
+      // Frozen frames still render: the flash and the number hold still, which
+      // is the whole point of them.
+      if(hitStop > 0) hitStop = Math.max(0, hitStop - dt);
+      else { for(let i=1;i<FF;i++) update(dt); update(dt); }
+      camKickTick(dt);
+      render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
@@ -16933,7 +17106,7 @@ window.addEventListener('DOMContentLoaded', function(){
     applyLayout(true);
     mouse.x = W/2; mouse.y = H/2;
     timeLeft = (gameMode==='survival' || gameMode==='openworld') ? 0 : ROUND_TIME;
-    xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
+    xpLooted=0; lastHits=0; spawnTimer=0; shake=0; hitStop=0; kick.t=9; roundSeconds=0; isMouseDown=false; assembleCd=0;
     score = { player:0, enemy:0 };
     squadTogether = false;
     allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; hpOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; dashFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
@@ -17025,6 +17198,7 @@ window.addEventListener('DOMContentLoaded', function(){
     state='ended';
     tutStop();
     hideWaveBanner();
+    hideKillBanner();
     bottomDock.classList.add('hidden');
     partyEl.classList.add('hidden');
     const shud = document.getElementById('scoreHud');
@@ -18453,6 +18627,27 @@ window.addEventListener('DOMContentLoaded', function(){
   // so canvas.width alone is off by that factor and lands the crop on the HUD.
   window.__laneW = ()=>W;
   window.__laneH = ()=>H;
+  // What a player can see, for the screenshot scripts that have to PLAY their
+  // way to a state — walk to a creep, hold fire, wait for the kill — rather
+  // than reach in and set it. Read-only: positions, bars and cooldowns of the
+  // hero being driven and of whatever hostile is on screen.
+  window.__laneScene = ()=>{
+    const me = playerTeam[activePlayerIdx];
+    const r = canvas.getBoundingClientRect();
+    const seen = (e, pad)=>onScreen(e.x, e.y, pad) && isVisible(e.x, e.y, pad);
+    return {
+      camera:{ x:camera.x, y:camera.y }, W, H, rect:{ left:r.left, top:r.top, width:r.width, height:r.height },
+      state, mode:gameMode, clock:timeLeft, lastHits, score:{ player:score.player, enemy:score.enemy },
+      me: me ? { i:activePlayerIdx, type:me.type, x:me.x, y:me.y, hp:me.hp, maxHp:me.maxHp, mana:me.mana,
+                 maxMana:me.maxMana, alive:me.alive, level:me.level, points:me.points, skillCd:me.skillCd,
+                 basicCd:me.basicCd, range:attackRange(me), streak:me.streak||0, respawnIn:me.respawnTimer } : null,
+      team: playerTeam.map(h=>({ type:h.type, x:h.x, y:h.y, alive:h.alive, hp:h.hp, maxHp:h.maxHp, level:h.level, points:h.points })),
+      creeps: enemyCreeps.filter(c=>seen(c, c.r)).map(c=>({ x:c.x, y:c.y, hp:c.hp, big:!!c.big })),
+      mobs: neutralCreeps.filter(c=>seen(c, c.r)).map(c=>({ x:c.x, y:c.y, hp:c.hp, huge:!!c.huge })),
+      foes: enemyTeam.map(h=>({ type:h.type, x:h.x, y:h.y, alive:h.alive, hp:h.hp, seen:h.alive && seen(h, h.r) })),
+      towers: enemyTowers.map(t=>({ x:t.x, y:t.y, hp:t.hp, main:!!t.main }))
+    };
+  };
   window.__laneLoaded = true;
 })();
 </script>
