@@ -9822,7 +9822,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const me = playerTeam[activePlayerIdx];
     if(state==='playing' && me && me.alive){
       const f = me.hp/me.maxHp;
-      if(f < 0.3) a = Math.max(a, (0.3-f)/0.3*0.35*(0.6+0.4*Math.sin(performance.now()/1000*4)));
+      if(f < 0.3) a = Math.max(a, (0.25 + 0.5*(0.3-f)/0.3)*(0.6+0.4*Math.sin(performance.now()/1000*4)));
     }
     if(a <= 0.004) return;
     const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.26, W/2,H/2, Math.max(W,H)*0.6);
@@ -10476,6 +10476,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(idx < 0 || c.hp <= 0) continue;
       applyCreepHit(c, list, idx, h.side, c.x-h.x, c.y-h.y, dmg, h);
     }
+    if(heroHits.length || creepHits.length) refundOnHit(h);
     // Buildings only if the sweep found nothing living — otherwise a hero
     // standing at its own tower would soak a free hit on the tower every swing.
     if(heroHits.length === 0 && creepHits.length === 0){
@@ -13781,9 +13782,23 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       if(hit){
         if(p.fireBolt) boltImpact(p);
+        refundOnHit(p.attacker);
         projectiles.splice(i,1);
       }
     }
+  }
+
+  // Landing a basic gives half its mana back — for the hero you are driving,
+  // and only for shots you fired yourself. The carry's bar is empty after five
+  // seconds of held fire and from then on the gun reads as slow rather than
+  // dry; a volley that lands paying for itself makes hitting the thing that
+  // keeps you shooting. manualT is only ever raised by the trigger, so the
+  // auto-assist — which is all the idle sim's driven hero ever fires — never
+  // earns a refund and the balance table does not move.
+  const MANA_REFUND_ON_HIT = 0.5;
+  function refundOnHit(h){
+    if(!h || !h.alive || h.side !== 'player' || h !== playerTeam[activePlayerIdx] || !(h.manualT > 0)) return;
+    h.mana = Math.min(h.maxMana, h.mana + HERO_STATS[h.type].basicManaCost*MANA_REFUND_ON_HIT);
   }
 
   function explodeRocket(x,y,side,dmgBase,attackerHero,radius,heroDmg){
