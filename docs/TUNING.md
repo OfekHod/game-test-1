@@ -237,3 +237,24 @@ carry, which is the counter-play the whole design rests on, so treat it as a
 lower bound too — but it does mean the healer at wave 10 and the column at
 wave 13 are a long way past where an average round now ends. `SURV_HERO_EVERY`
 is the dial for that, and it is the one to turn first.
+
+## Feel
+
+Numbers that exist to be felt rather than to be balanced. None of them is read
+by the AI or by the simulation: each is gated on the hero you are driving, or
+lives in `render()`.
+
+| constant | value | note |
+|---|---|---|
+| `hitStop` | 45 / 70 / 140 ms | a creep, a big one, an apex — the freeze on a kill YOU landed. 120ms for a hero kill, 100ms for your own death. It lives in `loop()`, not in `update()`: the frame still renders, so the white flash and the number hold still instead of flickering past. The sim never sees it |
+| `SHAKE_PX` | 14 | screen shake at full trauma, in CSS PIXELS. The old `rand(-shake,shake)*10` was ten WORLD units, which on a desktop view 3200 units wide is under two pixels — measured, invisible. Trauma is squared, so a coin landing (0.08) vanishes and a level-up (0.6) still registers |
+| `KICK_DECAY` / `KICK_HZ` | 0.12s / 9 | the directional thump laid over the jitter: normalised to the blow's own direction, two oscillations, gone. A kill kicks 5-9px along the shot, being hit 2.5-6.5px along the blow, a rocket 3-11px away from the blast |
+| `MANA_REFUND_ON_HIT` | 0.5 | half the basic's mana cost back when it lands. Driven hero only, and only while `manualT` is up — see FINDINGS |
+| level-up ladder | 112 / 60 / 12 | how far above the hero LEVEL UP!, Lv.N and +N PTS sit. Pushed straight into `floaters` rather than through `addFloater`, whose stacker lifts a floater one row per neighbour within 40 units — which is exactly what these three are, so a coin tally landing at the same moment used to print two of them on one line |
+| level coalesce window | 0.5s | a second level inside it rewrites the first one's lines instead of printing another set. A wave's worth of orbs pops two or three levels in one frame, and three sets of three lines is not news, it is noise |
+| `VIEW_ZOOM` | 1.5 desktop | was 2. At 2 the view was 3200x2000 world units and a hero was 36 css px — a fight the size of a thumbnail. Anything drawn in world units that wants a fixed size on screen multiplies by `unitsPerPx()` (`W/layoutW`) or by `VIEW_ZOOM` |
+| `CAM_LEAD_AIM` / `CAM_LEAD_MAX` | 0.18 / 140 | how far the camera leans toward where you are aiming, and the cap. On touch it leans on velocity instead (`CAM_LEAD_VEL` 0.25s) |
+| `ROCKET_CAM_HOLD` | 0.35 | was 0.55. With the ride now framing the midpoint between tank and shell (`CAM_RIDE_KEEP` 0.38 of the screen), the view no longer leaves the hero at all |
+| `LOAD_QUICK_MS` | 1200 | the load panel's floor on a Play Again, against `LOAD_MIN_MS` 3000 on a first entry. The caches are warm; the ceremony is not what you came back for |
+| `RESPAWN_SPRINT_T` / `_MULT` | 8s / 1.35 | the walk back after a death, for the driven hero, and only out of combat |
+| `PICKUP_MAGNET_RADIUS_YOU` | 200 | against 130 for everyone else. A last hit you walked away from should still bank |

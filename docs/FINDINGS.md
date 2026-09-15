@@ -229,3 +229,54 @@ Two smaller ones, both late-game growth rather than opening cost:
 `drawCoinSprite` is 61% of all `drawImage` calls after two minutes (170 orbs
 alive with an idle player), and `drawCreep` does 2-4 `ctx.save`/`restore` per
 creep.
+
+# Game feel
+
+Everything above asks whether the game is balanced. This section asks the other
+question — whether it is any fun to press the buttons — and the two are not the
+same measurement. A change here is judged by what a player sees and hears, so
+most of it is not in a table at all. The two that are:
+
+## The opening was forty seconds of walking, and it is now twenty-six
+
+The first wave used to march from the base, and the lane is 4636 units long at
+`CREEP_SPEED` 55, so the two waves met in the middle at 42s. Until then there is
+nothing on your lane to shoot: you walk for ten seconds and wait for thirty.
+
+The **first wave of a Match only** now spawns at the lane mouth — `path[1]`,
+938 units in — for **both** sides, so it is symmetric and it is one wave. Every
+later wave is untouched. Measured by stepping an idle Match and watching for the
+first enemy creep to cross the middle and for the two columns to come within a
+creep's reach of each other, three runs each:
+
+| | enemy creep reaches mid-map | waves meet |
+|---|---|---|
+| before | 45, 46, 45s | 42, 43, 42s |
+| after | 31, 29, 27s | 26, 26, 26s |
+
+## It costs nothing on the scoreboard
+
+40 games each, the player idle and never moving, against the same build before
+any of this. Within the ±9 points `docs/SIM.md` says a 40-game sample is worth:
+
+| | base destroyed | median win | enemy deaths/game | end levels |
+|---|---|---|---|---|
+| before | 35/40 (88%) | 200s | 0.78 | 12.6 / 12.8 / 7.8 |
+| after | 36/40 (90%) | 202s | 0.93 | 11.6 / 11.8 / 7.8 |
+
+Two changes in that diff could have moved it and both are in the table above:
+the first-wave spawn, and the player's own AI team-mates finally spending their
+stat points (they were banking three a level and fighting a whole match at
+level-1 stats — that is a change to the *player's* side, which is the side the
+idle-player scenario measures the least). Everything else is presentation, and
+presentation is gated on `playerTeam[activePlayerIdx]` or lives in `render()`,
+where the simulation never goes.
+
+## What a mana refund is for
+
+The carry holds its trigger for 5.4 seconds and then drops from five shots a
+second to one — the bar is empty and nothing says so except a floater. A landed
+basic now gives back half its mana cost, but **only for the hero you are driving
+and only for a shot the trigger asked for** (`manualT`, which the auto-assist
+never raises). The idle-player scenario fires nothing but the assist, so it earns
+no refund and the table above stays honest.
