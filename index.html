@@ -11202,7 +11202,7 @@ window.addEventListener('DOMContentLoaded', function(){
       addBurst(target.x, target.y, '#FF6B6B', 24, 2.2);
       spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL, target.maxHp);
       if(target===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.35);
-      noteHeroKill(target, null);
+      noteHeroKill(target, null, c.neutral ? 'THE FOREST' : 'CREEPS');
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
   }
@@ -14221,7 +14221,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // streak and the freeze are decided in one place rather than once per damage
   // source. A kill by your side is the one thing worth taking the eye off the
   // fight for a second; your own death is a beat, not a cut.
-  function noteHeroKill(target, attackerHero){
+  function noteHeroKill(target, attackerHero, cause){
     const me = playerTeam[activePlayerIdx];
     if(target.side === 'enemy'){
       if(attackerHero && attackerHero.side === 'player'){
@@ -14238,7 +14238,7 @@ window.addEventListener('DOMContentLoaded', function(){
           roundStats.streak = n; roundStats.bestStreak = Math.max(roundStats.bestStreak, n);
         }
       } else {
-        showKillBanner('ENEMY DOWN', attackerHero ? '' : 'TOWER', false);
+        showKillBanner('ENEMY DOWN', cause || 'TOWER', false);
         sfxKill('heroKill', target.x, target.y);
         roundStats.heroKills++;
       }
