@@ -278,3 +278,29 @@ it there and what it is for. The mode's own gate is `node sim/world.js`.
 | Medium reach | `NEUTRAL_KINDS[1].leash` | 480 | What makes a medium *reach* a carry standing at 367. At 330 (the easy mob's) it is a stationary target again. |
 | Camp tick radius | `CAMP_TICK_R` | 1,200 | Aggro + leash + margin. Camps further than this from every hero do not tick at all; their respawn clocks still run. |
 | Fog carve set | `FOG_NEAR_MAX` | 32 | How many near trees the fog's shadow fan uses. The vision *test* always uses all of them; this caps only what is drawn. |
+
+### The grid, the streaming and the panel
+
+These are not balance. They are the numbers that decide how much world is
+loaded at once and how much a frame is allowed to spend building it, and the
+ones marked *derived* are computed from the view rather than chosen — moving a
+derived number means moving the formula above it.
+
+| What | Constant | Now | What moving it does |
+|---|---|---|---|
+| The three grids | `CHUNK` / `OW_TILE` / `REGION` | 1,000 / 500 / 4,000 | A chunk is what loads and unloads, a tile is what bakes, a region is what features are placed in. `OW_TILE` is `CHUNK/2` and addressed off chunk keys, so the two move together. `REGION` is the box a grove, a lake or a bowl must fit inside, so shrinking it caps how big a far-out grove can get. |
+| Where ground appears | `OW_LOAD_R` | 1,800 | `HERO_VISION + CHUNK + 100`: a whole chunk lies beyond sight before a hero reaches its edge. Anything less and you can outwalk the generator. |
+| Where it goes away | `OW_UNLOAD_R` | 3,000 | Arrives at 1,800, leaves at 3,000 — 1.2 chunks of hysteresis, which is what stops a hero pacing a chunk border from rebuilding it. Raise both together or not at all. |
+| How often it looks | `OW_CHUNK_TICK` | 0.5 s | The floor, not the rule: the wanted set is also recomputed the moment the focus box changes, which is what a minimap scout or a hero switch needs. |
+| Frame budget, building | `OW_GEN_MS` / `OW_GEN_MS_URGENT` | 6 / 12 ms | How long a frame may spend in the generation queue, and how long when a wanted chunk is not yet built. A region build (~8 ms) is one per frame and on top of this; the 2,200-unit look-ahead is what normally keeps the two off the same frame. |
+| Frame budget, baking | `OW_BAKE_MS` / `OW_BAKE_MS_URGENT` | 6 / 12 ms | The same deal for the background tiles. Lower it and grass pops in behind you; raise it and a walk into new ground starts costing visible frames. |
+| Tile pool | `OW_TILE_MAX` *(derived)* / `OW_TILE_BUDGET` | 64 desktop, 42 phone / 64 | Window + a ring of hysteresis, capped at the budget. The cap is not arbitrary: 64 tiles is exactly the 4,000-square `bgCanvas` the mode gives back, so canvas memory is roughly what Match already paid. At window + 8 a step east and back re-baked six tiles a second. |
+| Tile gutter | `OW_TILE_PAD` | 2 | Each tile is baked 504² and blitted 2 units out, so neighbours overlap in identical world-space pixels. At 0 the fractional canvas scale bilinear-samples both edges and leaves a hairline every 500 units. |
+| Shadow reach | `SHADOW_REACH` | 100 | The furthest a baked shadow reaches from its sprite, computed from the bake's own factors (tree 81 + 8, rock 86, bush 74). It is what decides which neighbouring tiles a chunk load — or a felled tree — has to dirty. Too low and a border tree's shadow stops at a tile edge. |
+| Regions and rivers kept | `OW_REGION_KEEP` / `OW_RIVER_KEEP` | 3 / 5 regions | How far behind the squad a built region and a river's shore segment survive. Lower it and walking back the way you came pays to rebuild; raise it and a long session's caches grow. |
+| Too many chunks | `OW_LOADED_WARN` | 120 | A warning under `?owdebug`, not a cap — a wanted chunk is never evicted, so a hard limit would have to drop ground a hero is standing next to. |
+| Minimap window | `MM_WORLD` *(derived)* | `clamp(2.2·max(W,H), 4000, 8000)` | ~7,400 on a desktop, ~4,100 on a phone. A fixed 4,000 showed 1.19× the width already on screen. The panel's pixel size follows it (`MM_WORLD/20.5`, clamped 195–300) so dots keep their density, and the region prefetch follows it too (`MM_WORLD/2 + 200`) or the panel's outer band would show unbuilt ground. |
+| The explored record | `OW_FOG_RES` / `OW_FOG_PX` | 100 units/px / 128 px | One 128² canvas per 12,800 units of world, made when you first reach it. Unbounded without re-centring, and cheap: a session that walks 90k in a line holds a handful of them. Coarser and a walked trail reads as a blob. |
+| Giant tick radius | `OW_APEX_TICK_R` | 1,500 | Beyond it a giant does not roam at all; on waking it takes a fresh patch point under the not-visible rule, so nothing teleports in front of you. |
+| Respawn out in the world | `OW_RESPAWN_NEAR` / `OW_RESPAWN_BACK` | 2,500 / 120 | Inside 2,500 of home, or with the whole squad down, you come back at the plaza. Beyond it you come back 120 behind the nearest living ally, on his far side from whatever he is fighting — otherwise dying 10 km out is a 45–60 second walk through aggro-250 groves, which past the first hour is the routine state of the mode. |
+| Unspent-points nudge | `OW_BANKED_HINT` | 6 | Two whole levels. How many unspent points on a hero you are *not* driving make his party chip's level badge start pulsing. Nobody auto-spends for anybody (A6), and an unspent level buys nothing at all, so the reminder is the only thing standing between a level-20 ally and level-1 stats. At 3 it fires every time anyone dings. |

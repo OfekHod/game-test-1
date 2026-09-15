@@ -13,6 +13,17 @@ Nothing here is implemented. This is the plan and the honest cost.
   fixed step.
 - Simulation is cheap: ~80x realtime on one core, so a server could host on the
   order of 80 concurrent matches per core.
+- **Open World's terrain is the one part that is already solved.** Its whole
+  world is a pure function of one int32 — no `Math.random` reaches inside
+  generation, and `sim/world.js` fails the build if one does — so two machines
+  that agree on the seed agree on every tree, river, camp roster and giant
+  without sending any of it. What would still have to travel is the diff store:
+  the felled trees, the partial chops, the camp and bowl timers, and which
+  chunks a peer has loaded. That is a small, bounded message where shipping a
+  streamed world would not have been one. Note the reach of this, though: it
+  buys terrain and nothing else. Match, Survival and the tutorial still
+  generate on `Math.random`, and `withRng` is one call away from fixing that
+  when it matters.
 
 ## LAN, host-authoritative
 

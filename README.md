@@ -5,6 +5,12 @@ and a base per side. You control one hero directly and switch between them; the
 other two follow a deliberately simple lane-push routine so you always know
 where they will be.
 
+Three more modes share that engine. **Survival** holds a plaza against waves.
+**Open World** is the long one: a seeded, endless jungle that streams in as you
+walk and where a level costs twenty times what it does in a Match — see
+[Open World](#open-world) below and [docs/OPEN_WORLD.md](docs/OPEN_WORLD.md) for
+how it is built. And there is a **tutorial** for the orders.
+
 ## Layout
 
 ```
@@ -16,6 +22,7 @@ sim/               headless simulation harness (Node, no dependencies)
   match.js         one match + the report, shared by run.js and parallel.js
   sweep.js         one configuration per invocation, one comparable line out
   analyse.js       timeline: when buildings fall, deaths, farming intensity
+  world.js         the Open World gate: same seed same world, seams, streaming
   stub.js          minimal DOM so the game runs under Node
 tools/
   artifact-html.js  strips the document skeleton for a Claude Artifact build
@@ -31,7 +38,7 @@ docs/
   SIM.md           how to run experiments
   MULTIPLAYER.md   LAN plan and what internet play would additionally cost
   TUTORIAL.md      proposed in-game tutorial: phases and how it is built
-  OPEN_WORLD.md    proposed Open World mode: seeded, endless, streamed jungle — plan only
+  OPEN_WORLD.md    the Open World mode: the plan it was built from, PR by PR
 ```
 
 ## Orders
@@ -90,11 +97,71 @@ why, in practice, only the hero you are driving ever fells one: an AI hero
 swings because target acquisition handed it something, and acquisition does not
 look at trees.
 
+## Open World
+
+The fourth button on the title screen. There is no clock, no enemy team and
+nothing that attacks your base: there is a tower in a plaza at the middle, three
+heroes, and jungle in every direction for as long as you care to walk.
+
+**The seed is the world.** Entering rolls one, or you can type one into the box
+under the menu board; the same number always builds the same trees, bushes,
+rocks, rivers, lakes, forests, giants and even the same birds. The seed is on
+the loading panel, on the pause panel (tap it to copy) and on the card at the
+end, and "Play this world again" on the pause screen re-rolls nothing. Nothing
+inside generation is allowed to draw from an unseeded random — `sim/world.js`
+poisons `Math.random` and fails the build if anything does.
+
+**It streams.** The first round builds the 4×4 kilometre block around the base;
+after that, ground is generated before any hero can see it and dropped once it
+is far behind, so memory does not grow with the walk. What you did to a chunk
+comes back with it — a tree you felled is still a stump, a tree you hit twice is
+still on two, a camp you cleared is still counting down.
+
+**It is graded by distance.** Camps come bulked into groves — usually six or
+more of them, and more again the further out you go. Near home they hold
+nothing but easy mobs; with distance, more and more of them hold an 880-hp
+medium that will walk out of its own ring to reach a hero standing at max
+range, until past 91,500 units almost every camp is medium. Scattered among
+them are packed-earth bowls, ringed by bush and rock with a few real gaps,
+holding one to three giants that roam inside and will not leave.
+
+**A level costs twenty times what it costs in a Match**, so the mode is
+hours rather than minutes, and the points are yours to spend: nobody auto-builds
+a hero here or anywhere else. An ally holding two levels' worth of unspent
+points says so — his level badge on the party chip pulses until you switch to
+him and spend them.
+
+**The minimap remembers.** Ground you have never seen is blank, ground you have
+seen is dim, and only what is inside your vision right now is live — so the
+panel tells you where you have been without telling you what is over the next
+hill. The base and any ally off the edge are pinned to the rim with a bearing
+and a distance.
+
+Leaving — pause, then exit — goes through a session card: ground explored, time
+in the world, levels, xp looted and the seed, with **This world again** beside
+**Back to the menu**.
+
+Two query flags help when asking for a particular world: `?seed=N` fills the
+title box, on any protocol, and `?warp=x,y` starts the squad out there instead
+of at the plaza — that one is `file://` only, like `?speed`. See
+[Asking for a world](#asking-for-a-world) below; `tools/shoot.js` takes both as
+`--seed` and `--warp`. `?owdebug` prints the streaming counters and works
+anywhere.
+
+[docs/OPEN_WORLD.md](docs/OPEN_WORLD.md) is the plan the mode was built from,
+including which of the six PRs each piece landed in;
+[docs/GAMEPLAY.md](docs/GAMEPLAY.md) has screenshots. Its gate is:
+
+```bash
+node sim/world.js
+```
+
 ## Running the simulation
 
 ```bash
 node sim/parallel.js 40                # 40 matches spread over every core
 node sim/run.js 40                     # same, single process
+node sim/world.js                      # the Open World gate, no argument
 node sim/analyse.js 25                 # timeline breakdown
 node sim/sweep.js 20 "half tower dmg" "const TOWER_DMG = 100;=>const TOWER_DMG = 50;"
 ```
@@ -171,6 +238,26 @@ The game logic is unaffected: stepping `update(dt)` in a loop is exactly how
 by the render cadence rather than by `dt` — a fade, a camera ease, a particle
 burst — because `render()` still runs once per frame. Use it to reach a state,
 not to look at a transition.
+
+## Asking for a world
+
+`index.html?seed=N` fills the Open World box on the title screen with `N`, so a
+link can carry a world. It is read **once**, at load, and the first start empties
+the box like any other — so it seeds the next world you ask for, and cannot pin
+the button to one world for the rest of the page's life. Unlike `?speed` it works
+over https as well as `file://`: a seed is the one thing about a world that has
+to survive being pasted into a chat.
+
+`index.html?warp=x,y` starts that world's squad at those world coordinates
+instead of at the plaza. It is how a screenshot reaches ground 90,000 units out
+without walking eight minutes to it, and — like `?speed`, and for the same
+reason — it is `file://` only.
+
+The seed a round is actually running is on the loading panel, on the pause panel
+and on the end card. **That text, not the address bar, is the thing to copy**:
+the published build lives inside a host page whose address bar belongs to the
+host, so a query string may never reach it and `history.replaceState` there is
+best-effort at most.
 
 ## Why the harness reads index.html
 

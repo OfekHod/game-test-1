@@ -8,6 +8,7 @@
 //   node tools/shoot.js --shot out.png
 //   node tools/shoot.js --start match --at 45 --shot out.png
 //   node tools/shoot.js --start openworld --seed 42 --shot world.png
+//   node tools/shoot.js --start openworld --seed 42 --warp 46500,2000 --shot far.png
 //   node tools/shoot.js --start tutorial --phone --shot tut.png
 //   node tools/shoot.js --start match --at 214 --speed 8 --shot late.png
 //
@@ -58,7 +59,7 @@ function findChromium(){
 
 function parseArgs(argv){
   const a = { start: null, at: 0, speed: 1, shot: null, phone: false, seed: null,
-              wait: 0, game: path.join(__dirname, '..', 'index.html'), timeout: 300 };
+              warp: null, wait: 0, game: path.join(__dirname, '..', 'index.html'), timeout: 300 };
   for(let i = 2; i < argv.length; i++){
     const k = argv[i];
     if(k === '--phone') a.phone = true;
@@ -66,6 +67,7 @@ function parseArgs(argv){
     else if(k === '--at')      a.at     = Number(argv[++i]);
     else if(k === '--speed')   a.speed  = Number(argv[++i]);
     else if(k === '--seed')    a.seed   = parseInt(argv[++i], 10);
+    else if(k === '--warp')    a.warp   = argv[++i];
     else if(k === '--shot')    a.shot   = argv[++i];
     else if(k === '--wait')    a.wait   = Number(argv[++i]);
     else if(k === '--game')    a.game   = path.resolve(argv[++i]);
@@ -75,6 +77,9 @@ function parseArgs(argv){
   if(!a.shot) throw new Error('--shot <file.png> is required');
   if(a.at && !a.start) throw new Error('--at needs --start');
   if(a.seed !== null && !Number.isInteger(a.seed)) throw new Error('--seed takes an integer');
+  // The game's own ?warp pattern, so a typo is caught here rather than
+  // silently ignored by a regex in index.html and shot at the plaza instead.
+  if(a.warp !== null && !/^-?\d+,-?\d+$/.test(a.warp)) throw new Error('--warp takes x,y as two integers');
   return a;
 }
 
@@ -97,6 +102,8 @@ async function main(){
 
   if(a.speed > 1 && !/^\/|^[A-Za-z]:/.test(a.game))
     throw new Error('--speed only works on a local file, and the game path is not one');
+  if(a.warp !== null && !/^\/|^[A-Za-z]:/.test(a.game))
+    throw new Error('--warp only works on a local file, and the game path is not one');
 
   const browser = await chromium.launch({
     executablePath: findChromium(),
@@ -127,6 +134,7 @@ async function main(){
   const q = [];
   if(a.speed > 1) q.push('speed=' + a.speed);
   if(a.seed !== null) q.push('seed=' + a.seed);      // fills the title screen's seed box
+  if(a.warp !== null) q.push('warp=' + a.warp);      // starts the squad out there instead of the plaza
   const url = 'file://' + a.game + (q.length ? '?' + q.join('&') : '');
   const t0 = Date.now();
   // 'domcontentloaded', not the default 'load'. The font <link> is no longer
@@ -156,9 +164,13 @@ async function main(){
     const started = Date.now();
     const from = await clockSeconds(page);
     if(from === null) throw new Error('could not read the match clock');
+    // Absolute, because Open World's clock counts UP from 0:00 while a Match
+    // counts down from 10:00. Either way --at is "this many seconds of game
+    // clock after we started watching", which is what the flag has always
+    // meant; only the sign of the difference differs between the modes.
     for(;;){
       const now = await clockSeconds(page);
-      if(now !== null && from - now >= a.at) break;
+      if(now !== null && Math.abs(from - now) >= a.at) break;
       if(Date.now() - started > a.timeout * 1000)
         throw new Error('clock did not reach ' + a.at + 's within ' + a.timeout + 's');
       await page.waitForTimeout(100);

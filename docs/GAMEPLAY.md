@@ -1,6 +1,7 @@
 # Gameplay screenshots
 
-Frames from one full 10-minute Match and one Survival round, played in a
+Frames from one full 10-minute Match, one Survival round and a walk through
+the Open World. The match and the arena were played in a
 headless Chromium against the shipped `index.html` (build v154). The hero you
 control was driven by a small autopilot that walks its lane, trades with
 creeps, focuses enemy heroes, uses its skill and backs off when low, and the
@@ -16,6 +17,10 @@ at 9%. That is the state of the game, and these are honest frames of it.
 Captured at 1600×1000 with the camera zoomed in to 1.4× (the desktop default
 is 2×, which makes a fight the size of a thumbnail) so the action reads at
 README scale.
+
+The Open World frames further down were taken later, against the build that
+ships today, and driven by hand rather than by an autopilot — that section says
+how.
 
 ---
 
@@ -202,6 +207,98 @@ walking straight past the heroes toward the base.
 taking a **CRITICAL 169** as the screen fades.
 
 ![Overrun screen](screenshots/13-overrun.jpg)
+
+---
+
+## The open world
+
+All of these are **seed 42**, so anyone can go and look at the same ground:
+type `42` into the box under the menu board, or open
+`index.html?seed=42`. They were driven with the keyboard — `tools/shoot.js`
+and a short Playwright script, no reaching into the game's state — and where a
+shot is of ground that is a real walk away, the caption says how it was
+reached.
+
+### The title screen, and the box
+
+The fourth button, and under the board the seed box. Blank means a new world.
+Every start empties it again, so two goes in a row are two different worlds and
+only a number you typed repeats one.
+
+![The title screen with the Open World button and the seed box](screenshots/14-ow-title.jpg)
+
+### The plaza, five seconds in
+
+The base tower and its plaza at the middle of the starting block, the squad
+standing in it, and the whole panel still blank except the disc you can
+actually see. The gold box on the right is distance from home, in units and
+then in thousands; the clock beside it counts **up**, because out here nothing
+is running out.
+
+![The base tower and plaza at the start of seed 42](screenshots/15-ow-plaza.jpg)
+
+### 1.7k out, twenty seconds later
+
+Walked east-south-east with the keys. A river with a lake hung off it, camp
+mobs waiting on the far bank, and on the panel the trail behind us: ground
+never visited is blank paper, ground we have been through is dimmed, and only
+the disc around the squad is live. Nothing on this screen was in memory when
+the round started — it was generated as we walked into it.
+
+![A river crossing 1.7k from the base, with the minimap showing the walked trail](screenshots/16-ow-river.jpg)
+
+### A bowl, 2.9k west
+
+Packed earth in the road palette, ragged rather than round, ringed with bush
+and rock and left open in two places — and **two giants** inside it. They roam
+in there and they stay in there: walk off and they turn back at the rim. Reached
+with `?warp=400,1087` for the travel and then walked in from the east; the
+minimap has already pinned the bowl at its rim.
+
+![A dirt bowl with two giants inside its ragged rim](screenshots/17-ow-bowl.jpg)
+
+### 45.5k out, where the camps are different
+
+The same two camps you get at home, except the mobs in them are mediums —
+880 hp against an easy mob's 70, and a leash long enough to walk out through
+their own ring after a carry standing at max range. The chance of a camp
+holding one rises with distance, from about 2% at the home ring to almost
+every camp past 91,500. Reached with `?warp=47337,1700` and walked north into
+the grove; the base marker is pinned at the left rim of the panel with the
+distance on it.
+
+![Two camps of medium mobs 45.5k from the base](screenshots/18-ow-far-camps.jpg)
+
+Four seconds later, a medium is on the carry and the first one is down for
+**+52 XP** — against the 400 a level costs out here, which is the arithmetic
+the whole mode runs on.
+
+![Fighting a medium 45.6k out, +52 XP](screenshots/19-ow-far-fight.jpg)
+
+### A hero who has been collecting and not spending
+
+Nobody spends anybody's points — not the AI, not out here, not in a Match. And
+an unspent level buys **nothing**: every stat is derived from what you bought,
+so an ally at level 20 with 20 points in hand fights the way he did at level 1.
+Orbs go to whoever is nearest, so out here that ally is easy to forget about.
+So once a hero you are not driving is holding six points — two whole levels —
+his level badge starts pulsing in the stat strip's own cyan. It is a reminder
+and not a shortcut: you still switch to him and spend them yourself, and the
+badge goes quiet the moment he is the one you are driving.
+
+The carry below had been collecting for twenty minutes of open-world farming
+while the tank was driven. Switching away from him is what lit it.
+
+![The carry's level badge pulsing with six unspent points](screenshots/21-ow-unspent-points.jpg)
+
+### Leaving
+
+There is no end condition, so leaving is the end: pause, exit, and the round
+goes through a session card instead of dropping you on the title screen. Ground
+explored, time in the world, levels, xp looted and the seed — and **This world
+again** next to the way out, because Play Again out here means that same world.
+
+![The Open World session card](screenshots/20-ow-card.jpg)
 
 ---
 
