@@ -77,15 +77,29 @@ bar; on the third it throws three logs clear and goes over away from him,
 leaving a stump. The logs arc out, land, and are yours a moment after the tree
 has finished falling.
 
-There is nothing to spend the wood on yet and nothing on screen that shows the
-count. It is kept so that there is something to build with when there is
-something to build.
+The count is in the bottom-right corner of the dock, beside the clock, and it
+is the whole team's — either hero can walk over a log, and it is the same
+number whichever of the three you are driving.
 
-A swing looks at trees LAST — after enemy heroes, after creeps, after buildings
-— so a fight fought in a wood never spends a swing on the scenery. That is also
-why, in practice, only the hero you are driving ever fells one: an AI hero
-swings because target acquisition handed it something, and acquisition does not
-look at trees.
+What it buys is repair. Stand the tank at one of your own towers and swing at
+it: each swing spends one wood and puts 50 health back into the building, with
+the log drawn flying out of the counter and into the wall as it pays. He can
+only do it between pushes — the swing looks at everything hostile first, so a
+tower with enemies still in the yard gets defended rather than mended.
+
+Wood is also the one thing a death can cost you. When a TANK dies, half his
+side's bank spills on the grass where he fell, in a pile either team can walk
+over. The carry and the support drop nothing; losing the tank is what costs you
+the timber.
+
+Both sides play this. The enemy tank cuts and mends exactly as yours does, on
+the same rules — you will see their base climb back up if you leave it alone
+long enough.
+
+A swing looks at trees LAST — after enemy heroes, after creeps, after the
+enemy's buildings, and after your own — so a fight fought in a wood never
+spends a swing on the scenery, and a tank at his own gate mends it rather than
+felling the tree behind it.
 
 ## Running the simulation
 

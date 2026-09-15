@@ -83,8 +83,11 @@ measure them against yet, for the reason under the table.
 | `WOOD_PER_TREE` | 3 | logs |
 | `WOOD_DWELL` | 0.4 | seconds a log is left alone before the magnet takes it, counted from **the tree being gone**, not from the moment the logs appear. Those are a whole topple apart: the logs come out on the felling blow and tumble clear while the trunk goes over behind them (`woodDrops` is drawn after the sorted pass, so they stay on top of it the whole way down), and the sprite is still fading for the rest of `TREE_FALL_TIME`. Timed from the drop, the entire tail expired inside that fade and the logs were never once seen on their own. `spawnWood` is handed the fall as dead time in front of the dwell, so this stays the *clear* time if the topple is ever retuned |
 | `WOOD_THROW` | 42 | how far past the trunk the logs are thrown, along the line the blow came in on, so they land on the FAR side of the tree from whoever swung. They used to drop on the stump — which is where the chopper is already standing, and a pickup that lands at your feet is not a pickup, it is a number going up. Measured over three fells, the furthest log ends up 120–156 units out and visibly travels back |
-| `WOOD_MAGNET_RADIUS` | 260 | against 130 for the coins. Nobody competes for wood — no enemy hero can take it and no ally wants it — so all three logs can be in range of whoever felled the tree wherever they scattered, instead of the far one crawling in at the shared magnet's slowest speed. It also has to cover `WOOD_THROW`: worst case is a tree felled at the very end of the tank's reach, which puts him ~145 out, plus 42 of throw plus 35 the pop can carry = 222. A log outside this is not collected at all until the player walks back to it, and on a 30s TTL it would rot |
-| `WOOD_MAGNET_MULT` | 2.2 | on the shared magnet speed. Safe only because of the overshoot clamp below |
+| `WOOD_MAGNET_RADIUS` | 280 | against 130 for the coins, so all three logs are in range of whoever felled the tree wherever they scattered, instead of the far one crawling in at the shared magnet's slowest speed. It has to cover `WOOD_THROW` too: worst case is a tree felled at the very end of the tank's reach, which puts him ~148 out, plus 42 of throw, 43 of flight and 19 of skid = 252. A log outside this is not collected until somebody walks back to it, and on a 30s TTL it would rot. The reach now cuts both ways — wood belongs to whoever walks over it, either side, since a tower the enemy can mend is something for them to spend it on — so a log dropped in front of an enemy tank is a log lost, and a tank who dies spilling half a bank spills it inside somebody's reach |
+| `WOOD_PULL` | 2200 / 0.12 / 640 | acceleration, fade-in, ceiling. Wood does NOT read its speed off the distance left the way a coin does: it starts still, leans towards the hero over the fade-in, then gathers speed for the rest of the trip. The flat 2.2x multiplier this replaced had a log leaving the ground at 570 units a second and past 2000 on arrival — the whole trip took a tenth of a second and read as a teleport, not a draw-in |
+| `REPAIR_PER_WOOD` | 50 | health a log puts back into one of your own towers, one log per swing. Against a 500-health base that is ten logs — better than three trees — for a full mend, and it is paid out continuously along the log's flight rather than in a lump, because `drawBar` paints a tower's health straight off `t.hp` with no eased display value behind it |
+| `TEND_BELOW` / `TEND_UNTIL` | 0.72 / 0.97 | when an AI tank starts and stops caring about his own wall. Latched at both ends so he does not flicker on the boundary |
+| `TEND_CLEAR` | `TOWER_RANGE`*1.25 | nothing hostile may be this close to the tower or it is a fight, not a repair. This is the guard that bounds the whole AI behaviour: without it the arithmetic is absurd — a felled tree is three logs and a log is 50 health, so a tank left alone would mend faster than a lane can break |
 | `WOOD_GRAVITY` / `WOOD_TOSS_UP` | 2200 / 500–620 | the toss. Height is its own axis, drawn as an offset up the screen with the shadow left on the ground — the only way a top-down view can say a thing is in the air at all. A log peaks about 95 units up, better than two of its own lengths, and is down in 0.55s. Heavy gravity with a hard launch rather than the other way round: a floaty arc of the same height reads as a balloon, not as a log |
 | `WOOD_START_Z` | 18–34 | it leaves the cut part way up the trunk, not off the floor |
 | `WOOD_BOUNCE` / `WOOD_BOUNCE_STOP` | 0.42 / 60 | two more hops of about 15 units, then it lies still. The whole toss is done by 0.9s, inside the `TREE_FALL_TIME` it has to wait out anyway, so it is settled before the clear 0.4s starts |
@@ -142,11 +145,17 @@ on the fast path**, the one wood passes a multiplier on. The coins' arithmetic
 is untouched, deliberately: they are slow enough not to need it, and leaving
 them alone is what keeps the seeded simulation below byte-identical.
 
-**A tree is the LAST thing a swing looks at** — after enemy heroes, after creeps,
-after buildings — so a fight fought in a wood never spends a swing on the
-scenery. That ordering is also what keeps chopping out of the simulation
-entirely: an AI hero only ever swings because target acquisition handed it
-something, acquisition does not look at trees, so no AI hero ever fells one.
+**A tree is the LAST thing a swing looks at** — after enemy heroes, after
+creeps, after the enemy's buildings, and after your own — so a fight fought in a
+wood never spends a swing on the scenery, and a tank at his own gate mends it
+rather than felling the tree behind it.
+
+That ordering used to keep chopping out of the simulation entirely: an AI hero
+only ever swings because target acquisition handed it something, acquisition
+does not look at trees, so no AI hero ever fell one. `aiTendBase` is the
+exception, and the only one — it aims a tank at a trunk or at his own wall
+directly, outside acquisition, and only while his base is damaged and nothing
+hostile is near it. Everything else about AI swinging is unchanged.
 Measured, not assumed — ten full games with a counter patched into `chopTree`
 report zero chops, and eight games run from one seed against the build before
 this one come out byte for byte the same:

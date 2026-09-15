@@ -303,14 +303,19 @@
      ever wraps, and the slot never shrinks. */
   .hud-right>span{white-space:nowrap;}
   .hud-abilities{min-width:0;}
-  /* The icon is the first frame of the log sprite itself — at theta 0 the
-     billet is side on with no end cap showing, which is the one frame of the
-     turn that reads as a log at 19px. Same strip the drop uses, assigned in JS
-     so the data URI is not written into this file a second time; the brown
-     underneath is what shows until it decodes. 16 frames of 44x28 scaled to
-     19 wide is the 304px background. */
-  .woodChip{display:inline-block;width:19px;height:12px;margin-right:8px;vertical-align:-2px;
-    border-radius:3px;background:#9C6B3C no-repeat 0 0/304px 12px;}
+  /* The icon is a frame of the log sprite itself, so the thing counted here and
+     the thing lying in the grass are the same picture. Same strip the drop
+     uses, assigned in JS so the data URI is not written into this file twice.
+     16 frames of 44x28 scaled to 23 wide makes the background 368px, and one
+     frame exactly one element wide — hence -46px for frame 2.
+     Frame 2, a rung into the turn, not frame 0. At theta 0 the end cap is zero
+     across and the billet is a rectangle with square ends, which at this size
+     reads as a chocolate bar; a rung round, the cut face is an ellipse wide
+     enough to see and the thing is a log again.
+     No colour behind it: a fill shows through the frame's transparent margin
+     as a rounded brown BOX with the log sitting inside it. */
+  .woodChip{display:inline-block;width:23px;height:15px;margin-right:7px;vertical-align:-3px;
+    background:no-repeat -46px 0/368px 15px;}
 
   /* justify-content:center made a too-tall panel overflow at BOTH ends, and the
      top overflow cannot be scrolled to. On a short window that put the buttons
@@ -941,7 +946,8 @@
        tighter gap is what keeps both on one line at the width of a phone. */
     .hud-right{gap:7px;font-size:12.5px;}
     .hudIconBtn{width:30px;height:30px;font-size:12.5px;border-radius:8px;}
-    .woodChip{width:15px;height:9.5px;margin-right:4px;vertical-align:-1px;background-size:240px 9.5px;}
+    .woodChip{width:18px;height:11.5px;margin-right:4px;vertical-align:-2px;
+      background-position:-36px 0;background-size:288px 11.5px;}
 
     /* Same card, same nameplate, at the width a phone has. 56px is where a run
        of size calls landed: 58 crowded the screen, 29 stopped being a picture,
@@ -9269,6 +9275,10 @@ window.addEventListener('DOMContentLoaded', function(){
   let woodReady = false;
   woodImg.onload = ()=>{ woodReady = true; };
   woodImg.src = 'data:image/png;base64,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';
+  // The HUD counter's icon is this same strip — see .woodChip for which frame
+  // and why. Assigned here rather than written into the stylesheet so the data
+  // URI lives in the file exactly once.
+  if(woodChipEl) woodChipEl.style.backgroundImage = 'url("' + woodImg.src + '")';
   // `z` is height above the ground, positive up. The sprite is lifted by it and
   // the shadow is NOT — it stays on the grass and shrinks, which is the whole
   // trick: without it a log in the air is just a log drawn slightly higher up.
@@ -10205,7 +10215,13 @@ window.addEventListener('DOMContentLoaded', function(){
       if(h && h.alive){
         const s = HERO_STATS[h.type];
         if(h.basicCd<=0 && h.mana>=s.basicManaCost){
-          fireBasic(h, mouse.x+camera.x, mouse.y+camera.y, true);
+          // heroAttack, not fireBasic. This is the press, and the held-trigger
+          // path below it already goes through heroAttack — calling fireBasic
+          // here launched a bolt out of a MELEE hero, which hits nothing a
+          // sword can reach and burns the 1.1s cooldown the real swing needed.
+          // A tank's click did nothing to a trunk or to his own wall until the
+          // player kept the button down for another second.
+          heroAttack(h, mouse.x+camera.x, mouse.y+camera.y, 1);
         }
       }
     }
@@ -11626,7 +11642,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // space, so they ignore the camera; the last few pixels slip behind the dock,
   // which reads as the bar swallowing them.
   let hudSparks = [];
-  const hudAnchor = { xp:{x:0,y:0}, mp:{x:0,y:0}, hp:{x:0,y:0}, ok:false };
+  // `wood` is the odd one out: the three bars are where sparks fly TO, and the
+  // wood counter is where repair logs fly FROM. Same measurement either way.
+  const hudAnchor = { xp:{x:0,y:0}, mp:{x:0,y:0}, hp:{x:0,y:0}, wood:{x:0,y:0}, ok:false };
   function refreshHudAnchor(){
     if(state!=='playing'){ hudAnchor.ok = false; return; }
     const c = canvas.getBoundingClientRect();
@@ -11638,6 +11656,7 @@ window.addEventListener('DOMContentLoaded', function(){
     hudAnchor.xp = map(xpFillEl.parentNode);
     hudAnchor.mp = map(mpFillEl.parentNode);
     hudAnchor.hp = map(hpFillEl.parentNode);
+    hudAnchor.wood = map(woodChipEl);
     hudAnchor.ok = true;
   }
   function addHudSpark(wx, wy, key, col, payload){
@@ -11657,7 +11676,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!p) return;
     if(p.xp){
       grantXP(p.hero, p.xp);
-      if(p.hero.side==='player'){ xpLooted += p.xp; xpCountEl.textContent = xpLooted; }
+      if(p.hero.side==='player') xpLooted += p.xp;      // the end card's total; the corner counts wood now
     }
     if(p.mp) p.hero.mana = Math.min(p.hero.maxMana, p.hero.mana + p.mp);
     if(p.hp) p.hero.hp = Math.min(p.hero.maxHp, p.hero.hp + p.hp);
@@ -11697,6 +11716,101 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.fillStyle = '#ffffff';
       ctx.beginPath(); ctx.arc(s.x, s.y, 2.1, 0, 7); ctx.fill();
       ctx.restore();
+    }
+  }
+
+  // ---------- mending a tower ----------
+  // A tank swinging at his own wall spends a log a swing and puts
+  // REPAIR_PER_WOOD back into it. The health does not arrive in a lump: the log
+  // is drawn leaving the counter in the corner of the screen, and it pays the
+  // tower CONTINUOUSLY on the way across, so the bar climbs for the whole
+  // flight instead of stepping up when the swing lands.
+  //
+  // That matters more here than it does for a pickup. drawBar paints a tower's
+  // health straight off t.hp with no eased display value behind it, and
+  // updateBars snaps hpLag up the moment health rises — so a lump really would
+  // be a jump, with nothing in the drawing to smooth it.
+  const REPAIR_PER_WOOD = 50;
+  const REPAIR_FLIGHT = [0.5, 0.68];   // seconds, jittered so a run of logs does not fly in lockstep
+  let repairLogs = [];
+  function repairTower(t, h){
+    if(h.type !== 'tank') return false;        // the axe is his, and so is the repair
+    if(t.hp >= t.maxHp) return false;          // nothing to mend: let the swing fall through to the trees
+    if(woodBanked[h.side] <= 0) return false;
+    woodBanked[h.side] -= 1;
+    if(h.side==='player') woodCountEl.textContent = woodBanked.player;
+    sfxImpact('chop', t.x, t.y);               // he is working on it, same as on a trunk
+    // Only the player's logs are DRAWN. That corner of the screen is the
+    // player's counter, so a log flying out of it for an enemy repair would be
+    // a lie — and drawn at their tower it would report a hero the fog is
+    // hiding. Theirs mends at exactly the same rate, off screen.
+    repairLogs.push({
+      tower:t, t:0, e:0, dur:rand(REPAIR_FLIGHT[0], REPAIR_FLIGHT[1]),
+      left:REPAIR_PER_WOOD, seen: h.side==='player' && hudAnchor.ok,
+      // The arc's bend is kept as an OFFSET, not as a point. Both ends move —
+      // the HUD can be re-laid out, and the tower slides under a panning
+      // camera — so a control point fixed at spawn would hinge the flight
+      // around a stale midpoint and the log would visibly snake on its way.
+      jx: rand(-90,90), jy: -rand(120,210), bobT: rand(0,10)
+    });
+    return true;
+  }
+  // Aim at the tower's BODY, not at its anchor: towerFootFrac puts a main
+  // tower's foot most of a radius BELOW (t.x,t.y) and an outpost's barely at
+  // all, so a log thrown at the raw point lands in the grass at a base and
+  // halfway up the sprite at an outpost.
+  function towerAimY(t){ return t.y - towerVisR(t)*(1 - towerFootFrac(t))*0.55; }
+  function repairLogPoint(r, tt){
+    const a = hudAnchor.wood;
+    const dx = r.tower.x - camera.x, dy = towerAimY(r.tower) - camera.y;
+    const e = tt*tt*(3-2*tt), u = 1-e;
+    const cx = (a.x+dx)*0.5 + r.jx, cy = (a.y+dy)*0.5 + r.jy;
+    return { x: u*u*a.x + 2*u*e*cx + e*e*dx, y: u*u*a.y + 2*u*e*cy + e*e*dy };
+  }
+  function mendTower(t, amount){
+    // Rubble is rubble. mainDown decides the round off t.hp<=0 and drawTower
+    // draws a ruin, so a felled base healed back up would be a building drawn
+    // as wreckage, or a round that ended and then un-ended.
+    if(amount <= 0 || t.hp <= 0) return;
+    t.hp = Math.min(t.maxHp, t.hp + amount);
+    // NOT noHitT. updateEnemyMacro reads it to decide whether its base is
+    // bleeding and the team should come home — a repair that touched it would
+    // have a tank summon the enemy by mending his own wall.
+  }
+  function updateRepairLogs(dt){
+    for(let i=repairLogs.length-1;i>=0;i--){
+      const r = repairLogs[i];
+      r.t += dt/r.dur;
+      const done = r.t >= 1;
+      // Paid against the SMOOTHSTEP rather than against raw time, so what the
+      // tower gains tracks where the log actually is: slow as it leaves, quick
+      // across the middle, easing in as it arrives.
+      const e = done ? 1 : r.t*r.t*(3-2*r.t);
+      const pay = Math.round(REPAIR_PER_WOOD*(e - r.e));
+      r.e = e;
+      mendTower(r.tower, pay); r.left -= pay;
+      if(done){
+        mendTower(r.tower, r.left);        // whatever the rounding left behind lands with it
+        if(r.seen) addBurst(r.tower.x, towerAimY(r.tower), '#E0BB84', 12);
+        repairLogs.splice(i,1); continue;
+      }
+      r.bobT += dt*WOOD_AIR_SPIN;
+    }
+  }
+  function drawRepairLogs(){
+    if(!hudAnchor.ok) return;
+    for(const r of repairLogs){
+      if(!r.seen) continue;
+      const p = repairLogPoint(r, Math.min(1, r.t));
+      const q = repairLogPoint(r, Math.max(0, r.t-0.12));
+      ctx.save();
+      ctx.globalAlpha = 0.45; ctx.lineCap='round';
+      ctx.strokeStyle = '#E0BB84'; ctx.lineWidth = 2.2*VIEW_ZOOM;
+      ctx.beginPath(); ctx.moveTo(q.x,q.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+      ctx.restore();
+      // Screen space, but the world transform is translate-only, so a log drawn
+      // here is exactly the size of one lying in the grass. No VIEW_ZOOM.
+      drawWoodSprite(p.x, p.y, 0, r.bobT, WOOD_DRAW*0.8);
     }
   }
   let pings = [];
@@ -11859,7 +11973,7 @@ window.addEventListener('DOMContentLoaded', function(){
       shake = Math.max(shake, 0.12);
     } else {
       grantXP(h, o.value);
-      if(h.side==='player'){ xpLooted += o.value; xpCountEl.textContent = xpLooted; }
+      if(h.side==='player') xpLooted += o.value;        // ditto: still counted, just not on screen
     }
   }
   function updateXpOrbs(dt){
@@ -12675,6 +12789,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateFireBlasts(dt);
     updateBirds(dt);
     updateHudSparks(dt);
+    updateRepairLogs(dt);
     updateMusicThreat(dt);
     if(hurtFlash>0) hurtFlash = Math.max(0, hurtFlash - dt*2.4);
     if(noManaT>0) noManaT = Math.max(0, noManaT - dt);
@@ -13126,6 +13241,91 @@ window.addEventListener('DOMContentLoaded', function(){
     h.y=Math.min(WY1-h.r-6,Math.max(WY0+h.r+6,h.y));
   }
 
+  // ---- the AI's half of the wood economy ----
+  // A tank mends his own base with timber he cut himself. He never chops for
+  // its own sake: the errand BEGINS because the wall is down and ENDS when the
+  // wall is up, which is what keeps a hero who could fell the whole map from
+  // felling the whole map.
+  //
+  // The guard that actually bounds it is hostiles at the gate. A base with
+  // enemies in the yard wants defending rather than mending, so a repair only
+  // ever happens in the gap between two pushes — which is also the only time
+  // it is worth anything, and is why a tank cannot simply out-heal a siege.
+  // Without that test the arithmetic is absurd: a log is 50 health against a
+  // 500-health base and a felled tree is three logs, so a tank left alone with
+  // a wood would mend faster than a lane can break.
+  //
+  // Both sides run this, because the player's own tank is AI-driven whenever
+  // he is not the hero being driven.
+  const TEND_BELOW = 0.72;               // how far down the wall has to be before he cares
+  const TEND_UNTIL = 0.97;               // and he stays on it until it is near enough whole
+  const TEND_CLEAR = TOWER_RANGE*1.25;   // nothing hostile this close to the tower, or it is a fight
+  const TEND_CALM = 4;                   // seconds out of combat before he will walk off at all
+  const TEND_TREE_REACH = 1250;          // how far he will go for a trunk
+  function hostileNear(h, x, y, r){
+    for(const f of (h.side==='player' ? enemyTeam : playerTeam)){
+      if(f.alive && dist(x,y,f.x,f.y) < r) return true;
+    }
+    for(const c of (h.side==='player' ? enemyCreeps : allyCreeps)){
+      if(dist(x,y,c.x,c.y) < r) return true;
+    }
+    return false;
+  }
+  function aiNearestTree(h){
+    let best = null, bd = TEND_TREE_REACH;
+    for(const t of trees){
+      if(t.bush !== undefined) continue;          // a berry bush is not timber
+      const d = dist(h.x,h.y,t.x,t.y);
+      if(d < bd){ bd = d; best = t; }
+    }
+    return best;
+  }
+  function aiTendBase(h, dt){
+    if(h.type !== 'tank') return false;
+    const t = mainTower(ownTowers(h));
+    if(!t || t.hp <= 0) return false;             // survival's enemy side has no tower at all
+    const frac = t.hp/t.maxHp;
+    // Latched at both ends, so he does not start and stop on the boundary: it
+    // takes real damage to set him off and something close to whole to release
+    // him.
+    if(h._tend) { if(frac >= TEND_UNTIL) h._tend = false; }
+    else if(frac < TEND_BELOW) h._tend = true;
+    if(!h._tend) return false;
+    if((h.combatT||0) < TEND_CALM) return false;  // somebody is hitting him; that comes first
+    if(hostileNear(h, t.x, t.y, TEND_CLEAR)) return false;
+    if(h._tendWait > 0){ h._tendWait -= dt; return true; }   // standing over logs he has just cut
+
+    const s = HERO_STATS[h.type];
+    const swing = (tx, ty)=>{
+      if(h.basicCd>0 || h.autoCd>0 || h.mana < s.basicManaCost) return;
+      h.autoCd = s.basicInterval/AI_FIRE_RATE;
+      heroAttack(h, tx, ty, 1);
+    };
+    if(woodBanked[h.side] > 0){
+      if(dist(h.x,h.y,t.x,t.y) > attackRange(h) + t.r - 10){
+        moveHeroToward(h, t.x, t.y, heroSpeed(h), dt);
+      } else swing(t.x, t.y);
+      return true;
+    }
+    // Out of timber, so go and cut some — and STAY for it. The logs are not
+    // collectable until the tree's whole topple plus the dwell has run, and a
+    // hero who walks off at his own pace is well outside the magnet by then.
+    if(h._tendTree && trees.indexOf(h._tendTree) < 0){
+      h._tendTree = null;
+      h._tendWait = TREE_FALL_TIME + WOOD_DWELL + 0.7;
+      return true;
+    }
+    const tree = (h._tendTree && trees.indexOf(h._tendTree) >= 0) ? h._tendTree : aiNearestTree(h);
+    if(!tree){ h._tend = false; return false; }   // nothing within reach: back to the lane
+    if(dist(h.x,h.y,tree.x,tree.y) > attackRange(h) + tree.r*TREE_COLLIDE_FACTOR - 10){
+      moveHeroToward(h, tree.x, tree.y, heroSpeed(h), dt);
+    } else {
+      h._tendTree = tree;
+      swing(tree.x, tree.y);
+    }
+    return true;
+  }
+
   function updateIdleAI(team, activeIdx, oppTeam, oppCreeps, dt, allowCommands){
     for(let i=0;i<team.length;i++){
       if(i===activeIdx) continue;
@@ -13153,6 +13353,12 @@ window.addEventListener('DOMContentLoaded', function(){
         tryAutoAttack(h);
         continue;
       }
+
+      // Above holdGround, because a posted tank would otherwise walk back to
+      // his mark instead of going to work, and below wantsRetreat, because an
+      // errand is never worth dying for. See aiTendBase for what stops it from
+      // firing while there is a fight on.
+      if(aiTendBase(h, dt)) continue;
 
       if(holdGround(h, dt)){
         // reclaiming the spot he was pushed out of — nothing else moves him
@@ -14243,6 +14449,9 @@ window.addEventListener('DOMContentLoaded', function(){
     h._campClaim=null; h._campSeen=0; h._task=null; h._taskT=0;
     h._chaseT=0; h._huntBan=0; h.combatT=99; h._chaseOn=false; h._offHuntT=0;
     h._hdg=undefined; h._hdgT=0; h._retreat=false;
+    // Same reason: a tank who died mid-errand must not walk back to a trunk
+    // that somebody else has already felled.
+    h._tend=false; h._tendTree=null; h._tendWait=0;
     if(gameMode==='openworld' && squadTogether && h !== playerTeam[activePlayerIdx]){
       h.mode = 'follow'; h.followTarget = playerTeam[activePlayerIdx];
     }
@@ -15773,6 +15982,7 @@ window.addEventListener('DOMContentLoaded', function(){
     owProfTick();
     drawTutorialMini();
     drawHudSparks();
+    drawRepairLogs();
     drawReticle();
     if(MUSIC_DEBUG && state==='playing') drawThreatHud();
 
@@ -17378,7 +17588,7 @@ window.addEventListener('DOMContentLoaded', function(){
     score = { player:0, enemy:0 };
     squadTogether = false;
     allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; hpOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; dashFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
-    woodDrops=[]; fellingTrees=[]; woodBanked=0;
+    woodDrops=[]; fellingTrees=[]; woodBanked={ player:0, enemy:0 }; repairLogs=[];
     // buildMap() above already stocked the camps, and this wipe just deleted
     // them — so updateNeutrals saw an empty camp with alive>0, decided it had
     // "just been wiped", and started a 15s respawn. The forest was empty for
@@ -17418,7 +17628,7 @@ window.addEventListener('DOMContentLoaded', function(){
     applyDefaultOrders();
     for(const t of playerTowers.concat(enemyTowers)){ t.hp=t.maxHp; t.flash=0; t.atkCd=0; t.hpLag=1; t.noHitT=0; }
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0 };
-    xpCountEl.textContent='0';
+    woodCountEl.textContent='0';
     timerEl.textContent = gameMode==='survival' ? 'Wave 1' : (gameMode==='openworld' ? '0:00' : fmtTime(ROUND_TIME));
     // Not startScreen: guardedStart owns exactly when that gets hidden —
     // immediately for a path with no page to turn, or on a delay for one
@@ -18881,14 +19091,19 @@ window.addEventListener('DOMContentLoaded', function(){
   const buildTagEl = document.getElementById('buildTag');
   if(buildTagEl) buildTagEl.textContent += ' · ready';
 
-  // There is no wood in the HUD yet, so this is how the count is read while
-  // nothing on screen shows it: from the console, and from the screenshot
-  // scripts that have to prove a log actually banked.
-  window.__laneWood = ()=>woodBanked;
+  // Both banks, where the HUD only shows the player's. A COPY, because this is
+  // handed out to console pokes and screenshot scripts, and a reference would
+  // let one of them spend timber the game still thinks it has.
+  window.__laneWood = ()=>({ player:woodBanked.player, enemy:woodBanked.enemy });
   // Same reason as __laneWood: the screenshot scripts need to know a hero
   // death actually dropped HP coins before they can go looking for one, and
   // whether the drop landed somewhere the camera can actually see.
   window.__laneHpOrbs = ()=>hpOrbs.length;
+  // And again for repair, which is a number going UP on a building — the one
+  // thing a screenshot genuinely cannot prove on its own, because a half-full
+  // bar looks the same whichever direction it was last moving.
+  window.__laneTowers = ()=>playerTowers.concat(enemyTowers)
+    .map(t=>({ side:t.side, main:t.main, hp:Math.round(t.hp), maxHp:t.maxHp, x:Math.round(t.x), y:Math.round(t.y) }));
   window.__laneHpOrbOnScreen = ()=>hpOrbs.some(o=>onScreen(o.x,o.y,30) && isVisible(o.x,o.y,ORB_SIGHT_R));
   // And the same again for the flocks: a bird's heading is the thing being
   // photographed, so a shot has to WAIT for one that is on screen and steep
@@ -18896,9 +19111,31 @@ window.addEventListener('DOMContentLoaded', function(){
   window.__laneBirds = ()=>birds.filter(b=>onScreen(b.x,b.y,80)).map(b=>({
     x:b.x-camera.x, y:b.y-camera.y, vx:b.vx, vy:b.vy, sc:b.sc,
     deg: Math.atan2(b.vy,b.vx)*180/Math.PI }));
-  // The screenshot scripts need the logical view size to turn a bird's world
-  // position into a pixel on the page: the canvas backing store is W*canvasScale,
-  // so canvas.width alone is off by that factor and lands the crop on the HUD.
+  // Chopping and repairing are both "walk at a particular thing and hold the
+  // trigger", and neither the trunk, the wall nor the tank himself is findable
+  // from outside the game — a trunk-brown blob on the canvas is as likely to be
+  // one of the 45 berry bushes, which are solid and cannot be felled. Same job
+  // as __laneBirds: tell the driver where to point. Screen coordinates are the
+  // canvas's own, so a driver scales them by the element's rect.
+  window.__laneTank = ()=>{
+    const h = playerTeam[1];
+    const pick = (o)=>({ x:Math.round(o.x), y:Math.round(o.y),
+                         sx:Math.round(o.x-camera.x), sy:Math.round(o.y-camera.y),
+                         d:Math.round(dist(h.x,h.y,o.x,o.y)) });
+    return {
+      x:Math.round(h.x), y:Math.round(h.y), sx:Math.round(h.x-camera.x), sy:Math.round(h.y-camera.y),
+      alive:h.alive, hp:Math.round(h.hp), mana:Math.round(h.mana),
+      active:playerTeam[activePlayerIdx]===h, reach:Math.round(attackRange(h)),
+      trees: trees.filter(t=>t.bush===undefined)
+                  .map(t=>Object.assign(pick(t), { r:Math.round(t.r), chops:t.chops||0 }))
+                  .sort((a,b)=>a.d-b.d).slice(0,4),
+      base: playerTowers.length ? Object.assign(pick(mainTower(playerTowers)),
+              { hp:Math.round(mainTower(playerTowers).hp), maxHp:mainTower(playerTowers).maxHp }) : null,
+    };
+  };
+  // The screenshot scripts need the logical view size to turn a world position
+  // into a pixel on the page: the canvas backing store is W*canvasScale, so
+  // canvas.width alone is off by that factor and lands the crop on the HUD.
   window.__laneW = ()=>W;
   window.__laneH = ()=>H;
   window.__laneLoaded = true;
