@@ -5990,7 +5990,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // The effect is attached to the hero rather than to the spot where he
   // levelled, so the whole thing travels with him if he keeps moving.
   function triggerLevelUpFX(h){
-    sfxLevelUp(h.x, h.y);
+    sfxLevelUp(h.x, h.y, h.side==='player' ? 1 : 0.35);
     levelFx.push({ h, life:0, maxLife:LEVEL_FX_TIME, seed:Math.random()*Math.PI*2, pal:FX_PAL.level, sc:1, big:true });
     addFloater(h.x, h.y-h.r-74, 'LEVEL UP!', '#FFD54F', true);
     addFloater(h.x, h.y-h.r-38, 'Lv.'+h.level, '#ffffff', true);
@@ -10595,6 +10595,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.mana -= s.basicManaCost;
     const ang = Math.atan2(aimY-h.y, aimX-h.x);
     h.facing = ang; h.atkT = HERO_ATK_ANIM;
+    sfxShot('swing', h.x, h.y, h.side==='player');
     // A melee hero gains reach at a third the rate, so investing in range still
     // helps it connect without ever turning the sword into a rifle.
     const reach = attackRange(h), dmg = heroBasicDmg(h);
@@ -10623,6 +10624,9 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     const heroHits = oppTeam.filter(oh => oh.alive && oh.invuln<=0 && inArc(oh.x, oh.y, oh.r));
 
+    // A sword landing is not a bullet landing: the hit functions read this
+    // flag to pick the heavy impact over the tick.
+    meleeHitCtx = true;
     for(const oh of heroHits){
       applyHeroHit(oh, h.side, oh.x-h.x, oh.y-h.y, dmg, h);
     }
@@ -10631,6 +10635,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(idx < 0 || c.hp <= 0) continue;
       applyCreepHit(c, list, idx, h.side, c.x-h.x, c.y-h.y, dmg, h);
     }
+    meleeHitCtx = false;
     if(heroHits.length || creepHits.length) refundOnHit(h);
     // Buildings only if the sweep found nothing living — otherwise a hero
     // standing at its own tower would soak a free hit on the tower every swing.
@@ -10779,6 +10784,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(dashKilled){
       h.skillCd = 0;   // still resets; the ping and sparkles say so without a caption
       h.skillReadyT = 0.5;   // and the widget pops, same as a cooldown running out
+      if(h===playerTeam[activePlayerIdx] && h.side==='player') sfxSkillReady();
       addPing(h.x, h.y, '#8FE3FF', 12, 44, 0.35);
       spawnSparkles(h.x, h.y, 14, '#CFF3FF', 0.7);
     }
@@ -10796,6 +10802,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // rocket — either team's — leaves the camera on the hero you are driving.
     if(h === playerTeam[activePlayerIdx] && h.side === 'player') rideRocket(shell);
     addBurst(h.x,h.y,'#E8654A',8);
+    sfxShot('rocket', h.x, h.y, h.side==='player');
   }
 
   // A second press of the skill sets the shell off where it is now rather than
@@ -11586,6 +11593,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // cone on the frame of the click with nothing on screen but a puff at the
   // hand, so the reach and the shape of a hit were a guess.
   let slashes = [];
+  let meleeHitCtx = false;   // true while a swing is resolving its hits
   function addSlash(h, ang, reach){ slashes.push({ h, ang, reach, life:0, max:0.24 }); }
   function updateSlashes(dt){
     for(let i=slashes.length-1;i>=0;i--){ slashes[i].life+=dt; if(slashes[i].life>slashes[i].max) slashes.splice(i,1); }
@@ -12641,7 +12649,10 @@ window.addEventListener('DOMContentLoaded', function(){
     if(h.manualT>0) h.manualT=Math.max(0,h.manualT-dt);
     // skillReadyT is the half second after the cooldown lands on zero: the HUD
     // pops the widget on it. Per hero, so a switch does not inherit a pop.
-    if(h.skillCd>0){ h.skillCd=Math.max(0,h.skillCd-dt); if(h.skillCd===0) h.skillReadyT=0.5; }
+    if(h.skillCd>0){
+      h.skillCd=Math.max(0,h.skillCd-dt);
+      if(h.skillCd===0){ h.skillReadyT=0.5; if(h===playerTeam[activePlayerIdx] && h.side==='player') sfxSkillReady(); }
+    }
     if(h.skillReadyT>0) h.skillReadyT=Math.max(0,h.skillReadyT-dt);
     if(h.invuln>0) h.invuln=Math.max(0,h.invuln-dt);
     if(h.levelGlow>0) h.levelGlow=Math.max(0,h.levelGlow-dt);
@@ -14059,6 +14070,14 @@ window.addEventListener('DOMContentLoaded', function(){
   function explodeRocket(x,y,side,dmgBase,attackerHero,radius,heroDmg){
     const R = radius || ROCKET_SPLASH_RADIUS;
     const HD = heroDmg || dmgBase;
+    // One boom per blast, before the hits, so it is never the eighth voice in
+    // the window behind eight creep ticks. Tower shells fire every second from
+    // every tower in view, so they only sound when they land near you.
+    {
+      const me = playerTeam[activePlayerIdx];
+      if(attackerHero) sfxBoom(x, y, false);
+      else if(me && me.alive && dist(x,y,me.x,me.y) < 520) sfxBoom(x, y, true);
+    }
     const oppCreeps = side==='player' ? enemyCreeps : allyCreeps;
     const oppTeam = side==='player' ? enemyTeam : playerTeam;
     for(const list of [oppCreeps, neutralCreeps]){
@@ -14121,7 +14140,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // range never registers as a target, so it stands there "unaware" and
     // regens between hits instead of retaliating.
     if(creep.huge && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
-    sfxImpact(isCrit ? 'crit' : 'creep', creep.x, creep.y);
+    sfxImpact(isCrit ? 'crit' : (meleeHitCtx ? 'heavy' : 'creep'), creep.x, creep.y);
     // The killing blow prints gold and big: at a glance, that number was the
     // one that mattered.
     addFloater(creep.x, creep.y-creep.r-6, String(dmg), lethal ? '#FFD54F' : dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit || lethal, false, isCrit);
@@ -14148,6 +14167,9 @@ window.addEventListener('DOMContentLoaded', function(){
       shake = Math.max(shake, creep.huge?0.6:(creep.big?0.45:0.3));
       hitStopFor(creep.huge ? 0.14 : (creep.big ? 0.07 : 0.045));
       addPing(creep.x, creep.y, '#FFD54F', 10, 60, 0.35);
+      sfxKill('kill', creep.x, creep.y);
+      musicKillBump(creep.huge ? 0.2 : 0.05);
+      roundStats.creepKills++;
       // Two kills inside six tenths of a second is a run, and a run gets a word.
       const run = roundSeconds - (attackerHero.lastKillT||-9) < 0.6 ? (attackerHero.killRun||1)+1 : 1;
       attackerHero.killRun = run; attackerHero.lastKillT = roundSeconds;
@@ -14177,7 +14199,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Whose bar just moved is the one thing this has to say. Your own hero
     // taking one is a different sound from every hit you land, including the
     // ones your team-mates take: it is the only one you have to react to.
-    sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
+    sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : (meleeHitCtx ? 'heavy' : 'hero'), target.x, target.y);
     registerHurt(target, dmg, dirX, dirY);
     addHitFloater(target, dmg, lethal ? '#FFD54F' : dmgColor(target.side==='player', isCrit), isCrit || lethal);
     addBurst(target.x, target.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5, 1.4);
@@ -14208,13 +14230,25 @@ window.addEventListener('DOMContentLoaded', function(){
         const n = attackerHero.streak;
         const text = n>=4 ? 'RAMPAGE x'+n : n===3 ? 'TRIPLE KILL' : n===2 ? 'DOUBLE KILL' : 'KILL';
         showKillBanner(text, (mine ? '' : attackerHero.type.toUpperCase()+' \u00b7 ') + '+' + PTS.hero, n>=2);
-        if(mine){ hitStopFor(0.12); addPing(target.x, target.y, '#FFD54F', 14, 90, 0.5); }
+        sfxKill('heroKill', target.x, target.y);
+        musicKillBump(mine ? 0.2 : 0.1);
+        roundStats.heroKills++;
+        if(mine){
+          hitStopFor(0.12); addPing(target.x, target.y, '#FFD54F', 14, 90, 0.5);
+          roundStats.streak = n; roundStats.bestStreak = Math.max(roundStats.bestStreak, n);
+        }
       } else {
         showKillBanner('ENEMY DOWN', attackerHero ? '' : 'TOWER', false);
+        sfxKill('heroKill', target.x, target.y);
+        roundStats.heroKills++;
       }
     } else {
       target.streak = 0;
-      if(target === me) hitStopFor(0.10);
+      if(target === me){
+        hitStopFor(0.10);
+        sfxDeath(target.x, target.y);
+        roundStats.deaths++; roundStats.streak = 0;
+      }
     }
   }
 
@@ -14245,6 +14279,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.alive=true; h.hp=h.maxHp; h.mana=h.maxMana;
     h.x=h.homeX; h.y=h.homeY; h.vx=0; h.vy=0; h.invuln=0.5; h.kt=0; h.dashing=false;
     h.standX=null; h.standY=null; h.siegeT=null; h.backoffT=0;
+    if(h.side==='player') sfxRespawn(h.x, h.y);
     // a corpse must never stay latched as a sticky target
     h._laneT=null; h._campT=null; h._campSpook=null; h._closeTo=null; h._act=null; h._actT=0;
     h._campClaim=null; h._campSeen=0; h._task=null; h._taskT=0;
@@ -17648,6 +17683,7 @@ window.addEventListener('DOMContentLoaded', function(){
       towerCompareEl.textContent = lastHits+' last hit'+(lastHits===1?'':'s');
       document.getElementById('roundStatsLine').textContent = roundStatsText();
       endScreen.classList.remove('hidden');
+      sfxStinger('lose');
       musicSync();                     // back to an overlay: fade it up again
       return;
     }
@@ -17697,6 +17733,7 @@ window.addEventListener('DOMContentLoaded', function(){
       + ' · Deaths ' + roundStats.deaths + ' · Best streak ' + roundStats.bestStreak
       + ' · Lv ' + playerTeam.map(h => h.level).join('/');
     endScreen.classList.remove('hidden');
+    sfxStinger(result);
     musicSync();
   }
   // A full three seconds of sky before the round opens, whether or not the
@@ -17835,7 +17872,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // The music is also as calm as the map is. Without this a round that ended
     // with three of them on top of you would open the next one at full dread
     // and then take two and a half seconds to work out that nobody is there.
-    threat = 0;
+    threat = 0; killBump = 0;
     if(musicTracks.play) musicTracks.play.setIntensity(0);
     musicSync(MATCH_FADE);
     // The main thread is about to disappear into buildMap and the cache warm,
