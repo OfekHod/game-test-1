@@ -237,3 +237,24 @@ carry, which is the counter-play the whole design rests on, so treat it as a
 lower bound too — but it does mean the healer at wave 10 and the column at
 wave 13 are a long way past where an average round now ends. `SURV_HERO_EVERY`
 is the dial for that, and it is the one to turn first.
+
+## Open World
+
+Every number below is one constant, and `docs/OPEN_WORLD.md` says which PR put
+it there and what it is for. The mode's own gate is `node sim/world.js`.
+
+| What | Constant | Now | What moving it does |
+|---|---|---|---|
+| How far "far" is | `OW_SPAN` | 90,000 | The whole difficulty axis. `u = clamp((D − 1500)/OW_SPAN, 0, 1)`, and every roster, camp size and grove count reads `u`. Halve it for a tighter world, double it for a frontier no session exhausts. Nothing else moves with it. |
+| Level cost | `OW_XP_MULT` | 20 | Req 5. ×20 puts the driven hero's cap at ~2.5–3 h; 10 halves that. One multiply in `xpForLevel`. |
+| A medium's xp | `NEUTRAL_BIG_XP` | 160 | 0.18 xp per hp against an easy mob's 0.46. Below ~120 a far all-medium camp is a worse farm than the home ring and the walk out stops paying. |
+| A giant's xp | `OW_APEX_XP_FAR` | 480 | Five easy camps in one kill. 400 if the shortcut feels too rich. |
+| A giant's respawn | `OW_APEX_RESPAWN` | 120 | Match's 60 is tuned for a ten-minute round. At 480 xp a two-minute wait keeps a bowl a prize rather than a farm. |
+| Giants per bowl | `apexN` roll | 1–3, P .45/.35/.20 | Three at 100 damage will kill a level-3 squad. The rim's 2–4 gaps are the way out. |
+| Bowls near home | `OW_DIRT_BASE_R` | 2,200 | ~10 s of level-1 walking. Raise it and a giant becomes a trip you choose; lower it and one sits in sight of the plaza. |
+| Smallest bowl | `OW_DIRT_MIN_R` | 300 | A bowl shrinks until it fits between the region's water — the requested 420–680, then 0.8, 0.64, 0.51 of it, and no smaller than this. Raise it and watery regions go back to having no bowl at all (they had two in ninety-two before the shrink existed); lower it and a "landmark" is a puddle of gravel. |
+| Getting unstuck | `SLIP_STALL` / `SLIP_TURN` / `SLIP_MAX` | 0.18 s / 3.2 rad/s / 2.6 rad | How long the hero walks into something before the walk starts bending round it, how fast it bends, and how far it may bend. All three only ever apply to a hero you are driving with the keys or the stick; the AI steers itself. Shorten `SLIP_STALL` and the hero curves round bushes he would have cleared anyway; lengthen it and a notch reads as a freeze again. |
+| Camp spacing | `OW_CAMP_SPACING` | 510 / 660 | Derived: a hero at camp A's ring edge must stay outside camp B's aggro. 660 when either camp holds a medium, whose leash is longer. Survival's 370 chain-pulls. |
+| Medium reach | `NEUTRAL_KINDS[1].leash` | 480 | What makes a medium *reach* a carry standing at 367. At 330 (the easy mob's) it is a stationary target again. |
+| Camp tick radius | `CAMP_TICK_R` | 1,200 | Aggro + leash + margin. Camps further than this from every hero do not tick at all; their respawn clocks still run. |
+| Fog carve set | `FOG_NEAR_MAX` | 32 | How many near trees the fog's shadow fan uses. The vision *test* always uses all of them; this caps only what is drawn. |

@@ -253,6 +253,126 @@ test(' 9  One object per river, however far you walk along it (PR3)', () => {
   assert.ok(hops > 1, 'never walked along the river');
 });
 
+// ---------------------------------------------------------------- PR4 -----
+// The gradient and the giants: what "further out is harder" means in numbers.
+
+test(' 6  The difficulty gradient, over ten seeds (PR4)', () => {
+  let near = { easy: 0, mixed: 0, whole: 0 }, far = { easy: 0, mixed: 0, whole: 0 };
+  for(let i=0;i<10;i++){
+    const G2 = load();
+    G2.start('openworld', 100 + i);
+    const n = G2.world.campKinds(0, 0, 4000, 4000);
+    near.easy += n.easy; near.mixed += n.mixed; near.whole += n.whole;
+    // Past the saturation distance, where §6.3 expects almost every camp to
+    // be all-medium. teleport rather than walk: no seed has a walkable route
+    // 92,000 units long inside one test.
+    G2.world.teleport(66000, 66000);
+    for(let k=0;k<300;k++) G2.step(0.05);
+    const f = G2.world.campKinds(62000, 62000, 70000, 70000);
+    far.easy += f.easy; far.mixed += f.mixed; far.whole += f.whole;
+  }
+  const nTot = near.easy + near.mixed + near.whole, fTot = far.easy + far.mixed + far.whole;
+  assert.ok(nTot > 80, 'only ' + nTot + ' camps in the start blocks');
+  assert.ok(fTot > 40, 'only ' + fTot + ' camps out at the far end');
+  const nEasy = near.easy/nTot, fWhole = far.whole/fTot;
+  console.log('        home ring: ' + (nEasy*100).toFixed(0) + '% all-easy of ' + nTot + ' camps'
+    + ' · 93k out: ' + (fWhole*100).toFixed(0) + '% all-medium, '
+    + (far.mixed/fTot*100).toFixed(0) + '% mixed of ' + fTot);
+  assert.ok(nEasy >= 0.95, 'the home ring is only ' + (nEasy*100).toFixed(0) + '% all-easy');
+  assert.ok(fWhole >= 0.55, 'the far end is only ' + (fWhole*100).toFixed(0) + '% all-medium');
+});
+
+test('11  An apex stays in its own bowl (PR4)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  goTo(G2, 11302, 16241, 12);
+  const area = G2.world.features().filter(f => f.kind === 'dirt')[0];
+  assert.ok(area, 'no dirt area out there to test');
+  assert.ok(area.gaps >= 2, 'a bowl with fewer than two ways in');
+  assert.ok(area.members.length > 12, 'a rim of only ' + area.members.length + ' objects');
+  // Stand outside the rim and poke at it, the way a hero kiting one would.
+  G2.world.teleport(area.at.x, area.at.y - area.at.r*1.6);
+  let samples = 0, out = 0;
+  for(let i=0;i<60*20;i++){
+    G2.step(0.05);
+    for(const a of G2.world.apexes()){
+      if(a.area !== area.id) continue;
+      samples++;
+      if(!G2.world.inDirt(area.id, a.x, a.y, 120)) out++;
+    }
+  }
+  assert.ok(samples > 100, 'no apex ever appeared in the bowl (' + samples + ' samples)');
+  assert.strictEqual(out, 0, 'an apex left its bowl on ' + out + ' of ' + samples + ' samples');
+});
+
+// The three things the owner walked into on PR4's first build, each one now a
+// test: a hundred thousand units with no bowl in them, a hero stopped dead
+// against a bush for as long as the key was held, and the giants he had left
+// behind still alive and roaming ground that had been thrown away.
+
+test('15  A long walk goes past bowls, with giants in them (PR4)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  G2.world.press('d', true);
+  const bowls = new Set(); let apexes = 0, stray = 0;
+  for(let i=0;i<180/0.05;i++){
+    G2.step(0.05);
+    if(i % 40) continue;
+    for(const f of G2.world.features()) if(f.kind === 'dirt') bowls.add(f.id);
+    const live = G2.world.apexes();
+    apexes = Math.max(apexes, live.length);
+    // And every one of them still has a bowl to stand in. A giant is culled
+    // with its BOWL rather than with a chunk — a bowl spans several — and
+    // that cull was missing: a walk this long ended with twenty-two of them
+    // alive and roaming ground that had been thrown away, which nothing else
+    // here would have noticed.
+    const bowl = new Set(G2.world.dirtIds());
+    for(const a of live) if(!bowl.has(a.area)) stray++;
+  }
+  const p = G2.world.probe(0);
+  console.log('        walked east ' + Math.round(p.x) + ' units past ' + bowls.size
+    + ' bowls · at most ' + apexes + ' giants alive at once');
+  assert.ok(p.x > 30000, 'the walk only got to ' + Math.round(p.x));
+  assert.ok(bowls.size >= 6, 'only ' + bowls.size + ' bowls in ' + Math.round(p.x) + ' units of walking');
+  assert.ok(apexes > 0, 'no giant was ever alive');
+  assert.strictEqual(stray, 0, stray + ' sightings of a giant whose bowl had been unloaded');
+});
+
+test('17  Holding one key never stops the hero (PR4)', () => {
+  const DIRS = [['north','w',0,-1], ['south','s',0,1], ['east','d',1,0], ['west','a',-1,0]];
+  const SECS = 120, ideal = 227*SECS;
+  let worstPct = 1, worstStall = 0, worstName = '';
+  for(const seed of [1, 42]){
+    for(const [name, key, ux, uy] of DIRS){
+      const G2 = load();
+      G2.start('openworld', seed);
+      G2.world.press(key, true);
+      const s0 = G2.world.probe(0);
+      let last = s0, stall = 0, worst = 0;
+      for(let i=0;i<SECS/0.05;i++){
+        G2.step(0.05);
+        if(i % 10 !== 9) continue;                 // every half second
+        const q = G2.world.probe(0);
+        if((q.x-last.x)*ux + (q.y-last.y)*uy < 5){ stall += 0.5; worst = Math.max(worst, stall); }
+        else stall = 0;
+        last = q;
+      }
+      const q = G2.world.probe(0);
+      const pct = ((q.x-s0.x)*ux + (q.y-s0.y)*uy) / ideal;
+      if(pct < worstPct){ worstPct = pct; worstName = seed + ' ' + name; }
+      worstStall = Math.max(worstStall, worst);
+      assert.ok(pct > 0.7, 'seed ' + seed + ' ' + name + ': covered only '
+        + (pct*100).toFixed(0) + '% of open ground in two minutes');
+      // The bug itself. Two bushes whose bars overlap make a notch that pushes
+      // back exactly as fast as you walk in, and before steerAroundStall this
+      // was not six seconds, it was the rest of the session.
+      assert.ok(worst <= 6, 'seed ' + seed + ' ' + name + ': ' + worst + 's without moving');
+    }
+  }
+  console.log('        eight walks: worst ' + (worstPct*100).toFixed(0) + '% of open ground ('
+    + worstName + ') · longest stop ' + worstStall + 's');
+});
+
 test('12  Timings and sizes (PR2)', () => {
   const G2 = load();
   const t0 = Date.now();
