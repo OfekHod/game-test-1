@@ -8112,7 +8112,16 @@ window.addEventListener('DOMContentLoaded', function(){
   const OW_GEN_MS = 6, OW_GEN_MS_URGENT = 12;
   const OW_REGION_KEEP = 3, OW_RIVER_KEEP = 5;   // in regions, from every hero and the focus
   const OW_LOADED_WARN = 120;
-  const genQueue = [], owWarmQueue = [];
+  // §3.5 planned a warm queue beside this one: a new river or lake rasterised
+  // at real size before the frame's clear, so its paths and patterns were
+  // cached by the time it was first visible. The array was declared and
+  // cleared and never once written to — and §10.4(c) now says it should not
+  // be. Timing every frame around six rivers entering view: the frame one
+  // arrives on costs 10-20 ms more than the hundred before it, and the
+  // hundred after are indistinguishable from the hundred before (two of the
+  // five were faster afterwards). One bump, no ramp. So the queue goes rather
+  // than gets finished.
+  const genQueue = [];
   let owChunkTimer = 0, owLastFocus = '';
 
   function owChunkBox(set, x0, y0, x1, y1){
@@ -18018,7 +18027,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // of the last one's caches left to be read by anything.
     regionCache.clear(); riverCache.clear(); loaded.clear(); genCount.clear();
     bgTiles.clear(); owFog.clear(); owFogGen++; worldDiff = blankDiff(); basePlaza = null; lastGenMs = 0;
-    genQueue.length = 0; owWarmQueue.length = 0; owChunkTimer = 0; owLastFocus = '';
+    genQueue.length = 0; owChunkTimer = 0; owLastFocus = '';
     WX0 = WY0 = 0; WX1 = WORLD_W; WY1 = WORLD_H;
     CAMX0 = CAMY0 = 0; CAMX1 = WORLD_W; CAMY1 = WORLD_H;
     birdRng = (mode === 'openworld') ? streamFor(SALT.birds, 0, 0) : null;

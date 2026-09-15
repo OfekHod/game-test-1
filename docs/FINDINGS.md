@@ -413,6 +413,49 @@ spikes.
   stretch pays, and no amount of transform bookkeeping touches it. Fewer or
   smaller sprites would, and neither is on the table.
 
+### The last two §10.4 measurements, and the dead queue one of them found
+
+**(c) A river entering view is one bump, not a ramp.** §3.5 designed a *warm
+queue*: rasterise a new river or lake at real size before the frame's clear, so
+its paths and patterns are cached by the time it can be seen, and §10.4(c) asks
+for the hundred frames either side of one arriving, with and without it. The
+comparison cannot be run, because **`owWarmQueue` was declared and cleared and
+never once written to** — the queue was never built. So the measurement became:
+is it needed? Timing every frame across six rivers entering the world:
+
+| river enters at frame | 100 frames before | that frame | 100 frames after |
+|---|---|---|---|
+| 352 | 34.6 ms | 46.3 | 35.9 |
+| 518 | 33.0 ms | 54.5 | 38.0 |
+| 705 | 52.0 ms | 72.7 | 61.0 |
+| 985 | 54.3 ms | 57.7 | 45.1 |
+| 1081 | 45.3 ms | 53.6 | 36.9 |
+
+The arriving frame costs 10–20 ms more than its neighbours; the hundred after
+are indistinguishable from the hundred before, and two of the five are *faster*
+afterwards. One bump, no ramp — so there is nothing for a warm queue to warm.
+The dead array is deleted. (Absolute numbers are high here because the probe
+build records every frame into an array; the comparison is within one run.)
+
+**(d) Nothing grows.** Walking straight out for three minutes, first sample
+against last:
+
+| | at 2,257 | at 29,952 |
+|---|---|---|
+| explored | 2.5 km² | 46.1 km² |
+| heap | 20 MB | **20 MB** |
+| tile pool | 64/64 | 64/64 |
+| loaded chunks | 20 | 57 |
+| mobs | 54 | 77 |
+| fog sheets | 1 | 3 |
+
+The heap does not move across 27,700 units and eighteen times the explored
+ground. The pool sits on its cap, which is what a cap is for; chunks and mobs
+rise with the loaded window and stop there. `riverCache` goes 95 → 129, which
+is the "no source here" markers accumulating — one boolean per region, and the
+only line on this table that grows without a bound, worth a look if a session
+ever runs for hours.
+
 ### A caveat about every per-call number above
 
 Canvas work is deferred: a `drawImage` returns before the pixels exist, and the

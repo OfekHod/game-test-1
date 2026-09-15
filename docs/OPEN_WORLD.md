@@ -786,6 +786,9 @@ guess; it is now a measurement that says otherwise.
 | sprite save/restore trim | removing the tree tilt outright changed 21.0/20.8/21.8 into 20.3/21.0/20.9 | the cost is rasterising the pixels, not the transform |
 | the 8 + 6 + 6 ms worst frame §10.4 feared | in sixty seconds of walking the worst frame of **every** second paid `bake 0 gen 0 region 0` | the 2200-unit look-ahead does what it was for |
 
+| §10.4(c) river warm queue | the frame a river arrives costs 10–20 ms over its neighbours; the 100 frames after are indistinguishable from the 100 before | one bump, no ramp — and `owWarmQueue` was never written to, so the dead array is deleted |
+| §10.4(d) memory over a long walk | heap 20 MB → 20 MB across 27,700 units and 2.5 → 46.1 km² explored; pool pinned at its cap | nothing grows. `riverCache` 95 → 129 is the one unbounded list, and it holds a boolean per region |
+
 **And a caveat that applies to every per-call figure the readout prints:**
 canvas work is deferred, so a `drawImage` returns before its pixels exist and
 the bill lands wherever the next flush is timed. The tile blit reads 0.06 ms
