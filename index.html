@@ -15472,12 +15472,19 @@ window.addEventListener('DOMContentLoaded', function(){
     // Anchored to a place on the field, not to the screen, so it takes the
     // camera's kick with everything else rather than sliding off the corpse.
     const kx = shakeX||0, ky = shakeY||0;
+    // Two passes, because what to draw depends on whether ANY of them is up.
+    // With one alive the marks say where your team-mates will be back; with all
+    // three down there is nothing to do with that information and three
+    // countdowns in one band is a pile — so the centred one speaks alone.
     let soonest = Infinity, anyAlive = false;
     for(const h of playerTeam){
       if(h.alive){ anyAlive = true; continue; }
+      if(h.respawnTimer < Infinity) soonest = Math.min(soonest, Math.max(0, Math.ceil(h.respawnTimer)));
+    }
+    for(const h of anyAlive ? playerTeam : []){
+      if(h.alive) continue;
       if(!(h.respawnTimer < Infinity)) continue;
       const n = Math.max(0, Math.ceil(h.respawnTimer));
-      soonest = Math.min(soonest, n);
       const sx = h.x - camera.x + kx, sy = h.y - camera.y + ky;
       if(sx < -80*u || sy < -80*u || sx > W+80*u || sy > H+80*u) continue;
       ctx.save();
@@ -15494,15 +15501,13 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
     if(anyAlive || soonest === Infinity) return;
-    // The centred banner is already counting the soonest one down; its own mark
-    // would print the same number over the same corpse.
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.font = "800 "+(30*u)+"px 'Baloo 2', sans-serif";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 6*u; ctx.strokeStyle = '#5A3E1B';
     const t = 'RESPAWNING IN '+soonest;
-    ctx.strokeText(t, W/2, H*0.42); ctx.fillStyle = '#FFE7B8'; ctx.fillText(t, W/2, H*0.42);
+    ctx.strokeText(t, W/2, H*0.3); ctx.fillStyle = '#FFE7B8'; ctx.fillText(t, W/2, H*0.3);
     ctx.restore();
   }
 
