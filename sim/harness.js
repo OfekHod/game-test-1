@@ -51,7 +51,7 @@ const HOOKS = [
   ['  window.__laneLoaded = true;',
    `  window.__laneLoaded = true;
   globalThis.__GAME = {
-    start: (mode) => { globalThis.__M = blankMetrics(); startRound(mode || 'regular'); },
+    start: (mode, seed) => { globalThis.__M = blankMetrics(); startRound(mode || 'regular', seed); },
     step:  (dt)   => update(dt),
     state: () => ({
       t: ROUND_TIME - timeLeft, left: timeLeft, dur: ROUND_TIME,
@@ -62,7 +62,101 @@ const HOOKS = [
         hp: Math.round(h.maxHp), range: Math.round(attackRange(h)) })),
       orbsOnField: xpOrbs.length,
       m: globalThis.__M
-    })
+    }),
+    // What sim/world.js asks the world about itself. Generation state only —
+    // a match report has no use for it, and nothing here may be a getter,
+    // since load() wraps each one so the game's timers stay unref'd.
+    world: {
+      rngLeaked: () => genRng !== null,
+      genDepth:  () => genDepth,
+      hash:      () => worldHash(),
+      chunkHash: (cx, cy) => chunkHashOf(cx, cy),
+      loaded:    () => [...loaded.keys()].sort(),
+      genCount:  (key) => genCount.get(key) || 0,
+      genMs:     () => lastGenMs,
+      regionMs:  () => lastRegionMs,
+      counts:    () => ({ trees: trees.length, props: props.length, camps: camps.length,
+                          lakes: lakes.length, rivers: rivers.length, mobs: neutralCreeps.length }),
+      // A pristine build: what the chunk is before the diff overlay, which is
+      // what test 3b compares a streamed chunk against.
+      gen: (cx, cy) => {
+        if(gameMode !== 'openworld') throw new Error('world.gen needs an open world round');
+        const c = buildChunk(cx, cy);
+        return { hash: c.hash, props: c.props.map(p => p.id), trees: c.trees.map(t => t.id),
+                 camps: c.camps.map(k => k.id) };
+      },
+      // Every feature of every built region, plus the rivers, with the extent
+      // box registration uses and the complete member list a chunk filters.
+      features: () => {
+        const out = [];
+        for(const reg of regionCache.values()){
+          for(const l of reg.lakes) out.push({ id: l.id, kind: 'lake', region: reg.key,
+            box: [l.x-l.ext, l.y-l.ext, l.x+l.ext, l.y+l.ext], members: l.shore.map(t => t.id) });
+          for(const g of reg.groves){
+            const members = [];
+            for(const c of g.camps){ members.push(c.id); for(const t of c.ring) members.push(t.id); }
+            for(const st of g.stands) for(const t of st.trees) members.push(t.id);
+            out.push({ id: g.id, kind: 'grove', region: reg.key, n: g.camps.length,
+              box: [g.x-g.ext, g.y-g.ext, g.x+g.ext, g.y+g.ext], members,
+              stands: g.stands.map(st => ({ id: st.id, trees: st.trees.map(t => t.id) })) });
+          }
+        }
+        for(const v of riverCache.values()){
+          if(!v) continue;
+          out.push({ id: v.id, kind: 'river', box: [v.ex0, v.ey0, v.ex1, v.ey1],
+            segments: [...v.shore.keys()].sort(),
+            // The mouth lake belongs to the river, so its shore is the river's
+            // too — it carries the river's id and lands in the river's chunks.
+            members: [].concat(...[...v.shore.values()].map(seg => seg.map(t => t.id)),
+                               v.mouth ? v.mouth.shore.map(t => t.id) : []) });
+        }
+        return out;
+      },
+      // The ids of one feature's members that landed in one chunk.
+      chunkMembers: (cx, cy, featureId) => {
+        const c = loaded.get(cx+','+cy) || buildChunk(cx, cy);
+        const pre = featureId + ':';
+        const hit = (id) => id === featureId || (id && id.indexOf(pre) === 0);
+        return c.trees.filter(t => hit(t.id)).map(t => t.id)
+          .concat(c.camps.filter(k => hit(k.id)).map(k => k.id));
+      },
+      riverObj: (id) => rivers.find(r => r.id === id) || null,
+      wanted:   () => [...wantedSet()].sort(),
+      stumps:   () => stumps.length,
+      envelope: () => [WX0, WY0, WX1, WY1],
+      // A real chop, through the same path a hero's axe takes.
+      fellAt: (x, y) => {
+        let best = null, bd = Infinity;
+        for(const t of trees){ const d = (t.x-x)*(t.x-x) + (t.y-y)*(t.y-y); if(d < bd){ bd = d; best = t; } }
+        if(!best) return null;
+        const id = best.id, at = { x: best.x, y: best.y, r: best.r };
+        fellTree(best, playerTeam[0]);
+        return { id, at };
+      },
+      chop: (x, y, n) => {
+        let best = null, bd = Infinity;
+        for(const t of trees){ const d = (t.x-x)*(t.x-x) + (t.y-y)*(t.y-y); if(d < bd){ bd = d; best = t; } }
+        if(!best) return null;
+        best.chops = n;
+        return best.id;
+      },
+      chopsOf: (id) => { const t = trees.find(t => t.id === id); return t ? (t.chops || 0) : null; },
+      // A real MOVE order, so the movement clamps actually run.
+      order: (idx, x, y) => soloOrder(playerTeam[idx], x, y),
+      heroAt: (idx) => ({ x: playerTeam[idx].x, y: playerTeam[idx].y,
+        vx: playerTeam[idx].vx, vy: playerTeam[idx].vy, alive: playerTeam[idx].alive,
+        mode: playerTeam[idx].mode, hp: Math.round(playerTeam[idx].hp) }),
+      // Drive the hero the way a keyboard does, so a stall that only happens
+      // under player input can be reproduced without a browser.
+      press: (k, down) => { if(down) keys[k] = true; else delete keys[k]; },
+      teleport: (x, y, idx) => {
+        for(let i=0;i<playerTeam.length;i++){
+          if(idx !== undefined && i !== idx) continue;
+          const h = playerTeam[i];
+          h.x = x; h.y = y; h.homeX = x; h.homeY = y;
+        }
+      }
+    }
   };`]
 ];
 
@@ -106,7 +200,12 @@ function load(edits){
   // here, and inside each call the script makes into the game.
   const G = inGame(() => { require(file); return globalThis.__GAME; })();
   fs.unlinkSync(file);
-  return { start: inGame(G.start), step: inGame(G.step), state: inGame(G.state) };
+  // world is wrapped the same way, one function at a time — it is game code
+  // like any other, and an unwrapped call would leave a timer holding Node
+  // open after the script is done.
+  const world = {};
+  for(const k of Object.keys(G.world || {})) world[k] = inGame(G.world[k]);
+  return { start: inGame(G.start), step: inGame(G.step), state: inGame(G.state), world };
 }
 function inGame(fn){
   return (...args) => {

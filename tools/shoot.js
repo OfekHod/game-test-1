@@ -7,6 +7,7 @@
 //
 //   node tools/shoot.js --shot out.png
 //   node tools/shoot.js --start match --at 45 --shot out.png
+//   node tools/shoot.js --start openworld --seed 42 --shot world.png
 //   node tools/shoot.js --start tutorial --phone --shot tut.png
 //   node tools/shoot.js --start match --at 214 --speed 8 --shot late.png
 //
@@ -56,7 +57,7 @@ function findChromium(){
 }
 
 function parseArgs(argv){
-  const a = { start: null, at: 0, speed: 1, shot: null, phone: false,
+  const a = { start: null, at: 0, speed: 1, shot: null, phone: false, seed: null,
               wait: 0, game: path.join(__dirname, '..', 'index.html'), timeout: 300 };
   for(let i = 2; i < argv.length; i++){
     const k = argv[i];
@@ -64,6 +65,7 @@ function parseArgs(argv){
     else if(k === '--start')   a.start  = argv[++i];
     else if(k === '--at')      a.at     = Number(argv[++i]);
     else if(k === '--speed')   a.speed  = Number(argv[++i]);
+    else if(k === '--seed')    a.seed   = parseInt(argv[++i], 10);
     else if(k === '--shot')    a.shot   = argv[++i];
     else if(k === '--wait')    a.wait   = Number(argv[++i]);
     else if(k === '--game')    a.game   = path.resolve(argv[++i]);
@@ -72,6 +74,7 @@ function parseArgs(argv){
   }
   if(!a.shot) throw new Error('--shot <file.png> is required');
   if(a.at && !a.start) throw new Error('--at needs --start');
+  if(a.seed !== null && !Number.isInteger(a.seed)) throw new Error('--seed takes an integer');
   return a;
 }
 
@@ -86,7 +89,7 @@ async function clockSeconds(page){
   });
 }
 
-const BUTTON = { match: '#startBtn', survival: '#startSurvBtn', tutorial: '#startTutBtn' };
+const BUTTON = { match: '#startBtn', survival: '#startSurvBtn', tutorial: '#startTutBtn', openworld: '#startWorldBtn' };
 
 async function main(){
   const a = parseArgs(process.argv);
@@ -121,7 +124,10 @@ async function main(){
   // reason to wait on a request that cannot succeed offline.
   await page.route('**fonts.googleapis.com**', r => r.abort());
 
-  const url = 'file://' + a.game + (a.speed > 1 ? '?speed=' + a.speed : '');
+  const q = [];
+  if(a.speed > 1) q.push('speed=' + a.speed);
+  if(a.seed !== null) q.push('seed=' + a.seed);      // fills the title screen's seed box
+  const url = 'file://' + a.game + (q.length ? '?' + q.join('&') : '');
   const t0 = Date.now();
   // 'domcontentloaded', not the default 'load'. The font <link> is no longer
   // parser-blocking, but it still gates the load EVENT, so goto() would sit

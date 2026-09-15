@@ -28,6 +28,7 @@ docs/
   SIM.md           how to run experiments
   MULTIPLAYER.md   LAN plan and what internet play would additionally cost
   TUTORIAL.md      proposed in-game tutorial: phases and how it is built
+  OPEN_WORLD.md    proposed Open World mode: seeded, endless, streamed jungle — plan only
 ```
 
 ## Orders
