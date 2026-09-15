@@ -2556,7 +2556,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // resized so one never outlives the surface it was made for. Declared up here
   // because applyLayout clears it and runs long before the fog code below.
   const rimGrads = new Map();
-  const FOG_SCALE = 0.8;
+  // The mask and the sheet are built at this fraction of the canvas and
+  // stretched over it. It was 0.8, and the previous pass wrote it off as the
+  // one lever left on the fog that would be visible — it is not. Everything
+  // this surface carries is either a soft gradient or a polygon that gets
+  // blurred on the way out (by FOG_EDGE_SOFT, which scales with this, so the
+  // feather stays the same width on screen), and at half size the picture is
+  // the same one. What changes is the bill: the blur and the stretch both cost
+  // per SOURCE pixel, and three interleaved pairs of a sixty-second walk read
+  // 34.3/33.5/35.1 ms a frame at 0.8 against 19.9/20.4/20.4 at 0.5, worst
+  // frame 54 against 32. Going the other way confirms the shape of it: at 1.0
+  // the frame is 45 ms. 0.4 is another 3 ms and still looks right; 0.5 is the
+  // notch that takes 85% of the win with a mask that is still half the screen.
+  const FOG_SCALE = 0.5;
   // Darker than the grass on purpose. The old grey was lighter than the deep
   // green field, so unexplored ground came out brighter than ground you could
   // see and the fog read as haze rather than as shadow.
@@ -5526,6 +5538,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Trees are solid: push anything that ends a frame inside one back out.
   function resolveSolidCollision(e){
+    if(OW_DEBUG) owProf.solid++;
     // A mob does not collide with the ring it spawned inside, and a giant
     // tramples the rim of its own bowl — otherwise it jams in a 60-unit gap it
     // is 120 wide. Heroes collide with both, which is the point of them.
@@ -5708,6 +5721,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOG_NEAR_MAX = 32, FOG_UMBRA_MAX = 40;
   function carveVision(fctx, s){
     let sNear = nearOf(s);
+    if(OW_DEBUG && sNear.length > owProf.near) owProf.near = sNear.length;
     // No tree in range means both passes would carve the same circle, so there
     // is no penumbra to draw and no reason to pay for a second one.
     if(!sNear.length){ carvePass(fctx, s, sNear, 1, 1); return; }
@@ -5877,6 +5891,7 @@ window.addEventListener('DOMContentLoaded', function(){
     //    per source instead would multiply the leftover alpha — two rims at
     //    50% would leave 25%, so overlaps came out brighter than either circle
     //    and you could see each blob's edge crossing its neighbours.
+    const _fc = OW_DEBUG ? owNow() : 0;
     maskCtx.setTransform(1,0,0,1,0,0);
     maskCtx.globalCompositeOperation = 'source-over';
     maskCtx.clearRect(0,0,fw,fh);
@@ -5919,12 +5934,16 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     maskCtx.setTransform(1,0,0,1,0,0);
     maskCtx.globalCompositeOperation = 'source-over';
+    owMark('fogCarve', _fc);
 
     // 2. One grey sheet, cut through once by that finished union.
+    const _fs = OW_DEBUG ? owNow() : 0;
     fogCtx.setTransform(1,0,0,1,0,0);
     fogCtx.globalCompositeOperation = 'source-over';
     fogCtx.fillStyle = fogSheet(fw, fh);
     fogCtx.fillRect(0,0,fw,fh);
+    owMark('fogSheet', _fs);
+    const _fb = OW_DEBUG ? owNow() : 0;
     fogCtx.globalCompositeOperation = 'destination-out';
     // Blurring the mask on the way out is what takes the razor edge off a tree's
     // shadow. The polygon carved above has exact, geometric sides — correct, and
@@ -5949,11 +5968,14 @@ window.addEventListener('DOMContentLoaded', function(){
       fogCtx.filter = 'none';
     }
     fogCtx.globalCompositeOperation = 'source-over';
+    owMark('fogBlur', _fb);
 
+    const _fo = OW_DEBUG ? owNow() : 0;
     ctx.save();
     ctx.globalAlpha = FOG_ALPHA;
     ctx.drawImage(fogCanvas, 0, 0, W, H);
     ctx.restore();
+    owMark('fogOut', _fo);
   }
   // Every shell in the air asks this of every tree in the world on every frame,
   // and an open world holds a couple of hundred of them, so it compares squares
@@ -7473,6 +7495,7 @@ window.addEventListener('DOMContentLoaded', function(){
     regionCache.set(k, reg);
     genCount.set('region:'+k, (genCount.get('region:'+k)||0) + 1);
     lastRegionMs = owNow() - t0;
+    if(OW_DEBUG) owProf.fRegion += lastRegionMs;
     return reg;
   }
   function owNow(){ return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
@@ -7904,6 +7927,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
       chunk.hash = hashChunk(chunk);
       lastGenMs = owNow() - t0;
+      if(OW_DEBUG) owProf.fGen += lastGenMs;
       return chunk;
     } finally { genDepth--; }
   }
@@ -8358,7 +8382,14 @@ window.addEventListener('DOMContentLoaded', function(){
   // ?owdebug prints a per-second breakdown to the console — on any protocol,
   // because the build the owner tests by hand is the published one. Costs a
   // pair of adds a frame when it is off.
-  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, ground:0, draw:0, fog:0, frames:0, t0:0 };
+  const owProf = { bake:0, bakeN:0, tiles:0, map:0, water:0, ground:0, draw:0, fog:0,
+                   render:0, update:0, frames:0, t0:0,
+                   // §10.4(a): the counts a ms figure cannot explain on its own.
+                   solid:0, near:0, sprites:0, blits:0,
+                   fogCarve:0, fogSheet:0, fogBlur:0, fogOut:0, worst:0, frameMs:0,
+                   // What the worst frame of the second actually paid for, so a
+                   // hitch names itself instead of being guessed at.
+                   worstWhy:'', fBake:0, fGen:0, fRegion:0, sky:0, hud:0 };
   function owMark(key, t0){ if(OW_DEBUG) owProf[key] += owNow() - t0; }
   function owProfTick(){
     if(!OW_DEBUG) return;
@@ -8367,12 +8398,23 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!owProf.t0){ owProf.t0 = now; return; }
     if(now - owProf.t0 < 1000) return;
     const f = Math.max(1, owProf.frames);
+    const heap = (typeof performance !== 'undefined' && performance.memory)
+      ? ' · heap ' + (performance.memory.usedJSHeapSize/1048576).toFixed(0) + 'MB' : '';
     console.log('[ow] ' + f + 'fps'
-      + ' · tiles ' + (owProf.tiles/f).toFixed(2) + 'ms'
+      + ' · frame ' + ((owProf.render + owProf.update)/f).toFixed(1)
+      + ' worst ' + owProf.worst.toFixed(0) + '(' + owProf.worstWhy + ')'
+      + ' (upd ' + (owProf.update/f).toFixed(1) + ' + ren ' + (owProf.render/f).toFixed(1) + ')'
+      + ' · tiles ' + (owProf.tiles/f).toFixed(2) + 'ms×' + (owProf.blits/f).toFixed(0)
       + ' · water ' + (owProf.water/f).toFixed(1)
       + ' · sort ' + (owProf.ground/f).toFixed(1)
       + ' · sprites ' + (owProf.draw/f).toFixed(1)
       + ' · fog ' + (owProf.fog/f).toFixed(1)
+      + ' [carve ' + (owProf.fogCarve/f).toFixed(1)
+      + ' sheet ' + (owProf.fogSheet/f).toFixed(1)
+      + ' blur ' + (owProf.fogBlur/f).toFixed(1)
+      + ' out ' + (owProf.fogOut/f).toFixed(1) + ']'
+      + ' · sky ' + (owProf.sky/f).toFixed(1)
+      + ' · overlay ' + (owProf.hud/f).toFixed(1)
       + ' · minimap ' + (owProf.map/f).toFixed(2) + 'ms'
       + ' · bake ' + owProf.bakeN + '×' + (owProf.bakeN ? (owProf.bake/owProf.bakeN).toFixed(1) : '0') + 'ms'
       + ' · pool ' + bgTiles.size + '/' + OW_TILE_MAX
@@ -8381,9 +8423,14 @@ window.addEventListener('DOMContentLoaded', function(){
       + ' of ' + Math.round(WX1)
       + ' · mobs ' + neutralCreeps.length
       + ' · rivers ' + rivers.length + '/' + riverCache.size
-      + ' · explored ' + owExploredKm2().toFixed(1) + 'km² in ' + owFog.size + ' sheets');
+      + ' · solid ' + (owProf.solid/f).toFixed(0) + '/f'
+      + ' · fogNear ' + owProf.near
+      + ' · gsprites ' + (owProf.sprites/f).toFixed(0)
+      + ' · explored ' + owExploredKm2().toFixed(1) + 'km² in ' + owFog.size + ' sheets' + heap);
     owProf.bake = owProf.bakeN = owProf.tiles = owProf.map = owProf.water = 0;
-    owProf.ground = owProf.draw = owProf.fog = 0;
+    owProf.ground = owProf.draw = owProf.fog = owProf.render = owProf.update = 0;
+    owProf.solid = owProf.near = owProf.sprites = owProf.blits = owProf.sky = owProf.hud = 0;
+    owProf.fogCarve = owProf.fogSheet = owProf.fogBlur = owProf.fogOut = owProf.worst = 0; owProf.worstWhy = '';
     owProf.frames = 0; owProf.t0 = now;
   }
 
@@ -8517,7 +8564,7 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     } finally { bgCtx = prev; }
     owBakeMs = owNow() - t0; owBakeCount++;
-    if(OW_DEBUG){ owProf.bake += owBakeMs; owProf.bakeN++; }
+    if(OW_DEBUG){ owProf.bake += owBakeMs; owProf.bakeN++; owProf.fBake += owBakeMs; }
     return { canvas: cv, tx, ty, used: owFrame };
   }
   function owTileAt(tx, ty){
@@ -8610,6 +8657,7 @@ window.addEventListener('DOMContentLoaded', function(){
         continue;
       }
       tile.used = owFrame;
+      if(OW_DEBUG) owProf.blits++;
       g.drawImage(tile.canvas, tx*OW_TILE - OW_TILE_PAD, ty*OW_TILE - OW_TILE_PAD);
     }
   }
@@ -15919,10 +15967,12 @@ window.addEventListener('DOMContentLoaded', function(){
         // Both ends of the opening glide, baked in one go behind the loading
         // panel; after that the budgeted tick keeps up with the walking.
         if(owOpeningBoxes) owOpeningBake();
-        const tp = owNow();
+        // Timed apart: the blit is every frame and the bake is occasional, and
+        // one number for both hid which of them the frame was paying for.
+        const tp = OW_DEBUG ? owNow() : 0;
         owDrawTiles(ctx, shakeX, shakeY);
-        bakeTick();
         owMark('tiles', tp);
+        bakeTick();
       } else {
         const bx0 = Math.max(0, Math.floor(camera.x - shakeX) - 2);
         const by0 = Math.max(0, Math.floor(camera.y - shakeY) - 2);
@@ -16105,6 +16155,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
     owMark('ground', _pg);
     const _pd = OW_DEBUG ? owNow() : 0;
+    if(OW_DEBUG) owProf.sprites += ground.length;
     ground.sort(byGroundY);
     for(const e of ground){
       const o = e.o;
@@ -16328,16 +16379,20 @@ window.addEventListener('DOMContentLoaded', function(){
     owMark('fog', _pf);
     ctx.save();
     ctx.translate(-camera.x+shakeX, -camera.y+shakeY);
+    const _ps = OW_DEBUG ? owNow() : 0;
     drawBirds();          // sky layer: over the fog, not subject to vision
     drawClouds();         // higher still: passes over heroes, towers, everything
+    owMark('sky', _ps);
     // Above the fog on purpose: a tutorial mark is what you are being sent to
     // find, so it must not be hidden by the fact that you have not found it.
     drawTutorialMarks();
     drawDragOrder();      // and for the same reason: it is what you are doing now
     if(MUSIC_DEBUG && state==='playing') drawThreatRings();
     ctx.restore();
+    const _ph = OW_DEBUG ? owNow() : 0;
     drawVignetteOverlay();
     drawHurtOverlay();
+    owMark('hud', _ph);
     drawMinimap();
     owProfTick();
     drawTutorialMini();
@@ -16455,7 +16510,22 @@ window.addEventListener('DOMContentLoaded', function(){
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
     try { for(let i=1;i<FF;i++) update(dt);
-          update(dt); if(!fieldHidden()) render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
+          const _pu = OW_DEBUG ? owNow() : 0;
+          if(OW_DEBUG) owProf.fBake = owProf.fGen = owProf.fRegion = 0;
+          update(dt);
+          owMark('update', _pu);
+          if(!fieldHidden()){ const _pr = OW_DEBUG ? owNow() : 0; render(); owMark('render', _pr); }
+          // The worst frame in the second is what a player feels as a hitch; a
+          // median cannot see one and an average buries it.
+          if(OW_DEBUG){
+            const ms = owNow() - _pu;
+            if(ms > owProf.worst){
+              owProf.worst = ms;
+              owProf.worstWhy = 'bake ' + owProf.fBake.toFixed(0)
+                + ' gen ' + owProf.fGen.toFixed(0) + ' region ' + owProf.fRegion.toFixed(0);
+            }
+          }
+          syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }

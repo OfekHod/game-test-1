@@ -754,3 +754,40 @@ and still stuck (`SLIP_JAM`), and straightens up once he is past it. The AI
 never touches this path — it steers itself — so nothing in `sim/run.js` moves.
 Eight two-minute walks now cover 82–100 % of open ground with a longest stop of
 1.5 s. Test 17 pins it.
+
+## 16. PR5: what the measurement said, and what it retired
+
+§10.4 named the numbers to take and §11 listed the optimisations to make from
+them. The numbers came out differently from the plan, so most of the list is
+retired rather than shipped — each one below with the measurement that retired
+it. `docs/FINDINGS.md` has the tables.
+
+**The readout first.** §10.4(a) is now printed in full by `?owdebug`: frame
+total split into `update` and `render`, the **worst frame of the second and
+what it paid for** (bake / chunk / region), tile blits, `resolveSolidCollision`
+calls a frame, the largest fog near-set, ground sprites drawn, and the heap
+where the browser exposes it — plus `drawFog` broken into carve / sheet / blur
+/ out, which is what found the one change this PR makes.
+
+**The one change: `FOG_SCALE` 0.8 → 0.5.** The fog is 21 of a 33 ms frame, and
+19.6 of those 21 are the blur and the stretch — both per *source* pixel, so the
+surface is the lever. Three interleaved pairs: **34.3 / 33.5 / 35.1 ms against
+19.9 / 20.4 / 20.4**, worst frame 54 → 32, and the pictures are the same one at
+the base and inside a nine-camp grove. FINDINGS' "that one is visible" was a
+guess; it is now a measurement that says otherwise.
+
+**Retired, with the number that retired it:**
+
+| §11 item | Measured | Verdict |
+|---|---|---|
+| `segBox`, per-stretch river sub-paths (§5, §10.4c) | water draws in 0.1–0.3 ms with three rivers on screen | nothing to cut; `rv._path` from PR3 was already enough |
+| minimap `_path` stroke | minimap is 0.85 ms | already cheap |
+| `forChunksAround` narrowing | **3** `resolveSolidCollision` calls a frame (mobs outside `CAMP_TICK_R` do not move) | unnecessary, for a second reason on top of the 0.15 ms the last pass found |
+| sprite save/restore trim | removing the tree tilt outright changed 21.0/20.8/21.8 into 20.3/21.0/20.9 | the cost is rasterising the pixels, not the transform |
+| the 8 + 6 + 6 ms worst frame §10.4 feared | in sixty seconds of walking the worst frame of **every** second paid `bake 0 gen 0 region 0` | the 2200-unit look-ahead does what it was for |
+
+**And a caveat that applies to every per-call figure the readout prints:**
+canvas work is deferred, so a `drawImage` returns before its pixels exist and
+the bill lands wherever the next flush is timed. The tile blit reads 0.06 ms
+walking and 7 ms parked, for the same thirty-odd blits. Only frame totals, from
+interleaved runs, are worth quoting.
