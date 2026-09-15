@@ -11821,15 +11821,19 @@ window.addEventListener('DOMContentLoaded', function(){
         ctx.globalAlpha = 0.55*fade;
         ctx.strokeStyle = '#E0BB84'; ctx.lineWidth = (3.2*fade+0.8)*VIEW_ZOOM;
         ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(q.x,q.y); ctx.stroke();
-        ctx.globalAlpha = 0.5*fade;
+        ctx.globalAlpha = 0.6*fade;
         ctx.fillStyle = CHIP_COLORS[i%CHIP_COLORS.length];
-        ctx.beginPath(); ctx.arc(q.x, q.y, (2.6*fade+0.6)*VIEW_ZOOM, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(q.x, q.y, (3.4*fade+0.8)*VIEW_ZOOM, 0, 7); ctx.fill();
         prev = q;
       }
       ctx.restore();
-      // Screen space, but the world transform is translate-only, so a log drawn
-      // here is exactly the size of one lying in the grass. No VIEW_ZOOM.
-      drawWoodSprite(p.x, p.y, 0, r.bobT, WOOD_DRAW*0.8);
+      // Screen space, but the world transform is translate-only, so a unit here
+      // is a unit in the grass and there is no VIEW_ZOOM to apply. Bigger than a
+      // log on the ground all the same: from a tank standing at his own base the
+      // camera is clamped to the world edge and the flight is the whole screen
+      // diagonal, and at a ground log's size that is a 17-pixel thing crossing
+      // 1300 — findable in a still, missable in motion.
+      drawWoodSprite(p.x, p.y, 0, r.bobT, WOOD_DRAW*1.15);
     }
   }
   let pings = [];
