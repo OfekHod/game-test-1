@@ -262,7 +262,11 @@ any of this. Within the ±9 points `docs/SIM.md` says a 40-game sample is worth:
 | | base destroyed | median win | enemy deaths/game | end levels |
 |---|---|---|---|---|
 | before | 35/40 (88%) | 200s | 0.78 | 12.6 / 12.8 / 7.8 |
-| after | 36/40 (90%) | 202s | 0.93 | 11.6 / 11.8 / 7.8 |
+| after | 37/40 (93%) | 214s | 0.88 | 12.6 / 12.5 / 8.0 |
+
+For scale: the README's own "Known state" row is 79/80 and a 214s median, and
+`docs/SIM.md` puts the band on a 40-game rate at roughly ±9 points. Both rows
+above sit inside it, and the median landed on the 80-game number.
 
 Three changes in that diff could have moved it, and all three are on the
 *player's* side — the side an idle-player scenario measures least, because the
