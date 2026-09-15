@@ -7192,6 +7192,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // function serves the bake, the rim and every point test.
   const DIRT_WOBBLE_MAX = 1.46;
   const OW_DIRT_BASE_R = 2200;        // no bowl closer to home than this
+  const OW_DIRT_MIN_R = 300;          // and none smaller than this, however tight the region
   const OW_APEX_RESPAWN = 120;        // Match's 60 is tuned for a ten-minute round
   function dirtRadiusAt(d, a){ return d.r*(1 + 0.24*Math.sin(2*a + d.s1) + 0.15*Math.sin(3*a - d.s2) + 0.07*Math.sin(6*a + d.s3)); }
   function inDirt(d, x, y, pad){
@@ -7473,23 +7474,41 @@ window.addEventListener('DOMContentLoaded', function(){
     // on a grove. A bowl is a landmark you find, with something in it.
     const nDirt = (() => { const u2 = rng(); return u2 < 0.45 ? 0 : (u2 < 0.85 ? 1 : 2); })();
     for(let di=0; di<nDirt; di++){
-      const r = 420 + 260*rng(), sy = 0.72 + 0.28*rng();
-      const ext = 1.664*r + 60, [lo, hi] = core(ext);
-      if(hi <= lo) continue;
-      const area = { id: 'r'+rx+','+ry+':d'+di, x:0, y:0, r, sy,
+      const rWant = 420 + 260*rng(), sy = 0.72 + 0.28*rng();
+      const area = { id: 'r'+rx+','+ry+':d'+di, x:0, y:0, r: rWant, sy,
                      s1: rng()*6.283, s2: rng()*6.283, s3: rng()*6.283,
-                     ext, gravel: [], rim: [], gaps: [], apexN: 0 };
+                     ext: 0, gravel: [], rim: [], gaps: [], apexN: 0 };
       let placed = false;
-      for(let att=0; att<60; att++){
-        const x = x0 + lo + rng()*(hi - lo), y = y0 + lo + rng()*(hi - lo);
-        if(distBase(x, y) < OW_DIRT_BASE_R) continue;
-        if(near(x, y, ext)) continue;
-        let clash = false;
-        for(const g of reg.groves){ if(dist(x, y, g.x, g.y) < ext + g.ext + 200){ clash = true; break; } }
-        if(clash) continue;
-        area.x = x; area.y = y; placed = true; break;
+      // Shrink to fit. A bowl wants its whole radius clear of water, inside a
+      // core box the same radius keeps it away from the region's edges, and a
+      // region with two lakes and a river through it usually has no room for
+      // the big one — ninety per cent of attempts died on water, two bowls
+      // came out of ninety-two regions, and a walk of a hundred thousand
+      // units went past none of them. So ask for less rather than for
+      // nothing: four steps down, and a small bowl is still a landmark.
+      for(let st=0; st<4 && !placed; st++){
+        const r = Math.max(OW_DIRT_MIN_R, rWant*Math.pow(0.8, st));
+        const ext = 1.664*r + 60, [lo, hi] = core(ext);
+        if(hi <= lo) continue;
+        for(let att=0; att<60; att++){
+          const x = x0 + lo + rng()*(hi - lo), y = y0 + lo + rng()*(hi - lo);
+          if(distBase(x, y) < OW_DIRT_BASE_R) continue;
+          // The BOWL keeps off the water, not the bowl's whole extent:
+          // demanding a clear radius of ext (up to 1190) rejected everywhere —
+          // the same mistake the groves made before PR2 fixed it.
+          if(near(x, y, r*DIRT_WOBBLE_MAX + 140)) continue;
+          let clash = false;
+          // Against a grove's CAMP disc, so a bowl may sit among its outer
+          // trees but never swallow a camp.
+          for(const g of reg.groves){
+            if(dist(x, y, g.x, g.y) < r*DIRT_WOBBLE_MAX + g.R*0.92 + 250){ clash = true; break; }
+          }
+          if(clash) continue;
+          area.x = x; area.y = y; area.r = r; area.ext = ext; placed = true; break;
+        }
       }
       if(!placed) continue;
+      const r = area.r;
       const ap = rng();
       area.apexN = ap < 0.45 ? 1 : (ap < 0.80 ? 2 : 3);
       // Gravel, precomputed from the region's stream: dealing it at bake time
@@ -7888,6 +7907,22 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const l of chunk.lakes){ if(seen.has(l.id)) continue; seen.add(l.id); lakes.push(l); }
       for(const v of chunk.rivers){ if(seen.has(v.id)) continue; seen.add(v.id); rivers.push(v); }
       for(const d of chunk.dirt){ if(seen.has(d.id)) continue; seen.add(d.id); dirt.push(d); }
+    }
+    // A camp's mobs leave with its chunk, in unloadChunk. A giant belongs to a
+    // BOWL, and a bowl spans several chunks, so its cull belongs here instead:
+    // it goes once no loaded chunk holds the bowl any more. Without this they
+    // never went. A walk of 136,000 units east finished with twenty-two giants
+    // still alive, every one of them regions behind the hero, ticking and
+    // roaming in ground that had been thrown away.
+    for(let i=neutralCreeps.length-1; i>=0; i--){
+      const n = neutralCreeps[i];
+      if(!n.huge || !n.area) continue;
+      if(seen.has(n.area)) continue;
+      // Tell the slot it was unloaded rather than killed, so the giant is back
+      // in the bowl when you walk in again instead of two minutes late.
+      const e = worldDiff.areas.get(n.area);
+      if(e) for(const sl of e.slots) if(sl.mob === n){ sl.mob = null; sl.timer = 0; }
+      neutralCreeps.splice(i, 1);
     }
     for(const t of playerTowers) t._sightTrees = null;
     owSetEnvelope();
@@ -13079,13 +13114,96 @@ window.addEventListener('DOMContentLoaded', function(){
       useSkill(h,dx,dy,sax,say);
       if(tut.on) tutNote('skill', h.type);
     }
-    const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const spd = heroSpeed(h, dx, dy);          // the keys say which way: the current can read them
-    const tvx=(dx/len)*spd, tvy=(dy/len)*spd;
+    let mx = dx, my = dy;
+    if(mx || my){ const st = steerAroundStall(h, mx, my, dt); mx = st.x; my = st.y; }
+    const len=Math.sqrt(mx*mx+my*my)||1;
+    const spd = heroSpeed(h, mx, my);          // the keys say which way: the current can read them
+    const tvx=(mx/len)*spd, tvy=(my/len)*spd;
     h.vx += (tvx-h.vx)*Math.min(1,dt*12);
     h.vy += (tvy-h.vy)*Math.min(1,dt*12);
     h.x = Math.min(WX1-h.r-6, Math.max(WX0+h.r+6, h.x+h.vx*dt));
     h.y = Math.min(WY1-h.r-6, Math.max(WY0+h.r+6, h.y+h.vy*dt));
+  }
+
+  // Walking into one bush stops you for a moment and you walk round it. Walking
+  // into TWO that overlap is different: their bars meet in a notch that pushes
+  // you back exactly as fast as you walk in, and holding one key there does
+  // nothing for as long as you hold it. In a match you would never notice —
+  // you are steering every second anyway. In the open world the whole loop is
+  // "point yourself east and hold it for a minute", so the same notch reads as
+  // the game having frozen, and that is what it gets reported as.
+  //
+  // So when the keys are asking for a direction and the hero is not getting
+  // anywhere, turn the request off the obstacle a little further each frame,
+  // always the same way round while it lasts, and straighten up once he is
+  // moving again. It sweeps until something works, which gets out of a pocket
+  // of any shape; a hero who is moving never touches this path, and neither
+  // does the AI — which steers itself and would only fight this.
+  const SLIP_STALL = 0.18;   // asking and going nowhere for this long before we help
+  const SLIP_SLOW  = 0.35;   // "nowhere" = under this fraction of the speed asked for
+  const SLIP_TURN  = 3.2;    // radians per second the request swings away while stuck
+  const SLIP_BACK  = 1.2;    // and swings back, slower, as soon as it is moving again
+  const SLIP_MAX   = 2.6;    // never further than this off what the keys asked for
+  const SLIP_CLEAR = 70;     // and the detour is over once he is this far past it
+  const SLIP_JAM   = 0.35;   // fully deflected and still nowhere: try the other way
+  function steerAroundStall(h, dx, dy, dt){
+    const px = (h.slipPX === undefined) ? h.x : h.slipPX, py = (h.slipPY === undefined) ? h.y : h.slipPY;
+    h.slipPX = h.x; h.slipPY = h.y;
+    const len = Math.sqrt(dx*dx+dy*dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    const want = heroSpeed(h, dx, dy) * dt;
+    // Stuck means the direction asked for LAST frame did not happen — which,
+    // once a detour is running, is the detour's direction and not the keys'.
+    // Measured against the keys instead, a hero walking cleanly round a bush
+    // reads as stuck for the whole way round, pins the deflection at its limit
+    // and wanders off at a hundred and fourteen degrees for as long as the key
+    // is held.
+    const lx = (h.slipLX === undefined) ? ux : h.slipLX, ly = (h.slipLY === undefined) ? uy : h.slipLY;
+    const got = (h.x-px)*lx + (h.y-py)*ly;
+    const stuck = want > 0.01 && got < want*SLIP_SLOW;
+    // A detour, once started, keeps its side. That is the whole trick: a side
+    // picked fresh each time the hero comes unstuck sends him left round the
+    // bush, forward into it again, right round it, back into it, and he saws
+    // his way backwards across the map. Committing until he is genuinely past
+    // the thing — or until the keys ask for somewhere else — walks him round
+    // it once.
+    if(h.slipSide){
+      const adv = (h.x-h.slipX0)*h.slipDX + (h.y-h.slipY0)*h.slipDY;
+      // Past it AND pointing where he asked again. Scenery comes in clumps, so
+      // "past it" alone ends the detour between two bushes of the same thicket
+      // and lets the next one pick the other side.
+      if((adv > SLIP_CLEAR && h.slipA <= 0.001) || ux*h.slipDX + uy*h.slipDY < 0.5){
+        h.slipSide = 0; h.slipA = 0; h.slipT = 0;
+      }
+    }
+    if(!h.slipSide){
+      h.slipLX = ux; h.slipLY = uy;
+      if(!stuck){ h.slipT = 0; return { x: dx, y: dy }; }
+      h.slipT = (h.slipT || 0) + dt;
+      if(h.slipT < SLIP_STALL) return { x: dx, y: dy };
+      // Which way round. The thing in the way has been nudging him sideways for
+      // a few frames already, so follow that nudge rather than guessing: it is
+      // the open side by construction. Dead square on, go left.
+      const side = (h.x-px)*(-uy) + (h.y-py)*ux;
+      h.slipSide = side > 0.05 ? 1 : (side < -0.05 ? -1 : 1);
+      h.slipX0 = h.x; h.slipY0 = h.y; h.slipDX = ux; h.slipDY = uy; h.slipA = 0;
+    }
+    h.slipA = Math.max(0, Math.min(SLIP_MAX, (h.slipA || 0) + (stuck ? SLIP_TURN : -SLIP_BACK)*dt));
+    // Committing to a side is what stops the sawing, but commit to the closed
+    // side of a corner and he leans into it forever. So: swung as far as he is
+    // allowed to, still going nowhere, go round the other way instead. Between
+    // the two of them there is no pocket he can walk into that he cannot walk
+    // back out of.
+    if(stuck && h.slipA >= SLIP_MAX - 1e-6){
+      h.slipJam = (h.slipJam || 0) + dt;
+      if(h.slipJam > SLIP_JAM){
+        h.slipSide = -h.slipSide; h.slipA = 0; h.slipJam = 0;
+        h.slipX0 = h.x; h.slipY0 = h.y; h.slipDX = ux; h.slipDY = uy;
+      }
+    } else h.slipJam = 0;
+    const a = h.slipSide * h.slipA, c = Math.cos(a), sn = Math.sin(a);
+    h.slipLX = ux*c - uy*sn; h.slipLY = ux*sn + uy*c;
+    return { x: h.slipLX, y: h.slipLY };
   }
 
   // An AI hero knocked off its spot walks straight back into it and keeps

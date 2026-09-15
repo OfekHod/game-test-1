@@ -305,6 +305,74 @@ test('11  An apex stays in its own bowl (PR4)', () => {
   assert.strictEqual(out, 0, 'an apex left its bowl on ' + out + ' of ' + samples + ' samples');
 });
 
+// The three things the owner walked into on PR4's first build, each one now a
+// test: a hundred thousand units with no bowl in them, a hero stopped dead
+// against a bush for as long as the key was held, and the giants he had left
+// behind still alive and roaming ground that had been thrown away.
+
+test('15  A long walk goes past bowls, with giants in them (PR4)', () => {
+  const G2 = load();
+  G2.start('openworld', 42);
+  G2.world.press('d', true);
+  const bowls = new Set(); let apexes = 0, stray = 0;
+  for(let i=0;i<180/0.05;i++){
+    G2.step(0.05);
+    if(i % 40) continue;
+    for(const f of G2.world.features()) if(f.kind === 'dirt') bowls.add(f.id);
+    const live = G2.world.apexes();
+    apexes = Math.max(apexes, live.length);
+    // And every one of them still has a bowl to stand in. A giant is culled
+    // with its BOWL rather than with a chunk — a bowl spans several — and
+    // that cull was missing: a walk this long ended with twenty-two of them
+    // alive and roaming ground that had been thrown away, which nothing else
+    // here would have noticed.
+    const bowl = new Set(G2.world.dirtIds());
+    for(const a of live) if(!bowl.has(a.area)) stray++;
+  }
+  const p = G2.world.probe(0);
+  console.log('        walked east ' + Math.round(p.x) + ' units past ' + bowls.size
+    + ' bowls · at most ' + apexes + ' giants alive at once');
+  assert.ok(p.x > 30000, 'the walk only got to ' + Math.round(p.x));
+  assert.ok(bowls.size >= 6, 'only ' + bowls.size + ' bowls in ' + Math.round(p.x) + ' units of walking');
+  assert.ok(apexes > 0, 'no giant was ever alive');
+  assert.strictEqual(stray, 0, stray + ' sightings of a giant whose bowl had been unloaded');
+});
+
+test('17  Holding one key never stops the hero (PR4)', () => {
+  const DIRS = [['north','w',0,-1], ['south','s',0,1], ['east','d',1,0], ['west','a',-1,0]];
+  const SECS = 120, ideal = 227*SECS;
+  let worstPct = 1, worstStall = 0, worstName = '';
+  for(const seed of [1, 42]){
+    for(const [name, key, ux, uy] of DIRS){
+      const G2 = load();
+      G2.start('openworld', seed);
+      G2.world.press(key, true);
+      const s0 = G2.world.probe(0);
+      let last = s0, stall = 0, worst = 0;
+      for(let i=0;i<SECS/0.05;i++){
+        G2.step(0.05);
+        if(i % 10 !== 9) continue;                 // every half second
+        const q = G2.world.probe(0);
+        if((q.x-last.x)*ux + (q.y-last.y)*uy < 5){ stall += 0.5; worst = Math.max(worst, stall); }
+        else stall = 0;
+        last = q;
+      }
+      const q = G2.world.probe(0);
+      const pct = ((q.x-s0.x)*ux + (q.y-s0.y)*uy) / ideal;
+      if(pct < worstPct){ worstPct = pct; worstName = seed + ' ' + name; }
+      worstStall = Math.max(worstStall, worst);
+      assert.ok(pct > 0.7, 'seed ' + seed + ' ' + name + ': covered only '
+        + (pct*100).toFixed(0) + '% of open ground in two minutes');
+      // The bug itself. Two bushes whose bars overlap make a notch that pushes
+      // back exactly as fast as you walk in, and before steerAroundStall this
+      // was not six seconds, it was the rest of the session.
+      assert.ok(worst <= 6, 'seed ' + seed + ' ' + name + ': ' + worst + 's without moving');
+    }
+  }
+  console.log('        eight walks: worst ' + (worstPct*100).toFixed(0) + '% of open ground ('
+    + worstName + ') · longest stop ' + worstStall + 's');
+});
+
 test('12  Timings and sizes (PR2)', () => {
   const G2 = load();
   const t0 = Date.now();

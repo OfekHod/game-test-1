@@ -121,11 +121,38 @@ const HOOKS = [
         const c = loaded.get(cx+','+cy) || buildChunk(cx, cy);
         const pre = featureId + ':';
         const hit = (id) => id === featureId || (id && id.indexOf(pre) === 0);
+        // Props too: a bowl's rim is six parts bush to four parts rock, and
+        // with only trees and camps counted here test 4 reported every rock on
+        // every rim as a member no chunk had.
         return c.trees.filter(t => hit(t.id)).map(t => t.id)
+          .concat(c.props.filter(d => hit(d.id)).map(d => d.id))
           .concat(c.camps.filter(k => hit(k.id)).map(k => k.id));
       },
       riverObj: (id) => rivers.find(r => r.id === id) || null,
+      // The bowls the loaded chunks actually hold, which is the list a giant's
+      // life is tied to — not regionCache, which keeps regions a chunk behind.
+      dirtIds: () => dirt.map(d => d.id),
       inDirt: (id, x, y, pad) => { const d = dirt.find(d => d.id === id); return d ? inDirt(d, x, y, pad||0) : null; },
+      probe: (idx) => {
+        const h = playerTeam[idx];
+        let nt = null, ntd = 1e9, np = null, npd = 1e9;
+        for(const t of trees){ const d = dist(h.x,h.y,t.x,t.y) - t.r*TREE_COLLIDE_FACTOR - h.r; if(d < ntd){ ntd = d; nt = t; } }
+        for(const d2 of props){ const d = dist(h.x,h.y,d2.x,d2.y) - d2.w*0.4 - h.r; if(d < npd){ npd = d; np = d2; } }
+        return { x:h.x, y:h.y, vx:h.vx, vy:h.vy, alive:h.alive, inRiver: inRiver(h.x,h.y), inLake: inLake(h.x,h.y),
+                 nearestTree: nt ? { id:nt.id, gap: Math.round(ntd) } : null,
+                 nearestProp: np ? { id:np.id, gap: Math.round(npd), x:np.x, y:np.y, w:np.w } : null,
+                 slip: { a: h.slipA||0, side: h.slipSide||0, t: h.slipT||0, lx: h.slipLX, ly: h.slipLY },
+                 WX: [WX0, WX1], WY: [WY0, WY1], camera: { x: camera.x, y: camera.y } };
+      },
+      // Everything solid within r of a hero, with the geometry the collision
+      // resolver actually uses, so a stall can be read off rather than guessed.
+      around: (idx, r) => {
+        const h = playerTeam[idx];
+        const out = { hero: { x:h.x, y:h.y, r:h.r, vx:h.vx, vy:h.vy }, props: [], trees: [] };
+        for(const d of props){ if(dist(h.x,h.y,d.x,d.y) < r) out.props.push({ id:d.id, x:d.x, y:d.y, w:d.w }); }
+        for(const t of trees){ if(dist(h.x,h.y,t.x,t.y) < r) out.trees.push({ id:t.id, x:t.x, y:t.y, r:t.r*TREE_COLLIDE_FACTOR }); }
+        return out;
+      },
       mixedCamp: () => {
         for(const c of camps){
           if(!c.roster) continue;
