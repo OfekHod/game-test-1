@@ -264,13 +264,19 @@ any of this. Within the ±9 points `docs/SIM.md` says a 40-game sample is worth:
 | before | 35/40 (88%) | 200s | 0.78 | 12.6 / 12.8 / 7.8 |
 | after | 36/40 (90%) | 202s | 0.93 | 11.6 / 11.8 / 7.8 |
 
-Two changes in that diff could have moved it and both are in the table above:
-the first-wave spawn, and the player's own AI team-mates finally spending their
-stat points (they were banking three a level and fighting a whole match at
-level-1 stats — that is a change to the *player's* side, which is the side the
-idle-player scenario measures the least). Everything else is presentation, and
-presentation is gated on `playerTeam[activePlayerIdx]` or lives in `render()`,
-where the simulation never goes.
+Three changes in that diff could have moved it, and all three are on the
+*player's* side — the side an idle-player scenario measures least, because the
+thing being measured is whether the enemy can walk through it:
+
+- the first-wave spawn above, which is symmetric;
+- the player's own AI team-mates finally spending their stat points (they were
+  banking three a level and fighting a whole match at level-1 stats);
+- the driven hero's pickup magnet, 130 → 200, which changes *which* of your
+  three heroes banks an orb rather than how many are banked.
+
+Everything else is presentation, and presentation is gated on
+`playerTeam[activePlayerIdx]` or lives in `render()`, where the simulation never
+goes.
 
 ## What a mana refund is for
 

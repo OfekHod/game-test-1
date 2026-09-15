@@ -2731,7 +2731,7 @@ window.addEventListener('DOMContentLoaded', function(){
     W = Math.round(H*aspect);
     safeTopUnits = safeTopPx * (H/ch);
     // W and H are WORLD UNITS, not pixels: VIEW_AREA fixes how much map is on
-    // screen, so on desktop W is ~3200 while the stage is maybe 1300 CSS px
+    // screen, so on desktop W is ~2400 while the stage is maybe 1300 CSS px
     // wide. Handing that straight to setupCanvas as the pixel size, and then
     // multiplying by DPR on top, asked for a 6400x4000 backing store to fill a
     // 3000x1900 display — 4x to 6x more pixels than the screen can show, on
@@ -8523,8 +8523,8 @@ window.addEventListener('DOMContentLoaded', function(){
   // drawn at once. The fade is a quarter-sine rather than a straight ramp, so
   // the last frames thin out instead of the ring blinking off still visible.
   // SIZES HERE ARE WORLD UNITS AND THE CAMERA IS NOT 1:1. VIEW_ZOOM puts about
-  // 3200 units across a stage of maybe 1250 CSS pixels, so a world unit is a bit
-  // under four tenths of a pixel on screen and a hero's sprite — the only
+  // 2400 units across a stage of maybe 1250 CSS pixels, so a world unit is about
+  // half a pixel on screen and a hero's sprite — the only
   // yardstick that matters — is around 65 units wide. That is what made the old
   // single ring invisible rather than subtle: a 2.2-unit stroke is a NINE TENTHS
   // OF A PIXEL hairline, and no alpha will save a line thinner than the pixel it
@@ -15410,16 +15410,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // read on the desktop view. With the whole team down there is nobody to
   // drive and nothing else to look at, so the soonest count goes up in the
   // middle. Player heroes only: an arena hero never respawns.
-  function drawRespawnMarks(){
+  function drawRespawnMarks(shakeX, shakeY){
     if(state!=='playing') return;
     const u = unitsPerPx();
+    // Anchored to a place on the field, not to the screen, so it takes the
+    // camera's kick with everything else rather than sliding off the corpse.
+    const kx = shakeX||0, ky = shakeY||0;
     let soonest = Infinity, anyAlive = false;
     for(const h of playerTeam){
       if(h.alive){ anyAlive = true; continue; }
       if(!(h.respawnTimer < Infinity)) continue;
       const n = Math.max(0, Math.ceil(h.respawnTimer));
       soonest = Math.min(soonest, n);
-      const sx = h.x - camera.x, sy = h.y - camera.y;
+      const sx = h.x - camera.x + kx, sy = h.y - camera.y + ky;
       if(sx < -80*u || sy < -80*u || sx > W+80*u || sy > H+80*u) continue;
       ctx.save();
       ctx.lineJoin = 'round';
@@ -15934,7 +15937,7 @@ window.addEventListener('DOMContentLoaded', function(){
     owProfTick();
     drawTutorialMini();
     drawHudSparks();
-    drawRespawnMarks();
+    drawRespawnMarks(shakeX, shakeY);
     drawReticle();
     if(MUSIC_DEBUG && state==='playing') drawThreatHud();
 
@@ -17553,6 +17556,10 @@ window.addEventListener('DOMContentLoaded', function(){
     hideTip();
     keys = {};
     moveTouch=null; touchMoveVec={x:0,y:0}; touchShotAt=null; touchSkillTap=false; skillKeyWasDown=false; orderDrag=null; pendingTouch={}; pings=[];
+    // A finger still down when the round ended would otherwise keep the trigger
+    // held into the next one, and a swing from the last round would draw over
+    // the first frame of this one.
+    fireTouch=null; slashes=[]; clickBufferT=0; skillBufferT=0; skillDenyT=0;
     scoutTouch=null; scout=null; dropRocketCam();
     hideJoystick(moveJoyEl);
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
