@@ -49,7 +49,7 @@ if(!/quarry:\s*\{/.test(engine)){
   process.exit(1);
 }
 
-const page = `<title>Lane Music Intensity</title>
+const page = `<title>Lane Adaptive Music</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
@@ -131,6 +131,16 @@ const page = `<title>Lane Music Intensity</title>
   .flav .v{ display:block; font:400 11px/1.35 var(--mono); letter-spacing:.09em; text-transform:uppercase;
             color:var(--dim); margin:5px 0 7px; }
   .flav p{ margin:0; color:var(--dim); }
+  .flav button[aria-pressed=true] .v{ color:var(--gold); }
+  /* One line that says what you are hearing, because "which of the four is
+     this" is the only question the picker has to answer and a highlighted
+     border on its own does not answer it while the music is running. */
+  .nowvoice{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 12px;
+         padding:12px 15px; border:1px solid var(--line); border-left:3px solid var(--gold);
+         border-radius:9px; background:var(--stage); }
+  .nowvoice b{ font:800 19px/1.1 var(--display); color:var(--gold); }
+  .nowvoice span{ font:400 13px/1.4 var(--body); color:var(--dim); }
+  .nowvoice .sp{ flex:1; }
 
   .presets{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
   .presets button{ font:600 13px/1 var(--body); padding:9px 12px; }
@@ -163,13 +173,15 @@ const page = `<title>Lane Music Intensity</title>
 </style>
 <div class="wrap">
   <header>
-    <h1>Lane — <em>music intensity</em></h1>
+    <h1>Lane — <em>adaptive music</em></h1>
     <p class="lede">The match theme reacts to two things, on two separate axes. <b>Enemy heroes</b>
       closing in bring the celeste and the sour ninth; <b>mobs</b> nearby bring one of four forest
       voices instead, which are written to be worth hearing rather than worrying about. Both are zero
       in an empty field, and at zero the piece is exactly what it has always been. Drag either and
       listen — the whole point of both mechanics is whether you can tell, without looking, that the
-      number went up, and which number it was.</p>
+      number went up, and which number it was. <b>The forest is the new half</b>, so it comes
+      first: press <em>Hear all four</em> and it plays each of its voices for eight seconds, in
+      order.</p>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Press play to start audio</span></div>
   </header>
 
@@ -178,10 +190,60 @@ const page = `<title>Lane Music Intensity</title>
     <button class="ghost" id="tPlay" aria-pressed="true">Match theme</button>
     <button class="ghost" id="tMenu" aria-pressed="false">Menu theme</button>
     <span class="sp"></span>
+    <button id="tour">Hear all four</button>
     <button class="ghost" id="walkIn">Walk a hero in</button>
     <button class="ghost" id="campIn">Walk into a camp</button>
     <button class="ghost" id="allOut">Everything leaves</button>
     <span class="pos" id="pos">bar &mdash;</span>
+  </div>
+
+  <h2>Mobs &mdash; the forest</h2>
+  <p class="lede">A camp at the edge of a clearing is the good news, so it does not get the celeste and
+    it never gets the ninth. It gets one of these four instead &mdash; pick one and it switches on the
+    next beat, with the music still running. They differ by instrument, register, rhythm and harmony,
+    not by amount: you should know which one you are hearing inside a bar.</p>
+  <p class="nowvoice"><b id="liveName">&mdash;</b><span id="liveWhat">press <em>Hear all four</em> and it plays each of them for eight seconds, in order</span><span class="sp"></span><span id="liveStep"></span></p>
+  <div class="flav" id="flav"></div>
+  <div class="dial">
+    <div class="top">
+      <span class="num" id="qnum">0.00</span>
+      <span class="says" id="qsays">Nothing in the trees. <b>Silent.</b></span>
+    </div>
+    <input id="qdial" type="range" min="0" max="100" value="0" aria-label="Mobs nearby">
+    <div class="ticks" id="qticks"></div>
+    <div class="presets" id="qpresets"></div>
+  </div>
+
+  <div class="rows" style="margin-top:14px">
+    <div class="row" id="Q0" style="--rail:var(--bone)">
+      <div class="hd"><b>Forest shading</b><span class="amt">0%</span></div>
+      <p>No new notes. The guitar brightens a third as much as a hero makes it, and the reverb tail
+        <em>lengthens</em> &mdash; which is the opposite of what the threat does to it. A player who can
+        hear which way the room went knows which kind of company he has before either cue has played a
+        note.</p>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="row" id="Q1" style="--rail:#8FD98F">
+      <div class="hd"><b>One in the trees</b><span class="amt">0%</span></div>
+      <p>The live voice arrives. One mob reaches this at about 743 units, a camp of three at 948, the
+        apex at 1338 &mdash; so a camp is heard from outside the clearing and a lone wanderer about as
+        you see it.</p>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="row" id="Q2" style="--rail:#5FBF7A">
+      <div class="hd"><b>Standing in it</b><span class="amt">0%</span></div>
+      <p>The voice fills out: the marimba doubles into the gaps and grows a floor, the drums flurry and
+        the bass finally walks, the hum climbs the chord, the second horn answers. One mob at 423, a
+        camp at 717, the apex at 762.</p>
+      <div class="bar"><i></i></div>
+    </div>
+    <div class="row" id="Q3" style="--rail:var(--bone)">
+      <div class="hd"><b>Left open by the fight</b><span class="amt">100%</span></div>
+      <p>The fight always wins. Everything on this axis fades out across exactly the run-up to the
+        celeste and is silent from the beat it speaks, so the two cues can never argue. In Open World
+        there are no enemy heroes at all, so this stays wide open for the whole round.</p>
+      <div class="bar"><i></i></div>
+    </div>
   </div>
 
   <h2>Enemy heroes &mdash; the threat</h2>
@@ -230,54 +292,6 @@ const page = `<title>Lane Music Intensity</title>
     </div>
   </div>
 
-  <h2>Mobs &mdash; the forest</h2>
-  <p class="lede">A camp at the edge of a clearing is the good news, so it does not get the celeste and
-    it never gets the ninth. It gets one of these four instead &mdash; pick one and it switches on the
-    next beat, with the music still running. They differ by instrument, register, rhythm and harmony,
-    not by amount: you should know which one you are hearing inside a bar.</p>
-  <div class="flav" id="flav"></div>
-  <div class="dial">
-    <div class="top">
-      <span class="num" id="qnum">0.00</span>
-      <span class="says" id="qsays">Nothing in the trees. <b>Silent.</b></span>
-    </div>
-    <input id="qdial" type="range" min="0" max="100" value="0" aria-label="Mobs nearby">
-    <div class="ticks" id="qticks"></div>
-    <div class="presets" id="qpresets"></div>
-  </div>
-
-  <div class="rows" style="margin-top:14px">
-    <div class="row" id="Q0" style="--rail:var(--bone)">
-      <div class="hd"><b>Forest shading</b><span class="amt">0%</span></div>
-      <p>No new notes. The guitar brightens a third as much as a hero makes it, and the reverb tail
-        <em>lengthens</em> &mdash; which is the opposite of what the threat does to it. A player who can
-        hear which way the room went knows which kind of company he has before either cue has played a
-        note.</p>
-      <div class="bar"><i></i></div>
-    </div>
-    <div class="row" id="Q1" style="--rail:#8FD98F">
-      <div class="hd"><b>One in the trees</b><span class="amt">0%</span></div>
-      <p>The live voice arrives. One mob reaches this at about 743 units, a camp of three at 948, the
-        apex at 1338 &mdash; so a camp is heard from outside the clearing and a lone wanderer about as
-        you see it.</p>
-      <div class="bar"><i></i></div>
-    </div>
-    <div class="row" id="Q2" style="--rail:#5FBF7A">
-      <div class="hd"><b>Standing in it</b><span class="amt">0%</span></div>
-      <p>The voice fills out: the marimba doubles into the gaps and grows a floor, the drums flurry and
-        the bass finally walks, the hum climbs the chord, the second horn answers. One mob at 423, a
-        camp at 717, the apex at 762.</p>
-      <div class="bar"><i></i></div>
-    </div>
-    <div class="row" id="Q3" style="--rail:var(--bone)">
-      <div class="hd"><b>Left open by the fight</b><span class="amt">100%</span></div>
-      <p>The fight always wins. Everything on this axis fades out across exactly the run-up to the
-        celeste and is silent from the beat it speaks, so the two cues can never argue. In Open World
-        there are no enemy heroes at all, so this stays wide open for the whole round.</p>
-      <div class="bar"><i></i></div>
-    </div>
-  </div>
-
   <h2>What the mix is doing</h2>
   <div class="mixgrid">
     <div><span>Pad</span><b id="mPad">&times;1.00</b></div>
@@ -306,7 +320,7 @@ const page = `<title>Lane Music Intensity</title>
     <b>?mob=grove|hunt|glade|horns</b> overrides it, including on the published build.
     Keys: <b>space</b> play, <b>&larr; &rarr;</b> threat, <b>&uarr; &darr;</b> forest,
     <b>1&ndash;4</b> threat presets, <b>5&ndash;8</b> the four voices,
-    <b>A</b> walk a hero in, <b>D</b> walk into a camp.</p>
+    <b>Q</b> hear all four, <b>A</b> walk a hero in, <b>D</b> walk into a camp.</p>
 </div>
 <script>
 (function(){
@@ -511,6 +525,7 @@ ${engine}
     const fs = el('flav').children;
     for(let i = 0; i < fs.length; i++)
       fs[i].setAttribute('aria-pressed', String(FLAVOURS[i].key === flavour));
+    paintLive();
   }
 
   // Ticks read their positions off the engine, so if a threshold moves in
@@ -552,6 +567,7 @@ ${engine}
       b.innerHTML = '<b>' + f.label + '</b><span class="v">' + f.voices +
                     ' &middot; key&nbsp;' + (i + 5) + '</span><p>' + f.blurb + '</p>';
       b.addEventListener('click', () => {
+        if(tourTimer) stopTour();
         setFlavour(f.key);
         // Pressing a voice with nothing in the trees is asking to hear it, so
         // put something in the trees.
@@ -598,6 +614,51 @@ ${engine}
     ramp = requestAnimationFrame(step);
   }
 
+  /* ------------------------------------------------------------- the tour
+
+     The one button that cannot be got wrong: it starts the music if it is not
+     running, puts something in the trees if there is nothing there, and plays
+     all four voices in order with the name of the live one in front of you.
+     Switching by hand works and always did, but it asks the listener to
+     remember what the last one sounded like, which is the hardest possible
+     way to compare four things. */
+  const TOUR_SECONDS = 8;
+  let tourTimer = null, tourIdx = 0;
+  function paintLive(){
+    const f = FLAVOURS.find(x => x.key === flavour);
+    el('liveName').textContent = f ? f.label : '\\u2014';
+    el('liveWhat').innerHTML = f
+      ? (quarry < 0.05
+          ? 'would be playing &mdash; but there is nothing in the trees. Raise the dial below.'
+          : f.voices + ' &middot; ' + f.blurb)
+      : 'press <em>Hear all four</em> and it plays each of them for eight seconds, in order';
+    el('liveStep').textContent = tourTimer ? (tourIdx + ' of ' + FLAVOURS.length) : '';
+    // Not 'Stop': the transport already has a Stop, and two buttons a few
+    // pixels apart both saying it is a way to stop the wrong one.
+    el('tour').textContent = tourTimer ? 'Stop the tour' : 'Hear all four';
+  }
+  function stopTour(){
+    if(tourTimer){ clearInterval(tourTimer); tourTimer = null; }
+    paintDial();
+  }
+  function tour(){
+    if(tourTimer){ stopTour(); return; }
+    if(!(track && track.running)) start();
+    // Deep enough that the second layer is in: the four differ most where
+    // they have all of their notes.
+    if(quarry < 0.85) setQuarry(0.85);
+    tourIdx = 0;
+    const step = () => {
+      if(tourIdx >= FLAVOURS.length){ stopTour(); return; }
+      setFlavour(FLAVOURS[tourIdx].key);
+      tourIdx++;
+      paintLive();
+    };
+    step();
+    tourTimer = setInterval(step, TOUR_SECONDS * 1000);
+    paintLive();
+  }
+
   /* --------------------------------------------------------------- input */
 
   el('play').addEventListener('click', toggle);
@@ -617,6 +678,7 @@ ${engine}
   }
   el('tPlay').addEventListener('click', () => pick('play'));
   el('tMenu').addEventListener('click', () => pick('menu'));
+  el('tour').addEventListener('click', tour);
   el('walkIn').addEventListener('click', walkHero);
   el('campIn').addEventListener('click', walkCamp);
   el('allOut').addEventListener('click', leave);
@@ -643,6 +705,7 @@ ${engine}
       if(f){ setFlavour(f.key); if(quarry < 0.62) setQuarry(0.62); if(!(track && track.running)) start(); }
       return;
     }
+    if(k === 'q'){ e.preventDefault(); tour(); return; }
     if(k === 'a'){ e.preventDefault(); walkHero(); return; }
     if(k === 'd'){ e.preventDefault(); walkCamp(); return; }
     if(k === 's'){ e.preventDefault(); leave(); return; }

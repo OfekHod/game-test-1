@@ -127,9 +127,14 @@ time:
 | `glade` | **Glass hum** — a held hum over the chord with a low bell in the gaps |
 | `horns` | **Horn call** — two long calls a chord, a fifth apart, answered at the top |
 
-`index.html?mob=grove` (or `hunt`, `glade`, `horns`) picks one, on any protocol
-including the published build. The forest fades out completely as the threat
-rises and is silent from the beat the celeste speaks, so the two cues can never
+**The picker is on the pause menu**, under Resume, and pressing one while the
+game is paused previews it immediately — the forest number is frozen while
+nothing moves, so a press pushes it past the second layer for as long as the
+menu is up and the first frame after Resume writes the real number back.
+`index.html?mob=grove` (or `hunt`, `glade`, `horns`) does the same from the
+URL, which is a shortcut and not the control: the published build runs inside
+a host page whose address bar is the host's, so a query string may never reach
+it. The forest fades out completely as the threat rises and is silent from the beat the celeste speaks, so the two cues can never
 argue — in Open World, where there are no enemy heroes, it is open all round.
 
 `?musicdebug` draws both rings around the hero you are driving and prints both

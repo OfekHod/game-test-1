@@ -891,6 +891,20 @@
   .pauseModal .tutTitle{display:block;font-size:19px;margin-bottom:8px;}
   .pauseModal p{margin:0;font-size:13.5px;line-height:1.45;}
   .pauseModal .tutRow{justify-content:center;margin-top:16px;}
+  /* The forest-voice picker. Four buttons under Resume, because the one place
+     a player is already stopped and thinking about the music is the pause
+     menu — and because the published build has no address bar of its own, so
+     ?mob= cannot be the only way to change it. */
+  .pausePick{margin-top:18px !important;padding-top:14px;border-top:1px solid rgba(255,243,214,.18);
+    font-size:11.5px !important;letter-spacing:.04em;text-transform:uppercase;opacity:.72;}
+  .voiceRow{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:9px;pointer-events:auto;}
+  .voiceRow button{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:12px;cursor:pointer;
+    border:2px solid rgba(255,243,214,.28);border-radius:9px;padding:7px 10px;line-height:1.1;
+    background:rgba(20,14,6,.35);color:#FFF3D6;}
+  .voiceRow button small{display:block;font-weight:600;font-size:9.5px;opacity:.62;margin-top:2px;
+    text-transform:uppercase;letter-spacing:.05em;}
+  .voiceRow button[aria-pressed=true]{background:#5AC8E8;color:#0a3a4a;border-color:#5AC8E8;}
+  .voiceRow button:active{transform:translateY(2px);}
 
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
@@ -1042,6 +1056,8 @@ window.addEventListener('DOMContentLoaded', function(){
         <b class="tutTitle">Paused</b>
         <p id="pauseNote">Nothing moves until you resume.</p>
         <div class="tutRow"><button class="go" id="pauseResumeBtn">Resume</button></div>
+        <p class="pausePick" id="mobVoiceNote">Forest music &mdash; what a mob nearby sounds like</p>
+        <div class="voiceRow" id="mobVoiceRow"></div>
       </div>
       <div class="pauseModal hidden" id="pauseConfirmPage">
         <b class="tutTitle" id="pauseConfirmTitle">End this game?</b>
@@ -2881,6 +2897,16 @@ window.addEventListener('DOMContentLoaded', function(){
     // Set by the game once its own gesture listeners are up. See the music
     // section near the bottom of the next script.
     owned: false,
+    // The forest voices, readable before any audio exists at all: the game
+    // draws its pause-menu picker from this on the first frame, long before a
+    // gesture has built a context, and a picker that could only be drawn once
+    // the music was running would be a picker nobody could find.
+    flavours: Object.keys(LANE_SONGS.play.quarry || {}).map(k => ({
+      key: k,
+      label: LANE_SONGS.play.quarry[k].label,
+      voices: LANE_SONGS.play.quarry[k].voices,
+    })),
+    defaultFlavour: LANE_SONGS.play.quarryDefault || null,
     context, track, rng, mtof, clamp,
   };
 
@@ -3214,6 +3240,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const pauseNoteEl = document.getElementById('pauseNote');
   const pauseConfirmNoteEl = document.getElementById('pauseConfirmNote');
   const pauseReseedBtn = document.getElementById('pauseReseedBtn');
+  const mobVoiceRow = document.getElementById('mobVoiceRow');
+  const mobVoiceNote = document.getElementById('mobVoiceNote');
   const pauseConfirmTitleEl = document.getElementById('pauseConfirmTitle');
   const menuBtn = document.getElementById('menuBtn');
 
@@ -18747,11 +18775,48 @@ window.addEventListener('DOMContentLoaded', function(){
   const QUARRY_RISE = 0.55, QUARRY_FALL = 1.8;
   let quarry = 0;
 
-  // Which of the four forest voices plays. ?mob=<key> on any protocol — the
-  // published artifact is where it gets auditioned, so this one is not
-  // file-only — and otherwise whatever the piece names as its default.
-  const MOB_FLAVOUR = (typeof location !== 'undefined'
+  /* Which of the four forest voices plays, and how a player changes it.
+
+     ?mob=<key> sets it on any protocol, but that cannot be the only way and
+     the first version's mistake was thinking it could: the published build
+     runs inside a host page whose address bar is the host's, so the one place
+     the music most wants auditioning is the one place a query string may
+     never arrive. The picker on the pause menu is the real control and the
+     URL is the shortcut. */
+  const MOB_VOICES = (LaneMusic && LaneMusic.flavours) || [];
+  const MOB_FROM_URL = (typeof location !== 'undefined'
       && (/(?:^|[?&])mob=([a-z]+)/.exec(location.search || '') || [])[1]) || null;
+  let mobVoice = (MOB_VOICES.some(f => f.key === MOB_FROM_URL) ? MOB_FROM_URL : null)
+              || (LaneMusic && LaneMusic.defaultFlavour)
+              || (MOB_VOICES[0] ? MOB_VOICES[0].key : null);
+
+  // Pressing one has to be AUDIBLE, and the pause menu is exactly where it
+  // would not be: update() is stopped, so the forest number is frozen at
+  // whatever it was when you paused, which at the base is zero. So a press
+  // pushes the track past the second layer's threshold for as long as the
+  // menu is up. Nothing needs to undo it — the first frame after Resume
+  // writes the real number back.
+  const MOB_PREVIEW = 0.72;
+  function pickMobVoice(key){
+    mobVoice = key;
+    for(const b of mobVoiceRow.children) b.setAttribute('aria-pressed', String(b.dataset.key === key));
+    const m = musicTrack('play');
+    if(!m || !m.setFlavour) return;
+    m.setFlavour(key);
+    if(paused && m.quarry < MOB_PREVIEW) m.setQuarry(MOB_PREVIEW);
+  }
+  (function buildMobVoiceRow(){
+    if(!mobVoiceRow) return;
+    if(!MOB_VOICES.length){ if(mobVoiceNote) mobVoiceNote.classList.add('hidden'); return; }
+    for(const f of MOB_VOICES){
+      const b = document.createElement('button');
+      b.dataset.key = f.key;
+      b.setAttribute('aria-pressed', String(f.key === mobVoice));
+      b.innerHTML = f.label + '<small>' + f.voices + '</small>';
+      bindTap(b, ()=> pickMobVoice(f.key));
+      mobVoiceRow.appendChild(b);
+    }
+  })();
 
   function updateMusicQuarry(dt){
     const me = playerTeam[activePlayerIdx];
@@ -18762,7 +18827,7 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!m || !m.setQuarry) return;
     // Here rather than at startup: the track is built lazily on the first
     // gesture, so there is no moment early enough to set this once.
-    if(MOB_FLAVOUR && m.flavour !== MOB_FLAVOUR) m.setFlavour(MOB_FLAVOUR);
+    if(mobVoice && m.flavour !== mobVoice) m.setFlavour(mobVoice);
     m.setQuarry(quarry);
     if(MUSIC_DEBUG) window.__quarry = quarry;
   }
@@ -18828,7 +18893,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const trk = musicTracks.play;
     lines.push('quarry ' + quarry.toFixed(2) + '   target ' +
                ((me && me.alive) ? quarryAt(me.x, me.y) : 0).toFixed(2));
-    lines.push('mob voice ' + ((trk && trk.flavour) || (MOB_FLAVOUR || '\u2014')) +
+    lines.push('mob voice ' + ((trk && trk.flavour) || mobVoice || '\u2014') +
                '   duck ' + Math.max(0, 1 - threat / 0.24).toFixed(2));
     // The nearest one AND how many are contributing, because the sum is what
     // the number is: a single mob at 700 is a fifth of it and six of them at
