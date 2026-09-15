@@ -298,6 +298,25 @@
     50%    {border-color:#E8453C;box-shadow:0 0 0 4px rgba(232,69,60,.75),0 0 14px rgba(232,69,60,.6);}
   }
   .pchip.low{animation:chipLow .9s ease-in-out infinite;}
+  /* A6: nobody spends anybody's points but you, and a level nobody spent buys
+     NOTHING — recomputeStats reads statLv, so an ally sitting on twenty points
+     fights the way he did at level 1. Out in the world the orbs land on
+     whoever is nearest and a session is hours long, so that ally is easy to
+     forget about. The reminder is the level badge of a hero you are not
+     driving, beating in the stat strip's own cyan once he is holding six
+     points (two whole levels): chip, then switch to him, then the strip. It is
+     a reminder and not a shortcut — the border is left alone so active, solo
+     and low all still read, and the hero you ARE driving is not in it because
+     his count is already on the strip, pulsing. */
+  /* Colour alone was too quiet for a 24px circle in the corner of the eye —
+     photographed, it read as a badge that happened to be blue. It swells as
+     well now, because movement is what peripheral vision is for. */
+  @keyframes bankedPulse{
+    0%,100%{background:#5A3E1B;box-shadow:0 0 0 0 rgba(90,200,232,0);transform:scale(1);}
+    50%    {background:#1a7f9e;box-shadow:0 0 0 4px rgba(90,200,232,.6),0 0 14px rgba(90,200,232,.9);transform:scale(1.18);}
+  }
+  .pchip.banked .plevel{animation:bankedPulse 1.2s ease-in-out infinite;}
+  @media (prefers-reduced-motion:reduce){ .pchip.banked .plevel{animation:none;background:#1a7f9e;} }
   .barText{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.65),0 0 3px rgba(0,0,0,.4);pointer-events:none;}
 
@@ -4359,6 +4378,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // Req 5: an Open World level costs twenty times what a Match level does, so
   // the mode is about farming for a long time rather than about ten minutes.
   const OW_XP_MULT = 20;
+  // A6: how many unspent points on a hero you are NOT driving make his party
+  // chip start asking for a visit. Six is two whole levels — one is a hero who
+  // just dinged and is about to be switched to anyway.
+  const OW_BANKED_HINT = 6;
   function xpForLevel(level){ return (gameMode==='openworld' ? OW_XP_MULT : 1) * (20 + (level-1)*8); }
 
   function makeHero(type, side, hx, hy){
@@ -9301,8 +9324,13 @@ window.addEventListener('DOMContentLoaded', function(){
       : 'Nothing moves until you resume.';
     if(pauseConfirmTitleEl) pauseConfirmTitleEl.textContent = open ? 'Leave this world?' : 'End this game?';
     if(pauseConfirmBtn) pauseConfirmBtn.textContent = open ? 'Yes, leave' : 'Yes, end match';
+    // The old note repeated the title above it and then said the one true
+    // thing in a subordinate clause. What a player actually needs at this
+    // button is: you get a card, nothing out here is kept, and the seed is the
+    // way back — either from the button under this one or from the title box.
     if(pauseConfirmNoteEl) pauseConfirmNoteEl.textContent = open
-      ? 'Leave this world? Its seed is ' + worldSeed + ' — type it on the title screen to come back.'
+      ? "You'll get the session card. Nothing out here is kept, but seed " + worldSeed
+        + ' builds this same world again — from the button below, or from the title screen.'
       : "You'll forfeit the match and return to the main menu.";
   }
 
@@ -16946,6 +16974,11 @@ window.addEventListener('DOMContentLoaded', function(){
       chip.classList.toggle('active', i===activePlayerIdx);
       chip.classList.toggle('dead', !h.alive);
       chip.classList.toggle('solo', h!==playerTeam[0] && h.followTarget!==playerTeam[0]);
+      // A6's reminder. Open World only for now: it is the mode whose sessions
+      // run for hours with the income spread over three heroes, and Match and
+      // Survival are short enough that the strip is the whole story. One line
+      // to widen it if that turns out to be wrong.
+      chip.classList.toggle('banked', gameMode==='openworld' && i!==activePlayerIdx && h.points>=OW_BANKED_HINT);
       const st = heroStatus(h, i);
       if(chip.dataset.stat !== st){
         chip.dataset.stat = st;
@@ -19120,9 +19153,26 @@ window.addEventListener('DOMContentLoaded', function(){
     tutQuit();
   });
   bindTap(pauseReseedBtn, ()=>{ const s = worldSeed; tutQuit(); guardedStart('openworld', s); });
+  // "tap to copy" that says nothing back is a line you tap twice and still do
+  // not trust. The line itself is the receipt: it reports the copy for a beat
+  // and then owPauseText puts the invitation back. Only on a copy that really
+  // happened — clipboard access is refused often enough (an insecure origin, a
+  // permissions policy in the artifact host's frame) that claiming it
+  // regardless would be the same lie the silence was.
+  let seedCopiedTimer = 0;
   bindTap(pauseNoteEl, ()=>{
     if(gameMode !== 'openworld') return;
-    try { if(typeof navigator !== 'undefined' && navigator.clipboard) navigator.clipboard.writeText(String(worldSeed)); } catch(e){}
+    const said = ()=>{
+      if(gameMode !== 'openworld') return;
+      pauseNoteEl.textContent = 'Seed ' + worldSeed + ' · copied';
+      clearTimeout(seedCopiedTimer);
+      seedCopiedTimer = setTimeout(owPauseText, 2200);
+    };
+    try {
+      if(typeof navigator === 'undefined' || !navigator.clipboard) return;
+      const p = navigator.clipboard.writeText(String(worldSeed));
+      if(p && p.then) p.then(said, ()=>{}); else said();
+    } catch(e){}
   });
   for(const el of [pauseBtnEl, exitBtnEl, pauseResumeBtn, pauseCancelBtn, pauseConfirmBtn]){
     el.addEventListener('touchstart', e=>{ e.stopPropagation(); }, {passive:true});
@@ -19337,6 +19387,10 @@ window.addEventListener('DOMContentLoaded', function(){
     if(shud) shud.classList.add('hidden');
     skillBtnEl.style.display='none';
     hideJoystick(moveJoyEl);
+    // Play Again passes worldSeed (restartBtn, below), so out here the button
+    // is not "another go" but "that same world again" — which is the whole
+    // point of a seed and worth saying on the one screen that offers it.
+    if(restartBtn) restartBtn.textContent = gameMode==='openworld' ? 'This world again' : 'Play Again';
     if(gameMode==='survival'){
       resultTitleEl.textContent = 'Overrun';
       resultTitleEl.style.color = '#c9503f';

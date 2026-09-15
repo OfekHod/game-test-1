@@ -165,3 +165,33 @@ So the arena asks a fresh question every frame (`survWantsBack`) and the answer
 moves the hero back down its own road rather than off the map. A step behind the
 front rank is cover, and the pack walking past puts it back in the push without
 it having to decide anything. `SURV_BACK_HOLD` is the only stickiness it gets.
+
+## The open world
+
+There is no brain in Open World and that is deliberate: the enemy team is
+parked dead and nothing drives it, so `updateEnemyCarryAI`, the macro layer and
+the whole siege apparatus never run. What is left is the half of `updateIdleAI`
+that already handled your own team — it skips whoever you are driving and gives
+the other two the auto-attack and the retreat they have in every mode — over
+`squadFollow`, the same "stay together" routine the arena uses. No lanes, no
+buildings to defend, nothing to push.
+
+The thinking that *is* new out there belongs to the monsters, not the heroes:
+
+- **Camps tick only within `CAMP_TICK_R` (1,200) of a living hero.** Their
+  respawn clocks still run; their mobs simply do not walk, because a mob a
+  kilometre away is standing at home or walking back to it either way. A mob
+  that did not move this frame also skips its collision pass. Without both, the
+  couple of hundred mobs a loaded window holds cost more per frame than the
+  fight you are actually in.
+- **A medium (`NEUTRAL_KINDS[1]`) leashes at 480, not 330**, and the
+  last-attacker latch covers `neutral && big`. Between them that is what makes
+  "harder further out" mean anything: a medium walks out through its own ring
+  to reach a carry standing at max range, instead of being a stationary target
+  that heals back up when you kite it. Aggro stays at 250 so walking past a camp
+  is still walking past it. A camp's own ring bushes carry its `campId` and its
+  mobs ignore them, or the ring would pen them in.
+- **A giant is bounded to its bowl, not to a radius.** `updateApexRoam` picks
+  patch points inside the dirt area, drops a target that leaves it, and walks
+  back through one of the rim's real gaps — the objects on its own rim are
+  tagged and skipped for it. It idles entirely when no hero is within 1,500.

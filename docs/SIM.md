@@ -24,6 +24,52 @@ while game code is running are affected — during `load()` and inside `start()`
 script can still `await` a delay. With the game's timers unref'd the process
 exits as soon as a script finishes.
 
+## The determinism gate
+
+`node sim/world.js` is the Open World mode's own gate, and it takes no
+argument. It asks the one question an endless world lives or dies by: **build
+the same seed twice, in any order, from either side of a chunk boundary — is it
+the same world?**
+
+```bash
+node sim/world.js
+```
+
+Seventeen tests, each naming the PR it landed in, and each PR ran every test up
+to and including its own, so scaffolding that quietly rots is caught by a later
+PR's gate as well as by its own. What they cover:
+
+- **Same seed, same world** — two instances, and the same instance started
+  twice, hash identical; a different seed hashes differently.
+- **No unseeded draw inside generation.** `Math.random` is replaced with a
+  throw, and a whole block of world is built under it. This is the test the
+  others rest on: a single leaked `Math.random` would give a world that looks
+  right and comes back different, with nothing on screen to say so. The game
+  carries the same trap itself — generation runs with an explicit stream and a
+  depth counter, and `?owdebug` turns a draw taken at depth into an error.
+- **Order independence across a seam.** A lake, a grove whose stand trees cross
+  a chunk boundary, a bowl and a river are each built A-then-B on one instance
+  and B-then-A on another; both chunks must agree, and the union of the chunks'
+  member lists must be the feature's complete list with nothing missing and
+  nothing counted twice.
+- **Streaming equals isolation.** A chunk built during play, with its camps
+  stocked and its towers live, hashes the same as that chunk built alone.
+- **Round trips.** Walk away until a chunk unloads, walk back: the stump you
+  left is there, the tree you hit twice is still on two, nothing has moved into
+  the hole, and the hash is the pristine one.
+- **Match is unaffected.** A Match started after an Open World round is today's
+  Match, on today's clamps, with nothing left loaded.
+- **The gradient, the bowls and the walk** — the content tests: all-easy at
+  home and all-medium 93k out over ten seeds, a giant that never leaves its
+  bowl, a long walk that goes past bowls with giants alive in them, and eight
+  two-minute walks that never stop dead against a prop.
+- **Timings**, printed rather than asserted: ms per chunk, ms per region build,
+  and what the start block came out holding.
+
+It must print every test green **and exit on its own** — a hang means a timer
+is keeping Node alive, which is what `sim/stub.js` is for (above). Any change
+that touches generation runs it.
+
 ## Cost
 
 A match that ends on a base kill (~250s of game time) costs a few seconds of

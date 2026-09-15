@@ -1,6 +1,17 @@
 # Open World mode — implementation plan
 
-**Status: plan only.** Nothing in this document is implemented. No game code changed in the commit that added it; the test build is identical to `main`.
+**Status: built, in six PRs.** This document is kept as written — it is the plan the mode was built from, and §11's table says which PR each piece landed in. Where the build learned something the plan did not know, it was written down rather than edited in: §13 is the review findings, §14 the six decisions the owner changed, and §15 the three things the first playable build walked into. §11's "plan only" framing in the older sections should be read that way.
+
+What is where, for a reader arriving at the code rather than at the plan:
+
+| | |
+|---|---|
+| Play it | The fourth title button, or `README.md`'s "Open World" |
+| Every constant | `docs/TUNING.md`, the "Open World" section |
+| The gate | `node sim/world.js` — see `docs/SIM.md` |
+| Screenshots | `docs/GAMEPLAY.md`, "The open world" |
+
+Two things named here were never built and are not owed: enemy heroes and anything attacking the base, and persistence across page loads. Both are listed as out of scope in §1.
 
 ## What was asked
 
