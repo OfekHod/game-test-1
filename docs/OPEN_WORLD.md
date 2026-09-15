@@ -492,6 +492,8 @@ Every test that calls `gen` first calls `start('openworld', S)` — `gen` needs 
 11. **Apex stays in its bowl (PR4):** find a dirt area; teleport a hero to 250 units outside a rim slot (not a gap) for 30 s of steps, then 3000 away; assert every apex of that area satisfies `inDirt(area, x, y, APEX_R)` within 20 s, and no apex ever left `inDirt(area, x, y, 2·APEX_R)`.
 12. **Timings (PR2; the loaded/wanted line from PR3):** prints ms per chunk (target ≤ 1), ms per region build (target ≤ 8 desktop), and the loaded/wanted sizes. `node sim/world.js` must exit on its own (game timers are unref'd by `stub.js`) and print all tests green.
 13. **Match under a depth-gated poison (PR1):** `const real = Math.random; Math.random = () => { if(world.genDepth() > 0) throw new Error('Math.random inside generation'); return real(); }; start(); Math.random = real;` — `start()` is Match, whose generators run at `genDepth === 0` and draw freely; assert nothing threw through `buildMap` and `rngLeaked() === false` afterwards. This is PR1's proof that the scaffolding (`genRng`, `genDepth`, the eleven `rand(0,1)` conversions, `makeTree(x,y,R)`, the `lists` argument) changed nothing Match can see: the poison is armed and never fires.
+15. **A long walk goes past bowls, with giants in them (PR4, added after the first build):** hold `d` for 180 s of steps on seed 42 and collect every dirt area that ever appears in `features()`; assert ≥ 6 bowls and that a giant was alive at some point. On the same walk, every living giant's `area` is in `dirtIds()` — the bowls the *loaded chunks* hold — which is the invariant the missing cull broke.
+17. **Holding one key never stops the hero (PR4, added after the first build):** eight walks (seeds 1 and 42 × four directions), 120 s each, holding one key and nothing else; assert each covers > 70 % of the open-ground distance (227 u/s) and never goes more than 6 s without advancing. Two bushes whose bars overlap make a notch that pushes back exactly as fast as you walk in, and before `steerAroundStall` "more than 6 s" was the rest of the session.
 14. **Seedless Open World throws (PR1):** `assert.throws(() => start('openworld'), /openworld needs an integer seed/)`; so do `start('openworld', '42')` and `start('openworld', 1.5)`; then `start()` on the same instance still starts a Match (`state().left === 600`).
 
 ### 10.3 Node-compat rules
@@ -702,3 +704,53 @@ There is still no end condition — no clock, nothing attacks the base, death is
 `grantXP` 6355 stays `if(h.side === 'enemy') aiSpendPoints(h)`, exactly as today — all three player heroes keep manual stat points in Open World as in every other mode, and the comment above that line ("The player spends their own team's points from the stat strip") keeps being true.
 
 The consequence is worth stating where the design can see it: `recomputeStats` derives every stat from `statLv`, and a level grants only `h.points += 3`, so **an unspent level buys nothing** — an ally at level 20 with 20 unspent points fights as he did at level 1. With orbs going to the nearest collector within 130 (§6.8), most of a session's income lands on heroes the player must visit to convert. That is the intended shape — the hero you drive is your investment — so the only concession is a **reminder, not a shortcut**: a party chip whose hero holds ≥ 6 unspent points pulses, and spending is still done by switching to him. The reminder lands in PR6.
+
+## 15. First build: three things the owner walked into
+
+PR4's first build was played for ninety to a hundred thousand units and came
+back with two reports — no bowls anywhere, and "the game crashed in the
+distance". Both were real, and finding the second one found a third.
+
+### F1 — Bowls could almost never be placed
+*Amends §6.4's placement rule.*
+
+A bowl wants its whole radius clear of water, and its extent (1.664·r + 60, up
+to 1190) inside the region's core, which leaves a placement box of 1618–2680
+units in a 4000-unit region that usually has one to three lakes in it and
+sometimes a river through it. Measured: **90 % of attempts died on water, and
+ninety-two regions of walking produced two bowls.** The fix is to ask for less
+rather than for nothing — the requested radius is tried, then 0.8, 0.64 and
+0.512 of it down to `OW_DIRT_MIN_R` 300, 60 attempts each. Same rule, same
+keep-outs, a smaller bowl. Placement now succeeds 25 times in 28, and the same
+walk goes past **50 bowls instead of 2**. Test 15 pins it.
+
+### F2 — A giant outlived its bowl
+*Amends §7's diff-store table.*
+
+`unloadChunk` culls the mobs of the camps in that chunk. A giant belongs to a
+**bowl**, which spans several chunks, so nothing culled it: a walk of 136,000
+units ended with twenty-two giants alive and roaming ground that had been
+thrown away. The cull belongs in `rebuildWorldLists`, where the live bowl list
+is rebuilt — a giant whose `area` is no longer in it goes, and its slot is told
+it was *unloaded* rather than killed (`timer = 0`, not `OW_APEX_RESPAWN`), so
+the bowl has its giant again when you walk back in. Test 15 pins it.
+
+### F3 — Holding one direction could stop the hero for good
+
+Not a PR4 bug, and not a crash: a prop blocks along a **bar** at the foot of its
+sprite (§5 of `index.html`'s prop notes), and two bushes whose bars overlap make
+a notch whose two constraints push back exactly as fast as you walk in. The
+hero stops dead, with no error and no way out for as long as the key is held.
+Reproduced in Node at (79 780, 1 832) on seed 42 walking east, and again
+between two trees; a player sees the game freeze.
+
+In a match you steer every second and would never meet it. In the open world
+the whole loop is "point yourself east and hold it", so it had to go.
+`steerAroundStall` sits between the keys and the velocity: when the direction
+asked for last frame did not happen, it turns the request off the obstacle a
+little further each frame (`SLIP_TURN`), keeps one side for the whole detour so
+the hero cannot saw himself backwards, tries the other side if fully deflected
+and still stuck (`SLIP_JAM`), and straightens up once he is past it. The AI
+never touches this path — it steers itself — so nothing in `sim/run.js` moves.
+Eight two-minute walks now cover 82–100 % of open ground with a longest stop of
+1.5 s. Test 17 pins it.

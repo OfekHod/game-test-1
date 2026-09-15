@@ -290,3 +290,73 @@ basic now gives back half its mana cost, but **only for the hero you are driving
 and only for a shot the trigger asked for** (`manualT`, which the auto-assist
 never raises). The idle-player scenario fires nothing but the assist, so it earns
 no refund and the table above stays honest.
+## The pass after that: work nobody can see
+
+Same box, same headless Chromium, same method. Two benchmarks, because the
+match scene is too noisy to read a 10% change out of: a live Match at 45s
+(what a player sees, but every run plays a different match, and three runs of
+the *identical* build measured 108, 135 and 152 ms/frame), and an Open World
+round on a fixed seed with the camera parked at the base, which repeats to
+about 3%.
+
+**The title screen was rendering the whole world behind an opaque painting.**
+`#startScreen` and `#introScreen` set solid backgrounds — `#EEEAE2` and
+`#0a0f16`, not the translucent veil the pause and end screens use — so nothing
+the canvas paints while either is up can be seen. `update()` already returned
+early there; `render()` did not. Sitting on the menu cost **89.9 ms a frame**,
+forever, for a picture nobody can look at. The loop now skips `render()` while
+either screen is up, and the menu runs at the frame cap (16.7 ms, i.e. idle).
+A round *loading* still renders: those frames are the deliberate warm-up above.
+
+**The fog carve was paying twice for one shape.** `carvePass` clipped to its
+60-odd-sided ray polygon and then filled the polygon's bounding box with the
+rim gradient *through* that clip. Filling the path directly with the same
+gradient is the same picture for one rasterised shape instead of two, over the
+disc instead of the square around it. With it, a source whose disc lies inside
+ground another source has already carved to full white is skipped outright —
+the mask composites with `lighter`, and white on saturated white cannot move a
+pixel — and an empty mask no longer pays for a filtered draw at all.
+
+Five interleaved runs a side on the Match scene, medians (the new build was
+ahead in all five pairs, which is what makes a 7% median readable at all in a
+scene that noisy), and three a side on the fixed-seed world:
+
+| | before | after |
+|---|---|---|
+| Match at 45s, render | 138.3 ms | 129.2 ms |
+| Match at 45s, update | 2.41 ms | 1.73 ms |
+| Match at 45s, **worst frame** | 345 ms | 168 ms |
+| Match at 45s, canvas calls/frame | 11,707 | 10,047 |
+| Open World, fixed seed, render | 79.0 ms | 74.3 ms |
+| Open World, update | 1.15 ms | 0.91 ms |
+| title screen | 89.9 ms/frame | 16.7 ms/frame |
+
+The worst-frame row is the one to care about, and it halved in every pair. The
+hitches were not raster: they were the HUD writing styles the browser then had
+to re-lay out for the next `getBoundingClientRect`, sixty times a second, plus
+the garbage a frame's worth of vision sources and their tree lists made. Both
+are gone — writes are guarded on the value actually changing, the two boxes are
+cached against `layoutSeq`, and the sources are pooled.
+
+### What did NOT work, and is worth not trying again
+
+**A canvas filter costs the whole source surface, not the region drawn.** The
+fog's blur — `fogCtx.filter = blur(2.8px)` over the 1280x800 mask — is 22 ms of
+a 75 ms frame, the largest single item left. Drawing only the strip the carves
+landed in (`drawImage` with a source rect) changed nothing. Blurring a 64x64
+corner of the mask changed nothing. Copying the lit strip onto a surface its
+own size first and blurring that changed nothing either: 72.5 vs 74.9 ms, both
+inside the noise. The cost is in having a filter at all. The only lever left on
+it is `FOG_SCALE`, and that one is visible.
+
+**A spatial grid for the trees and props is not where the time is.**
+`resolveSolidCollision` is 7.5% of `update()` in the Node profile — the largest
+named callee — but `update()` is 2 ms of a 75 ms frame, so the whole of it is
+0.15 ms. Ordering the candidates to keep the push-out order identical would
+cost most of that back.
+
+**Match medians move by 20 s between 40-game samples.** Three consecutive
+40-game runs read 20 s faster than the baseline's three and looked like a real
+regression; at 120 games a side the two builds agree (99% and 98% base kills,
+185 s and 188 s medians). Do not believe a 40-game median to better than that,
+whatever `docs/SIM.md` already told you.
