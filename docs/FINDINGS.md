@@ -300,3 +300,125 @@ cost most of that back.
 regression; at 120 games a side the two builds agree (99% and 98% base kills,
 185 s and 188 s medians). Do not believe a 40-game median to better than that,
 whatever `docs/SIM.md` already told you.
+
+## The open world's frame: it was the fog, and the lever was not visible after all
+
+Method as above — headless Chromium, `--disable-frame-rate-limit`, software
+raster — but the scenes are the open world's, and every number below is a
+median over a twenty-second sample, the builds run **interleaved**, A B A B A B,
+because a scene this noisy cannot be read any other way (the pass before this
+one learned that the hard way).
+
+The first thing the pass produced is not a number, it is the readout that finds
+them. `?owdebug` now prints the frame total and its two halves, the worst frame
+of the second **and what that frame paid for** (bake, chunk build, region
+build), the tile blit count, `resolveSolidCollision` calls a frame, the fog's
+largest near-tree set, the ground sprites drawn, and the heap where the browser
+exposes it — §10.4(a) of `docs/OPEN_WORLD.md`, in full, and `drawFog` is broken
+into carve / sheet / blur / out. Without the last of those this pass would have
+optimised the wrong thing twice.
+
+### Where an open-world frame went
+
+Walking straight out on seed 42, desktop 1280x800:
+
+| | ms a frame |
+|---|---|
+| fog | 21.0 |
+| — of which the finished sheet stretched over the screen | 14.2 |
+| — of which the blur | 6.5 |
+| — of which the carve (the part everyone assumes is the cost) | 0.2 |
+| ground sprites (128 of them) | 9.4 |
+| tile blits (30 of them) | 0.06 |
+| minimap, water, sky, overlays, sort | 1.2 |
+| `update()` — the whole game | 0.3 |
+| **frame** | **33** |
+
+The carve is 0.2 ms. `FOG_NEAR_MAX`, which PR3 added to bound it, was solving a
+problem worth a fifth of a millisecond. What the fog actually costs is the two
+full-surface operations at the end of it, and both of them scale with the size
+of the surface rather than with anything in the scene.
+
+### `FOG_SCALE` 0.8 → 0.5
+
+The previous pass wrote: *"The only lever left on it is `FOG_SCALE`, and that
+one is visible."* It is not. Everything that surface carries is either a linear
+gradient or a polygon that gets blurred on the way out, and `FOG_EDGE_SOFT`
+scales with `FOG_SCALE`, so the feather stays the same width on screen. Halving
+it halves the source of both the blur and the stretch.
+
+Three interleaved pairs, sixty-second walk, desktop:
+
+| | 0.8 | 0.5 |
+|---|---|---|
+| frame, run 1 / 2 / 3 | 34.3 / 33.5 / 35.1 ms | 19.9 / 20.4 / 20.4 ms |
+| worst frame in any second | 54 / 53 / 56 ms | 32 / 33 / 33 ms |
+| fog | 21.5 ms | 8.9 ms |
+
+And the two scenes §10.4 asks for besides the walk — a nine-camp grove with
+three heroes in it, and the phone (`iPhone 13`, which at device-pixel-ratio 3
+rasterises *more* pixels than the 1280x800 desktop and is where this hurt most):
+
+| | 0.8 | 0.5 |
+|---|---|---|
+| grove, frame | 51.8 / 57.7 / 55.8 ms | 31.4 / 18.8 / 31.9 ms |
+| phone, frame | 55.0 / 59.3 / 60.8 ms | 18.8 / 22.1 / 18.9 ms |
+| phone, fog | 45–50 ms | 17.2 ms |
+| phone, worst frame | 76 / 76 / 79 ms | 30 / 55 / 32 ms |
+
+The phone is three times faster for a constant.
+
+Every pair favours the smaller surface and none of them overlap. The pictures
+were compared side by side at the base and inside a nine-camp grove, where the
+tree-shadow fans are the crispest geometry the mask ever holds: they are the
+same picture. Both ends of the range were measured too — **1.0 costs 45 ms**
+(a bigger surface, and no 1:1 fast path to be had), and 0.4 is 16.7 ms and
+still looks right. 0.5 takes 85% of the available win and keeps a mask that is
+still half the screen, which is the one that will survive a display nobody has
+tested on.
+
+Two things that sound like they should have worked and did not, both inside the
+noise: turning **image smoothing off** for the final stretch (14.9 → 14.3 ms —
+so the cost is not the filtering) and dropping **`globalAlpha`** from it
+(14.9 → 14.5 ms — nor the blend).
+
+### What the streaming actually costs, now that it can be seen
+
+§10.4 worried about a frame that pays a region build, a chunk build and a tile
+bake together: 8 + 6 + 6 ≈ 20 ms on top of the game. In sixty seconds of
+walking, **the worst frame of every single second paid none of the three** —
+`worst 32(bake 0 gen 0 region 0)`, over and over. The 2200-unit look-ahead
+keeps them apart, exactly as designed. The worst frames are plain render
+spikes.
+
+### Two more measured out of the plan
+
+- **Rivers.** §5 planned per-stretch sub-paths for a 12,000-unit river, and
+  `docs/OPEN_WORLD.md` §10.4(c) a warm-queue comparison. Water draws in
+  **0.1–0.3 ms** with three rivers on screen. There is nothing there to cut.
+- **`forChunksAround`.** The narrowing §11 holds in reserve for
+  `resolveSolidCollision` is unnecessary for a second reason on top of the one
+  the last pass found: the readout counts **3 calls a frame**, not the hundreds
+  the idea was sized against. Mobs outside `CAMP_TICK_R` do not move, so they
+  do not collide.
+
+- **The tree's tilt is free, and so is the save/restore around it.** §11 held
+  "sprite save/restore trim if the grove scene bites" in reserve, on the theory
+  that `drawTree`'s `save/translate/rotate/scale/restore` is five calls where
+  one would do. Ground sprites are 9–10 ms of a 20 ms frame, so it looked like
+  the next thing to cut. Removing the rotation **entirely** — the strongest
+  version of that fix, and one that changes the picture — measured 20.3 / 21.0 /
+  20.9 ms against a baseline of 21.0 / 20.8 / 21.8: nothing. The cost is
+  rasterising 128 sprites, at about the same nanoseconds per pixel the fog
+  stretch pays, and no amount of transform bookkeeping touches it. Fewer or
+  smaller sprites would, and neither is on the table.
+
+### A caveat about every per-call number above
+
+Canvas work is deferred: a `drawImage` returns before the pixels exist, and the
+bill lands at the next flush, inside whatever happens to be timed then. The
+per-part numbers move between scenes in ways the scenes do not explain — the
+tile blit reads 0.06 ms while walking and 7 ms parked in a grove, for the same
+thirty to forty blits — and only the **frame total** is trustworthy to better
+than a few milliseconds. Every claim in this section rests on frame totals and
+on interleaved runs; the breakdown is for finding things, not for scoring them.
