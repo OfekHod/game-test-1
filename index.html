@@ -179,6 +179,14 @@
      only approximates it. Full dark the instant he drops, receding from the
      top as the clock runs, gone the frame he's back on his feet. */
   .pdeathCd{position:absolute;left:0;right:0;bottom:0;height:0%;background:rgba(60,40,10,.55);pointer-events:none;}
+  /* The seconds until he is back, over the curtain. The curtain says "down";
+     this says how long, which is the number that decides whether to hold the
+     lane or fall back. Hidden unless the chip is dead, so it never has to be
+     cleared. */
+  .pdeathNum{display:none;position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+    font-size:30px;font-weight:800;line-height:1;color:#fff;text-align:center;
+    text-shadow:0 2px 4px rgba(0,0,0,.85),0 0 10px rgba(0,0,0,.6);pointer-events:none;}
+  .pchip.dead .pdeathNum{display:block;}
   /* No card drawn for this hero. All three have one now, so nothing wears this
      — it is what a fourth hero would look like until his picture arrived: his
      flat colour, but inside the frame the drawn ones have, because a slab of
@@ -236,6 +244,19 @@
   .statBtn.regenBoost{border-color:#3E8E52;background:#D9F2DA;}
   .statBtn.regenBoost .sName,.statBtn.regenBoost .sVal{color:#26602F;}
   .statBtn.regenBoost .sDerived{color:#26602F;opacity:1;font-weight:800;}
+  /* Unspent points are the one thing the strip ever asks for, and it asks
+     from the bottom edge of the screen: the label breathes while there are
+     any, and Auto spends them the way an idle team-mate spends his own
+     (AI_BUILD), for the player who would rather fight than build. Both are
+     gone the moment there is nothing to spend. */
+  @keyframes pointsPulse{
+    0%,100%{color:var(--text-strong);text-shadow:0 0 0 rgba(90,200,232,0);}
+    50%{color:#1a7f9e;text-shadow:0 0 9px rgba(90,200,232,.9);}
+  }
+  .pointsLabel.has{animation:pointsPulse 1.2s ease-in-out infinite;}
+  .sAuto{border:none;border-radius:8px;padding:4px 9px;font-weight:800;font-size:11px;background:#5AC8E8;color:#0a3a4a;cursor:pointer;margin-left:auto;white-space:nowrap;}
+  .statStrip.noPoints .sAuto{display:none;}
+  @media (prefers-reduced-motion:reduce){ .pointsLabel.has{animation:none;color:#1a7f9e;} }
 
   .tip{position:absolute;z-index:20;width:232px;background:rgba(74,52,22,.97);color:#FFF3D6;
     border:2px solid var(--panel-border);border-radius:11px;padding:8px 10px;font-size:11.5px;line-height:1.42;
@@ -561,6 +582,10 @@
   .panel h1{margin:0 0 10px;color:var(--text-strong);font-size:28px;}
   .panel p{margin:0 0 6px;color:var(--text-strong);font-size:14.5px;line-height:1.6;opacity:.85;}
   .panel .big{font-size:36px;font-weight:800;color:var(--gold);margin:14px 0 4px;}
+  /* The ladder under the headline: last time's best, or the fact that this
+     one beat it. Smaller than the number so the number stays the headline. */
+  .panel .big small{font-size:.44em;opacity:.72;white-space:nowrap;}
+  .panel .big small.newBest{opacity:1;color:#2f9bc4;}
   /* The menu is the sign, and the buttons belong on the board rather than
      somewhere over it. Same largest-box-of-the-art's-own-aspect stage the
      front door uses — this art is the front door's own portrait aspect too
@@ -914,6 +939,9 @@
     .sVal{font-size:10px;min-width:18px;}
     .sDerived{display:none;}
     .sPlus{width:15px;height:15px;font-size:11px;line-height:13px;}
+    /* The strip scrolls sideways here, so a button at its far end is a
+       button past the edge of the screen. Next to the label instead. */
+    .sAuto{order:-1;margin-left:0;padding:3px 7px;font-size:10px;}
     .tip{width:188px;font-size:10.5px;padding:6px 8px;}
     .waveBanner{top:13%;}
     .waveBanner span{font-size:15px;}
@@ -950,6 +978,7 @@
     .pmeter{padding:4px 4px 4px;border-radius:0 0 5.5px 5.5px;}
     .pbar{height:3px;border-radius:1.5px;margin-top:1.5px;}
     .pstat{font-size:8px;letter-spacing:.2px;margin-top:2.5px;}
+    .pdeathNum{font-size:17px;}
 
     .overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal));}
     .panel{padding:14px 16px;max-width:94%;}
@@ -1067,9 +1096,9 @@ window.addEventListener('DOMContentLoaded', function(){
       <div class="scoreBox wave hidden" id="scoreBoxWave"><b id="scoreWave">1</b><span id="scoreWaveLabel">WAVE</span></div>
     </div>
     <div class="party hidden" id="party">
-      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
-      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"><div class="pdeathCd"></div></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip0"><div class="plevel" id="plevel0">1</div><div class="pcard"><div class="pdeathCd"></div><b class="pdeathNum"></b></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip1"><div class="plevel" id="plevel1">1</div><div class="pcard"><div class="pdeathCd"></div><b class="pdeathNum"></b></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
+      <div class="pchip" id="pchip2"><div class="plevel" id="plevel2">1</div><div class="pcard"><div class="pdeathCd"></div><b class="pdeathNum"></b></div><div class="pmeter"><div class="pbar hp"><span></span></div><div class="pbar mp"><span></span></div><div class="pbar xp"><span></span></div><span class="pstat"></span></div></div>
     </div>
 
     <div class="bottomDock hidden" id="bottomDock">
@@ -1081,6 +1110,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <div class="statBtn"><span class="sName">HPR</span><div class="sVals"><span class="sVal" id="sv_hpRegen">0</span><span class="sDerived" id="sd_hpRegen"></span></div><button class="sPlus" id="sp_hpRegen">+</button></div>
         <div class="statBtn"><span class="sName">MPR</span><div class="sVals"><span class="sVal" id="sv_manaRegen">0</span><span class="sDerived" id="sd_manaRegen"></span></div><button class="sPlus" id="sp_manaRegen">+</button></div>
         <div class="statBtn"><span class="sName">RNG</span><div class="sVals"><span class="sVal" id="sv_range">0</span><span class="sDerived" id="sd_range"></span></div><button class="sPlus" id="sp_range">+</button></div>
+        <button class="sAuto" id="autoSpendBtn">Auto</button>
       </div>
       <div class="hud" id="hud">
         <div class="hud-left">
@@ -1172,6 +1202,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <div class="big" id="finalXp">0 xp</div>
         <p id="finalHits">0 last hits</p>
         <p id="towerCompare"></p>
+        <p id="roundStatsLine"></p>
         <button id="restartBtn">Play Again</button>
         <button id="menuBtn" class="hidden">Back to the menu</button>
       </div>
@@ -3442,6 +3473,9 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   let xpLooted = 0;
   let lastHits = 0;
+  // What the end card reads out. Bumped where the kills and deaths happen;
+  // this is only the shape, the reset in startRound and the readout in endRound.
+  let roundStats = { heroKills:0, deaths:0, streak:0, bestStreak:0, creepKills:0 };
   let spawnTimer = 0;   // first wave marches the moment the round starts
   let shake = 0;
   let isMouseDown = false;
@@ -4700,6 +4734,11 @@ window.addEventListener('DOMContentLoaded', function(){
       e.xpDisp += (xF-e.xpDisp)*Math.min(1,dt*BAR_FILL_RATE);
     }
   }
+  // World units per CSS pixel: what a thing drawn in world space is
+  // multiplied by to come out a fixed size on the screen, whatever the zoom.
+  // layoutW is 0 until the first applyLayout, and under the sim there is no
+  // layout at all — so 1, which is the old fixed-size behaviour.
+  function unitsPerPx(){ return layoutW > 0 ? W/layoutW : 1; }
   function drawBar(x,y,w,h,frac,lag,color){
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(x,y,w,h);
     if(lag !== undefined && lag > frac){
@@ -5820,8 +5859,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // The heading is optional and most callers have none — they want the number
   // for a stat readout or a "how long to walk there" estimate, and with no
   // heading this is the wading speed it always returned.
+  // The walk back from the spawn is the dullest stretch of a round, so the
+  // hero you drive takes it at a run — until something hits him, or he hits
+  // something, and it is a fight again. Only yours, and only in your hands:
+  // an AI's walk is the sim's, and this is feel, not balance.
+  const RESPAWN_SPRINT_T = 8, RESPAWN_SPRINT_MULT = 1.35;
   function heroSpeed(h, dx, dy){
-    return (SPEED_BASE + h.stats.agi) * wadeMul(h.x, h.y, dx||0, dy||0);
+    let s = (SPEED_BASE + h.stats.agi) * wadeMul(h.x, h.y, dx||0, dy||0);
+    if(h.sprintT > 0 && (h.combatT||0) > 2 && h === playerTeam[activePlayerIdx]) s *= RESPAWN_SPRINT_MULT;
+    return s;
   }
   function heroBasicDmg(h){ return FIXED_DMG[h.type]; }
   // 0 at level 1, 1 at max level — the single curve every skill ramps along.
@@ -5862,6 +5908,15 @@ window.addEventListener('DOMContentLoaded', function(){
     levelFx.push({ h, life:0, maxLife:LEVEL_FX_TIME, seed:Math.random()*Math.PI*2, pal:FX_PAL.level, sc:1, big:true });
     addFloater(h.x, h.y-h.r-74, 'LEVEL UP!', '#FFD54F', true);
     addFloater(h.x, h.y-h.r-38, 'Lv.'+h.level, '#ffffff', true);
+    // The points are the one thing a level-up asks of the player, and the
+    // strip that takes them is at the foot of the screen, out of the eye
+    // line. Pushed straight in rather than through addFloater: the stacker
+    // would lift it above the two lines it is the tail of. It rises with them
+    // and outlives them by a beat, so it is the last thing left up. Only
+    // his — the rest of the team spends its own points (grantXP).
+    if(h===playerTeam[activePlayerIdx])
+      floaters.push({ x:h.x, y:h.y-h.r-12, spawnX:h.x, spawnY:h.y-h.r-12, text:'+3 PTS', color:'#8FE3FF',
+        big:false, isXp:false, crit:false, life:0, maxLife:1.3, owner:null, slotY:0 });
     h.levelGlow = 1.6; h.glowCol = FX_PAL.level.glow;
     h.levelPop = LEVEL_POP_TIME;
     // Only the hero you are actually driving is allowed to shake the camera —
@@ -6440,8 +6495,12 @@ window.addEventListener('DOMContentLoaded', function(){
       h.points += 3;
       h.xpToNext = xpForLevel(h.level);
       triggerLevelUpFX(h);
-      // The player spends their own team's points from the stat strip.
-      if(h.side === 'enemy') aiSpendPoints(h);
+      // The player spends the hero he is DRIVING from the stat strip. The two
+      // he is not driving spend their own, the way the enemy does: they were
+      // banking three a level and fighting at level-1 stats until he happened
+      // to switch to them. Not while the tutorial is on — applyStatPoint reports
+      // any player-side spend as the stat step done, and that step is his.
+      if(h.side === 'enemy' || (h !== playerTeam[activePlayerIdx] && !tut.on)) aiSpendPoints(h);
     }
     if(h.level>=MAX_LEVEL) h.xp = Math.min(h.xp, h.xpToNext);
   }
@@ -6617,11 +6676,14 @@ window.addEventListener('DOMContentLoaded', function(){
     });
     bindTip(spEls[k].parentElement, ()=>statTipHtml(k));
   }
+  const autoSpendBtn = document.getElementById('autoSpendBtn');
+  if(autoSpendBtn) bindTap(autoSpendBtn, ()=>{ const h = playerTeam[activePlayerIdx]; if(h) aiSpendPoints(h); });
   function updateStatStrip(){
     const h = playerTeam[activePlayerIdx];
     if(!h) return;
     pointsLabelEl.textContent = h.points+' pts';
     statStripEl.classList.toggle('noPoints', h.points<=0);
+    pointsLabelEl.classList.toggle('has', h.points>0);
     for(const k of STAT_KEYS){
       svEls[k].textContent = h.statLv[k];
       spEls[k].classList.toggle('maxed', h.statLv[k]>=MAX_STAT_LEVEL);
@@ -10668,21 +10730,34 @@ window.addEventListener('DOMContentLoaded', function(){
   // to achieve.
   const SURGE_AT = 300, SURGE_BIG = 5, SURGE_SMALL = 10;
   function surgeOn(){ return (ROUND_TIME - timeLeft) >= SURGE_AT; }
+  // THE FIRST CLASH, SOONER. A Match's opening wave starts at the lane mouth
+  // — the second point of the path — instead of at the base, for both sides
+  // alike, so the two waves meet near 25s rather than 42s and the round
+  // opens on a fight instead of a walk. Every later wave marches from the
+  // base as before. Counted in lane-spawns rather than flagged in spawnWave,
+  // which another caller owns: the first wave is the first two lanes' worth
+  // of both sides. Never in the tutorial, which paces its own opening.
+  let firstWaveSpawns = 0;   // reset in startRound
   function spawnLaneWave(l, side){
     if(surgeOn()) return spawnSurgeWave(l, side);
     const path = lanePath(l, side);
-    const p0 = path[0], p1 = path[1];
+    const mouth = gameMode==='regular' && !tut.on && firstWaveSpawns < LANE_YS.length*2;
+    firstWaveSpawns++;
+    const wp0 = mouth ? 1 : 0;
+    const p0 = path[wp0], p1 = path[wp0+1];
     const vx = p1.x-p0.x, vy = p1.y-p0.y;
     const len = Math.sqrt(vx*vx+vy*vy) || 1;
     const ux = vx/len, uy = vy/len;     // down the lane
     const px = -uy, py = ux;            // across it
     const face = side==='player' ? 1 : -1;
     const list = side==='player' ? allyCreeps : enemyCreeps;
-    list.push(makeCreep(p0.x+ux*WAVE_LEAD, p0.y+uy*WAVE_LEAD, true, face, path, l));
+    const lead = makeCreep(p0.x+ux*WAVE_LEAD, p0.y+uy*WAVE_LEAD, true, face, path, l);
+    lead.wp = wp0+1;                    // already past the mouth: head for the exit
+    list.push(lead);
     for(let i=0;i<WAVE_ESCORT;i++){
       const lat = (i-(WAVE_ESCORT-1)/2)*WAVE_SPACING;
       const c = makeCreep(p0.x-ux*WAVE_LEAD+px*lat, p0.y-uy*WAVE_LEAD+py*lat, false, face, path, l);
-      c.off = lat;
+      c.off = lat; c.wp = wp0+1;
       list.push(c);
     }
   }
@@ -11155,9 +11230,9 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function heroAnchorY(h){
-    const bdef = heroSheets[h.type];
-    const base = (bdef && bdef.ready) ? h.y - h.r*bdef.scale*(bdef.h/bdef.w)*0.9 : h.y - h.r;
-    return base - 30;
+    // The flags render() draws the stack with: mana for your side, xp for you.
+    const g = heroBarGeom(h, h.side==='player', h===playerTeam[activePlayerIdx]);
+    return g.hpY - 8;
   }
   // Damage over a hero goes into that hero's column. Damage over anything else
   // stays where it landed, because there the position IS the information.
@@ -11397,10 +11472,20 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Orbs lie on the ground and belong to whoever walks over them — any living
   // hero, either side. Nothing is shared and nothing is awarded automatically.
+  // The hero you drive has a longer reach for loot than anyone else on the
+  // field: the walk to a coin is dead time in your hands and nothing at all
+  // in an AI's, so yours come to you from further out. The AI's radius is
+  // the sim's and does not move.
+  const PICKUP_MAGNET_RADIUS_YOU = 200;
   function nearestCollector(x,y){
-    let best=null, bd=PICKUP_MAGNET_RADIUS;
-    for(const h of playerTeam){ if(h.alive){ const d=dist(x,y,h.x,h.y); if(d<bd){bd=d;best=h;} } }
-    for(const h of enemyTeam){ if(h.alive){ const d=dist(x,y,h.x,h.y); if(d<bd){bd=d;best=h;} } }
+    let best=null, bd=Infinity;
+    const you = playerTeam[activePlayerIdx];
+    for(const h of playerTeam){
+      if(!h.alive) continue;
+      const d=dist(x,y,h.x,h.y);
+      if(d < (h===you ? PICKUP_MAGNET_RADIUS_YOU : PICKUP_MAGNET_RADIUS) && d<bd){bd=d;best=h;}
+    }
+    for(const h of enemyTeam){ if(h.alive){ const d=dist(x,y,h.x,h.y); if(d<PICKUP_MAGNET_RADIUS && d<bd){bd=d;best=h;} } }
     return best;
   }
   // `find` decides whose pickup this is. It defaults to nearestCollector —
@@ -12282,6 +12367,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
   function updateHeroCommon(h,dt){
     updateBars(h, dt);
+    if(h.sprintT > 0) h.sprintT = Math.max(0, h.sprintT - dt);
     // Read once each: a corpse is still standing where it fell as far as these
     // are concerned, but respawnHero fills both bars anyway, so a dead hero's
     // mana never notices either way.
@@ -13812,6 +13898,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h._hdg=undefined; h._hdgT=0; h._retreat=false;
     h.ghosts.length=0;   // no streak stretching from where he died to the spawn
     h.lwp=1;   // walk the lane from the top again rather than cutting across the map
+    if(h.side==='player') h.sprintT = RESPAWN_SPRINT_T;   // see heroSpeed
   }
 
   function checkRoundEnd(){
@@ -13946,7 +14033,10 @@ window.addEventListener('DOMContentLoaded', function(){
       // Hung off the sprite rather than off c.r: this golem is squat where the
       // old creep was lanky, and a fixed height left the bar floating a head's
       // clearance above him.
-      const bw = c.r*1.9, bh = c.big?6:4;
+      // Screen-pixel sizes, like the heroes' (see heroBarGeom); the hang is
+      // still in world units because the sprite it hangs off is.
+      const u = unitsPerPx();
+      const bw = Math.max(c.r*1.9, 30*u), bh = (c.big?5:3.5)*u;
       drawBar(-bw/2, c.r*MOB_FOOT - sh*MOB_HEAD - 10 - bh, bw, bh, c.hp/c.maxHp, c.hpLag, HP_COLOR);
       ctx.restore();
       if(c.flash>0) c.flash-=1/60;
@@ -14277,31 +14367,49 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.beginPath(); ctx.arc(h.x+ex-4,h.y+ey-2,2.6,0,7); ctx.fill();
     ctx.beginPath(); ctx.arc(h.x+ex+4,h.y+ey-2,2.6,0,7); ctx.fill();
   }
-  function drawHeroBars(h, showMana, showXp){
-    const w = h.r*2.2;
+  // The over-head stack, sized in SCREEN pixels: on the desktop view a bar
+  // five units tall was two pixels tall, and the one bar you have to read
+  // mid-fight was the one you could not. Still drawn in world coordinates
+  // under the camera's transform — only the sizes take the zoom into
+  // account. The foot stays where the old fixed stack's foot was and the
+  // bars grow upward from it, so a taller stack never lands on the helmet.
+  // One geometry for the drawing and for heroAnchorY, so the floater column
+  // hangs off the top of the stack that is actually there.
+  function heroBarGeom(h, showMana, showXp){
+    const u = unitsPerPx();
+    const you = h===playerTeam[activePlayerIdx];
     // a sprite hero is far taller than his hitbox radius, so lift the bars
     // clear of the helmet instead of drawing them across his head
     const bdef = heroSheets[h.type];
     const base = (bdef && bdef.ready) ? h.y - h.r*bdef.scale*(bdef.h/bdef.w)*0.9 : h.y - h.r;
-    drawBar(h.x-w/2, base-22, w, 5, h.hp/h.maxHp, h.hpLag, HP_COLOR);
+    const hpH = (you ? 6 : 4)*u, mpH = hpH*0.8, xpH = hpH*0.6, gap = 2*u;
+    let y = base - 6, xpY = 0, mpY = 0;
+    if(showXp){ y -= xpH; xpY = y; y -= gap; }
+    if(showMana){ y -= mpH; mpY = y; y -= gap; }
+    y -= hpH;
+    return { u, w: Math.max(h.r*2.2, (you ? 56 : 44)*u), hpH, mpH, xpH, hpY: y, mpY, xpY };
+  }
+  function drawHeroBars(h, showMana, showXp){
+    const g = heroBarGeom(h, showMana, showXp), u = g.u, w = g.w;
+    drawBar(h.x-w/2, g.hpY, w, g.hpH, h.hp/h.maxHp, h.hpLag, HP_COLOR);
     // Level badge on the left of the bars, so you can read a matchup on sight.
     ctx.save();
-    ctx.font = "800 13px 'Baloo 2', sans-serif";
+    ctx.font = "800 "+(11*u)+"px 'Baloo 2', sans-serif";
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    const lx = h.x - w/2 - 4, ly = base - 19;
+    const lx = h.x - w/2 - 4*u, ly = g.hpY + g.hpH/2;
     const lt = String(h.level);
-    const bw = ctx.measureText(lt).width + 9;
+    const bw = ctx.measureText(lt).width + 8*u, bh = 14*u;
     ctx.fillStyle = h.side==='player' ? 'rgba(30,58,92,.85)' : 'rgba(92,26,26,.85)';
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(lx-bw, ly-8, bw, 16, 4)
-                  : ctx.rect(lx-bw, ly-8, bw, 16);
+    ctx.roundRect ? ctx.roundRect(lx-bw, ly-bh/2, bw, bh, 4*u)
+                  : ctx.rect(lx-bw, ly-bh/2, bw, bh);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 1.2*u; ctx.stroke();
     ctx.fillStyle = '#FFE7B8';
-    ctx.fillText(lt, lx-4, ly);
+    ctx.fillText(lt, lx-4*u, ly);
     ctx.restore();
-    if(showMana) drawBar(h.x-w/2, base-15, w, 4, h.manaDisp!==undefined?h.manaDisp:h.mana/h.maxMana, undefined, '#4c8fe2');
-    if(showXp)   drawBar(h.x-w/2, base-9,  w, 3, h.xpDisp!==undefined?h.xpDisp:h.xp/h.xpToNext, undefined, '#FFD54F');
+    if(showMana) drawBar(h.x-w/2, g.mpY, w, g.mpH, h.manaDisp!==undefined?h.manaDisp:h.mana/h.maxMana, undefined, '#4c8fe2');
+    if(showXp)   drawBar(h.x-w/2, g.xpY, w, g.xpH, h.xpDisp!==undefined?h.xpDisp:h.xp/h.xpToNext, undefined, '#FFD54F');
   }
 
   function drawAimLine(wmx,wmy){
@@ -14846,6 +14954,9 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       chip.querySelector('.pdeathCd').style.height =
         (h.alive ? 0 : Math.max(0, Math.min(100, h.respawnTimer/RESPAWN_TIME*100))) + '%';
+      const numEl = chip.querySelector('.pdeathNum');
+      const numT = h.alive ? '' : String(Math.max(0, Math.ceil(h.respawnTimer)));
+      if(numEl.textContent !== numT) numEl.textContent = numT;
       chip.querySelector('.pbar.hp span').style.width = Math.max(0,h.hp/h.maxHp*100)+'%';
       chip.querySelector('.pbar.mp span').style.width = Math.max(0,h.mana/h.maxMana*100)+'%';
       chip.querySelector('.pbar.xp span').style.width = Math.max(0,h.xp/h.xpToNext*100)+'%';
@@ -14856,6 +14967,47 @@ window.addEventListener('DOMContentLoaded', function(){
     skillIconEl.className = 'skillIcon skill-' + skillKey;
     skillBtnIconEl.className = 'skillIcon skill-' + skillKey;
     updateStatStrip();
+  }
+
+  // Where a dead team-mate fell, and how long until he is back. Drawn in
+  // screen space after the camera transform is gone, and sized in screen
+  // pixels, because a mark that shrinks with the zoom is a mark you cannot
+  // read on the desktop view. With the whole team down there is nobody to
+  // drive and nothing else to look at, so the soonest count goes up in the
+  // middle. Player heroes only: an arena hero never respawns.
+  function drawRespawnMarks(){
+    if(state!=='playing') return;
+    const u = unitsPerPx();
+    let soonest = Infinity, anyAlive = false;
+    for(const h of playerTeam){
+      if(h.alive){ anyAlive = true; continue; }
+      if(!(h.respawnTimer < Infinity)) continue;
+      const n = Math.max(0, Math.ceil(h.respawnTimer));
+      soonest = Math.min(soonest, n);
+      const sx = h.x - camera.x, sy = h.y - camera.y;
+      if(sx < -80*u || sy < -80*u || sx > W+80*u || sy > H+80*u) continue;
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = HERO_STATS[h.type].colorPlayer; ctx.lineWidth = 2*u;
+      ctx.beginPath(); ctx.arc(sx, sy, 22*u, 0, 7); ctx.stroke();
+      ctx.globalAlpha = 0.92;
+      ctx.font = "800 "+(14*u)+"px 'Baloo 2', sans-serif";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3*u; ctx.strokeStyle = '#5A3E1B';
+      const t = 'BACK IN '+n;
+      ctx.strokeText(t, sx, sy - 34*u); ctx.fillStyle = '#FFE7B8'; ctx.fillText(t, sx, sy - 34*u);
+      ctx.restore();
+    }
+    if(anyAlive || soonest === Infinity) return;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.font = "800 "+(30*u)+"px 'Baloo 2', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6*u; ctx.strokeStyle = '#5A3E1B';
+    const t = 'RESPAWNING IN '+soonest;
+    ctx.strokeText(t, W/2, H*0.42); ctx.fillStyle = '#FFE7B8'; ctx.fillText(t, W/2, H*0.42);
+    ctx.restore();
   }
 
   // The glide blurs the view a little at speed, and only at speed. It is a
@@ -15335,6 +15487,7 @@ window.addEventListener('DOMContentLoaded', function(){
     owProfTick();
     drawTutorialMini();
     drawHudSparks();
+    drawRespawnMarks();
     drawReticle();
     if(MUSIC_DEBUG && state==='playing') drawThreatHud();
 
@@ -16934,6 +17087,9 @@ window.addEventListener('DOMContentLoaded', function(){
     mouse.x = W/2; mouse.y = H/2;
     timeLeft = (gameMode==='survival' || gameMode==='openworld') ? 0 : ROUND_TIME;
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; isMouseDown=false; assembleCd=0;
+    for(const h of playerTeam) h.sprintT = 0;
+    roundStats = { heroKills:0, deaths:0, streak:0, bestStreak:0, creepKills:0 };
+    firstWaveSpawns = 0;
     score = { player:0, enemy:0 };
     squadTogether = false;
     allyCreeps=[]; enemyCreeps=[]; neutralCreeps=[]; corpses.length=0; projectiles=[]; floaters=[]; particles=[]; xpOrbs=[]; manaOrbs=[]; hpOrbs=[]; levelFx=[]; healWaves=[]; assembleFx=[]; dashFx=[]; fireBlasts=[]; smoke=[]; birds=[]; birdTimer=4; hudSparks=[]; hurtFlash=0; sparkles=[]; noManaT=0; manaDryT=0;
@@ -17021,6 +17177,38 @@ window.addEventListener('DOMContentLoaded', function(){
       rememberSeedInUrl();
     }
   }
+  // Per-mode bests, kept in the browser. One number per mode is the whole
+  // ladder, and it is enough to make the second round a run at the first.
+  // localStorage can be absent (the sim) or refuse (a private tab), and
+  // neither is allowed to cost the end card.
+  const BEST_KEY = 'lane.best.';
+  function readBest(key){
+    try{
+      if(typeof localStorage === 'undefined') return 0;
+      const v = parseFloat(localStorage.getItem(BEST_KEY + key));
+      return v > 0 ? v : 0;
+    } catch(e){ return 0; }
+  }
+  function writeBest(key, v){
+    try{ if(typeof localStorage !== 'undefined') localStorage.setItem(BEST_KEY + key, String(v)); }
+    catch(e){}
+  }
+  // ' · NEW BEST' when the round beat the stored best (and it is stored),
+  // ' · best N' when it did not, and nothing for a zero with nothing to beat.
+  function bestTag(key, value, fmt){
+    const best = readBest(key);
+    if(value > best && value > 0){ writeBest(key, value); return ' · NEW BEST'; }
+    return best > 0 ? ' · best ' + (fmt ? fmt(best) : best) : '';
+  }
+  // The same tag as HTML, for the headline number: small, and lit when new.
+  function bestHtml(key, value, fmt){
+    const t = bestTag(key, value, fmt);
+    if(!t) return '';
+    return '<small' + (t.indexOf('NEW') >= 0 ? ' class="newBest"' : '') + '>' + t + '</small>';
+  }
+  function roundStatsText(){
+    return 'Kills ' + roundStats.heroKills + ' · Deaths ' + roundStats.deaths + ' · Best streak ' + roundStats.bestStreak;
+  }
   function endRound(reason){
     state='ended';
     tutStop();
@@ -17039,9 +17227,11 @@ window.addEventListener('DOMContentLoaded', function(){
       // reported is the last one you cleared — the one on the HUD, minus the
       // one that killed you.
       document.getElementById('finalLabel').textContent = 'Waves held';
-      finalXpEl.textContent = String(Math.max(0, survWave-1));
+      const held = Math.max(0, survWave-1);
+      finalXpEl.innerHTML = held + bestHtml('survival.waves', held);
       finalHitsEl.textContent = 'reached wave '+survWave+' · '+fmtTime(timeLeft)+' survived · '+xpLooted+' xp looted';
       towerCompareEl.textContent = lastHits+' last hit'+(lastHits===1?'':'s');
+      document.getElementById('roundStatsLine').textContent = roundStatsText();
       endScreen.classList.remove('hidden');
       musicSync();                     // back to an overlay: fade it up again
       return;
@@ -17050,7 +17240,11 @@ window.addEventListener('DOMContentLoaded', function(){
       resultTitleEl.textContent = 'Back from the world';
       resultTitleEl.style.color = '#5A3E1B';
       document.getElementById('finalLabel').textContent = 'Ground explored';
-      finalXpEl.textContent = owExploredKm2().toFixed(2) + ' km²';
+      // Compared at the two decimals it is shown at, so a best you cannot
+      // see the difference from is not reported as beaten.
+      const km2 = +owExploredKm2().toFixed(2);
+      finalXpEl.innerHTML = km2.toFixed(2) + ' km²' + bestHtml('openworld.km2', km2, b => b.toFixed(2) + ' km²');
+      document.getElementById('roundStatsLine').textContent = '';
       finalHitsEl.textContent = fmtTime(timeLeft) + ' in the world · ' + xpLooted + ' xp looted';
       towerCompareEl.textContent = 'Seed ' + worldSeed + ' · Lv '
         + playerTeam.map(h => h.level).join('/') + ' · ' + lastHits + ' last hit' + (lastHits===1?'':'s');
@@ -17075,11 +17269,18 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     resultTitleEl.textContent = result==='win' ? 'Victory!' : result==='lose' ? 'Defeat' : 'Draw';
     resultTitleEl.style.color = result==='win' ? '#4a9a4a' : result==='lose' ? '#c9503f' : '#5A3E1B';
-    finalXpEl.textContent = xpLooted+' xp';
+    finalXpEl.innerHTML = xpLooted+' xp' + bestHtml('match.xp', xpLooted);
     finalHitsEl.textContent = lastHits+' last hit'+(lastHits===1?'':'s');
     towerCompareEl.textContent = 'Points — you '+score.player+' · enemy '+score.enemy
       + '   |   Base HP — you '+Math.round(towerHpFrac(playerTowers)*100)
       +'% · enemy '+Math.round(towerHpFrac(enemyTowers)*100)+'%';
+    // The kills best rides its own number, in brackets, so it cannot be read
+    // as a verdict on the whole line.
+    const kb = bestTag('match.kills', roundStats.heroKills);
+    document.getElementById('roundStatsLine').textContent =
+      'Kills ' + roundStats.heroKills + (kb ? ' (' + kb.slice(3) + ')' : '')
+      + ' · Deaths ' + roundStats.deaths + ' · Best streak ' + roundStats.bestStreak
+      + ' · Lv ' + playerTeam.map(h => h.level).join('/');
     endScreen.classList.remove('hidden');
     musicSync();
   }
@@ -17088,6 +17289,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // beat the reveal plays out of, and cutting it short on a fast machine would
   // cost the reveal its run-up.
   const LOAD_MIN_MS = 3000;
+  // Play Again is a whip, not a ceremony: the map is the one you just left and
+  // the reveal has been seen, so the panel holds for the bar's swing and no
+  // longer. A first round still gets the full run-up above.
+  const LOAD_QUICK_MS = 1200;
   // A swap, not a dissolve. The gain ramps are exponential, and an exponential
   // climbing from silence spends most of its length below anything you can
   // hear: the old 2.4s fade-in was still under -30dB a second and a half after
@@ -17136,7 +17341,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // the tutorial, which never look at it. Without the whole chain carrying it,
   // startRound's throw above would fire on every Open World start from a
   // button.
-  function guardedStart(mode, seed){
+  function guardedStart(mode, seed, quick){
     if(loadingRound) return;
     loadingRound = true;
     if(!startScreen.classList.contains('hidden')){
@@ -17149,7 +17354,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // for the turn to finish — nothing else in beginRoundLoad needs to.
       startScreen.classList.add('turning');
       sfxPageTurn();
-      beginRoundLoad(mode, seed);
+      beginRoundLoad(mode, seed, quick);
       clearTimeout(turnTimer);
       turnTimer = setTimeout(()=>{
         startScreen.classList.add('hidden');
@@ -17157,11 +17362,12 @@ window.addEventListener('DOMContentLoaded', function(){
       }, INTRO_TURN_MS);
     } else {
       startScreen.classList.add('hidden');
-      beginRoundLoad(mode, seed);
+      beginRoundLoad(mode, seed, quick);
     }
   }
-  function beginRoundLoad(mode, seed){
+  function beginRoundLoad(mode, seed, quick){
     const myToken = ++roundLoadToken;
+    const floor = quick ? LOAD_QUICK_MS : LOAD_MIN_MS;
     if(loadTitleEl && loadNoteEl){
       const world = mode === 'openworld';
       loadTitleEl.textContent = world ? 'Rolling a world' : 'Building the map';
@@ -17194,16 +17400,15 @@ window.addEventListener('DOMContentLoaded', function(){
     // need restarting. Clearing and restoring `animation` on the animated
     // elements themselves is the actual fix for this class of bug — it forces
     // the animation to be torn down and recreated rather than just relaid-out.
-    // loadBarFill also carries a separate inline animationDuration (set once,
-    // below) that clearing the `animation` shorthand would wipe, so it is
-    // saved and put back.
-    const savedBarDuration = loadBarFill.style.animationDuration;
+    // loadBarFill also carries a separate inline animationDuration — the
+    // floor THIS load holds for, so the bar lands as the panel goes — that
+    // clearing the `animation` shorthand would wipe, so it is written after.
     for(const el of [loadSpinEl, loadBarFill]){
       el.style.animation = 'none';
       void el.offsetWidth;
       el.style.animation = '';
     }
-    loadBarFill.style.animationDuration = savedBarDuration;
+    loadBarFill.style.animationDuration = floor + 'ms';
     // The match theme starts HERE, on the click, and not where it used to —
     // inside startRound, on the far side of buildMap. The panel is three
     // seconds of sky with a progress bar on it, and the whole of it used to be
@@ -17244,7 +17449,7 @@ window.addEventListener('DOMContentLoaded', function(){
         // here rather than call reveal() on state that has moved on without it.
         if(myToken !== roundLoadToken) return;
         const waited = performance.now() - shownAt;
-        if(waited < LOAD_MAX_MS && (warmFrames < WARM_FRAMES || waited < LOAD_MIN_MS)){
+        if(waited < LOAD_MAX_MS && (warmFrames < WARM_FRAMES || waited < floor)){
           requestAnimationFrame(tryReveal);
           return;
         }
@@ -17317,11 +17522,18 @@ window.addEventListener('DOMContentLoaded', function(){
     // match nobody asked for.
     if(!introScreen.classList.contains('hidden')){ introDismiss(); return; }
     if((e.key==='Enter' || e.key===' ') && !startScreen.classList.contains('hidden')) guardedStart('regular');
+    // The end card's Play Again, from the keyboard the match was played on.
+    // Enter and Space both: Space is where the hand rests mid-match, and the
+    // card is what a match ends on. Same quick reload the button gets.
+    else if((e.key==='Enter' || e.key===' ') && !endScreen.classList.contains('hidden')){
+      e.preventDefault();
+      guardedStart(lastMode, worldSeed, true);
+    }
   });
   bindTap(menuBtn, ()=>{ endScreen.classList.add('hidden'); tutQuit(); });
   // Play Again goes through the load screen too, like every other way in.
   // Play Again replays the world you were in, not a new one.
-  bindTap(restartBtn, ()=>guardedStart(lastMode, worldSeed));
+  bindTap(restartBtn, ()=>guardedStart(lastMode, worldSeed, true));
 
   // The round length is ROUND_TIME and nowhere else. The button and the idle
   // clock used to be hand-typed, and both read 5:00 against a ten-minute round.
