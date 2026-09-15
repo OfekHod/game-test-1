@@ -2632,6 +2632,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // sideways changes.
   let W = BASE_W, H = BASE_H;
   let layoutW = 0, layoutH = 0;
+  // Bumped every time applyLayout actually re-lays the stage out. It is the
+  // signal for anything holding a cached measurement of the page.
+  let layoutSeq = 0;
   let canvasScale = DPR;      // world units to canvas pixels; see applyLayout
   // The notch, in the canvas's own units. The stage now runs under it, so
   // anything the canvas paints against the top edge has to start below this or
@@ -2643,6 +2646,9 @@ window.addEventListener('DOMContentLoaded', function(){
     const cw = Math.max(1, r.width), ch = Math.max(1, r.height);
     const safeTopPx = safeProbeEl ? safeProbeEl.getBoundingClientRect().height : 0;
     if(!force && Math.abs(cw-layoutW)<1 && Math.abs(ch-layoutH)<1) return;
+    // Anything that caches a measurement of the page watches this counter and
+    // re-measures when it moves. refreshHudAnchor is the one that does.
+    layoutSeq++;
     layoutW = cw; layoutH = ch;
     const aspect = cw/ch;
     H = Math.round(Math.sqrt(VIEW_AREA/aspect));
@@ -2721,6 +2727,22 @@ window.addEventListener('DOMContentLoaded', function(){
 
   const partyEl = document.getElementById('party');
   const pchips = [document.getElementById('pchip0'), document.getElementById('pchip1'), document.getElementById('pchip2')];
+  // The pieces of each party chip, looked up once. updatePartyUI runs every
+  // frame and used to ask the chip for five of these by selector each time —
+  // fifteen tree walks a frame for six elements that never change. The `shown`
+  // object beside them is the last value written to each, so a bar that has not
+  // moved is not written at all: a style write with the same string still costs
+  // a parse and still dirties layout, and the HUD is mostly still.
+  const pparts = pchips.map(chip => chip ? {
+    stat:  chip.querySelector('.pstat'),
+    card:  chip.querySelector('.pcard'),
+    death: chip.querySelector('.pdeathCd'),
+    hp:    chip.querySelector('.pbar.hp span'),
+    mp:    chip.querySelector('.pbar.mp span'),
+    xp:    chip.querySelector('.pbar.xp span'),
+    level: chip.querySelector('.plevel'),
+    shown: {}
+  } : null);
   const bottomDock = document.getElementById('bottomDock');
   const hud = document.getElementById('hud');
   const introScreen = document.getElementById('introScreen');
@@ -3343,11 +3365,22 @@ window.addEventListener('DOMContentLoaded', function(){
     player: { num:'scoreYou', box:'scoreBoxYou', blur:'reelBlurYouG', filter:'reelBlurYou' },
     enemy:  { num:'scoreFoe', box:'scoreBoxFoe', blur:'reelBlurFoeG', filter:'reelBlurFoe' }
   };
+  // The two sides, as one array rather than a fresh pair of strings on every
+  // frame of every score roll.
+  const SCORE_SIDES = ['player','enemy'];
   function paintScoreSide(side){
     const e = SCORE_EL[side], a = scoreAnim[side];
-    const num = document.getElementById(e.num), box = document.getElementById(e.box);
+    // Looked up once and kept. This runs on every frame of a roll, and a roll
+    // follows every kill.
+    if(e.numEl === undefined){
+      e.numEl = document.getElementById(e.num);
+      e.boxEl = document.getElementById(e.box);
+      e.blurEl = document.getElementById(e.blur);
+      e.reels = e.numEl ? e.numEl.getElementsByClassName('reel') : null;
+    }
+    const num = e.numEl, box = e.boxEl;
     if(!num || !box) return;
-    const reels = num.getElementsByClassName('reel');
+    const reels = e.reels;
     const eased = reelEase(a.t);
     // ODOMETER. Every wheel reads off one continuously moving VALUE rather than
     // spinning a fixed number of turns of its own. 3 -> 6 therefore travels
@@ -3386,21 +3419,26 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     // Blur only along the axis of travel, scaled by how fast the strip is
     // actually moving this frame. A still reel is perfectly sharp.
-    const blurEl = document.getElementById(SCORE_EL[side].blur);
+    const blurEl = e.blurEl;
     if(blurEl){
       const px = Math.min(3.6, fastest * 9.0);
-      blurEl.setAttribute('stdDeviation', '0 ' + px.toFixed(2));
-      num.style.filter = px > 0.06 ? 'url(#'+SCORE_EL[side].filter+')' : '';
+      // Writing the same deviation, and above all the same filter url, still
+      // costs the element its filter pass. A wheel at rest writes neither.
+      const sd = '0 ' + px.toFixed(2);
+      if(e.sdShown !== sd){ e.sdShown = sd; blurEl.setAttribute('stdDeviation', sd); }
+      const want = px > 0.06 ? 'url(#'+e.filter+')' : '';
+      if(e.filterShown !== want){ e.filterShown = want; num.style.filter = want; }
     }
     const g = a.t >= 1 ? 0 : Math.sin(Math.PI * Math.min(1, a.t*1.10));
     // The swell used to reach 1.32x, and .scoreBox does not clip, so the digits
     // visibly burst out of their panel mid-roll. A gentler pulse stays inside.
-    num.style.transform = g > 0.001 ? 'scale('+(1 + 0.11*g).toFixed(3)+')' : '';
+    const tf = g > 0.001 ? 'scale('+(1 + 0.11*g).toFixed(3)+')' : '';
+    if(e.tfShown !== tf){ e.tfShown = tf; num.style.transform = tf; }
     box.classList.toggle('lead', score[side] > score[side==='player'?'enemy':'player']);
   }
   function refreshScoreHud(){
     if(!document.getElementById('scoreHud')) return;
-    for(const side of ['player','enemy']) paintScoreSide(side);
+    for(const side of SCORE_SIDES) paintScoreSide(side);
   }
 
   function bumpScore(side){
@@ -3419,7 +3457,7 @@ window.addEventListener('DOMContentLoaded', function(){
     paintScoreSide(side);
   }
   function tickScoreHud(dt){
-    for(const side of ['player','enemy']){
+    for(const side of SCORE_SIDES){
       const a = scoreAnim[side];
       if(a.t >= 1){
         if(a.shown !== score[side]){ a.shown = score[side]; bumpScore(side); }
@@ -3433,7 +3471,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   function resetScoreHud(){
-    for(const side of ['player','enemy']){
+    for(const side of SCORE_SIDES){
       const a = scoreAnim[side];
       a.shown = 0; a.t = 1; a.digits = [{ from:0, to:0 }];
       const num = document.getElementById(SCORE_EL[side].num);
@@ -4199,7 +4237,7 @@ window.addEventListener('DOMContentLoaded', function(){
   const ASSIST_RANGE = 1150, ASSIST_MIN_HP = 0.4, ASSIST_DANGER = 0.55;
   let assist = { player:null, enemy:null };
   function updateAssist(){
-    for(const side of ['player','enemy']){
+    for(const side of SCORE_SIDES){
       const team = side==='player' ? playerTeam : enemyTeam;
       const foes = side==='player' ? enemyTeam : playerTeam;
       let pt = null, bd = 1e9;
@@ -5446,8 +5484,11 @@ window.addEventListener('DOMContentLoaded', function(){
     const len = Math.max(1, Math.sqrt(dx*dx+dy*dy));
     const ux=dx/len, uy=dy/len;
     const t = Math.max(0, Math.min(len, (cx-x1)*ux + (cy-y1)*uy));
-    const px = x1+ux*t, py = y1+uy*t;
-    return dist(px,py,cx,cy) <= radius;
+    const px = x1+ux*t-cx, py = y1+uy*t-cy;
+    // Squared: this is the innermost line of every line-of-sight test in the
+    // game — every shot, every fog carve, every creep asking whether it can see
+    // a hero — and it only ever wanted to know which side of the radius it is.
+    return px*px + py*py <= radius*radius;
   }
   function blockedByTrees(x1,y1,x2,y2,list){
     for(const t of list){
@@ -5527,19 +5568,38 @@ window.addEventListener('DOMContentLoaded', function(){
   // is greyed out and its contents are not drawn at all — enemies, their creeps
   // and their bullets included.
   let visionSources = [];
-  // Built lazily. Most sources — creeps and towers across the map — are never
-  // carved into the fog or reached by a visibility test, so scanning every tree
-  // for all of them up front was ~2300 distance checks and 29 arrays per frame.
-  function addVisionSource(x,y,r){ visionSources.push({ x, y, r, near:null }); }
+  // The source objects and their tree lists are POOLED. There are twenty to
+  // thirty of them, they are rebuilt from nothing on every frame, and each one
+  // used to be a fresh object with a fresh array hung off it — sixty times a
+  // second, for the collector to sweep up again. The pool hands the same
+  // objects back instead; visionSources is re-pointed at the live ones and
+  // nothing else in the file can tell the difference.
+  const visionPool = [];
+  let visionUsed = 0;
+  function addVisionSource(x,y,r){
+    let s = visionPool[visionUsed];
+    if(!s) s = visionPool[visionUsed] = { x:0, y:0, r:0, near:null, _near:[], _sorted:null };
+    s.x = x; s.y = y; s.r = r; s.near = null; s._sorted = null;
+    visionUsed++;
+    visionSources.push(s);
+  }
   function nearOf(s){
     if(s.near) return s.near;
-    const near = [];
-    for(const t of trees){ if(dist(s.x,s.y,t.x,t.y) < s.r + t.r) near.push(t); }
+    // Squared distance, and the array is the one this source had last frame,
+    // emptied. A source is tested against every tree in the world, so this is
+    // the innermost loop of the whole vision pass.
+    const near = s._near;
+    near.length = 0;
+    for(const t of trees){
+      const dx = s.x-t.x, dy = s.y-t.y, rr = s.r + t.r;
+      if(dx*dx + dy*dy < rr*rr) near.push(t);
+    }
     s.near = near;
     return near;
   }
   function rebuildVision(){
     visionSources.length = 0;
+    visionUsed = 0;
     for(const h of playerTeam){ if(h.alive) addVisionSource(h.x, h.y, HERO_VISION); }
     for(const c of allyCreeps) addVisionSource(c.x, c.y, CREEP_VISION);
     for(const t of playerTowers){ if(t.hp>0) addVisionSource(t.x, t.y, TOWER_VISION); }
@@ -5562,10 +5622,14 @@ window.addEventListener('DOMContentLoaded', function(){
     const p = pad||0;
     return x+p >= camera.x && x-p <= camera.x+W && y+p >= camera.y && y-p <= camera.y+H;
   }
+  // Called for every creep, orb, corpse, bullet and floater on the screen, once
+  // or twice each, against every source: the range test is the most-run line in
+  // the file, so it compares squares rather than taking a root to throw away.
   function isVisible(x,y,pad){
     const p = pad||0;
     for(const s of visionSources){
-      if(dist(x,y,s.x,s.y) > s.r+p) continue;
+      const dx = x-s.x, dy = y-s.y, rr = s.r+p;
+      if(dx*dx + dy*dy > rr*rr) continue;
       if(!blockedByTrees(s.x,s.y,x,y,nearOf(s))) return true;
     }
     return false;
@@ -5589,9 +5653,14 @@ window.addEventListener('DOMContentLoaded', function(){
   const FOG_ARC_STEPS = 5;      // samples across each tree's own silhouette
   const RAY_EPS = 0.0007;       // straddles the tangent: one ray each side
   const fogAngles = [];
-  // The world box the mask covers, set by drawFog before it carves. carveVision
-  // trims its rim fill to this; anything outside would be discarded anyway.
-  const fogBox = { l:0, t:0, r:0, b:0 };
+  // Solid cores already carved this frame, as flat x,y,r triples — see drawFog,
+  // which is the only thing that reads or writes it. Flat numbers in one reused
+  // array so a frame's worth of them costs the collector nothing.
+  const fogCovers = [];
+  // How much of a source's radius the rim gradient leaves at full opacity. It
+  // is the gradient's own inner stop (rimGradient, just below), shaded down a
+  // little so nothing rides on the last pixel of it.
+  const FOG_RIM_SOLID = 0.85;
   function rimGradient(fctx, r){
     let g = rimGrads.get(r);
     if(g) return g;
@@ -5676,8 +5745,13 @@ window.addEventListener('DOMContentLoaded', function(){
       for(let i=1;i<FOG_ARC_STEPS;i++) fogAngles.push(norm2pi(base-half + 2*half*(i/FOG_ARC_STEPS)));
     }
     fogAngles.sort((a,b)=>a-b);
+    // The polygon is built AROUND THE ORIGIN and the canvas is translated onto
+    // the source instead of the other way round. That is what lets the ray
+    // shape be filled directly with the rim gradient — which is itself built at
+    // the origin, and so has to be painted there.
     fctx.save();
     fctx.globalAlpha = alpha;
+    fctx.translate(s.x, s.y);
     fctx.beginPath();
     for(let i=0;i<fogAngles.length;i++){
       const a = fogAngles[i];
@@ -5687,30 +5761,29 @@ window.addEventListener('DOMContentLoaded', function(){
         const hit = rayTreeDist(s.x,s.y,dx,dy,t,k);
         if(hit < d) d = hit;
       }
-      const px = s.x+dx*d, py = s.y+dy*d;
+      const px = dx*d, py = dy*d;
       if(i===0) fctx.moveTo(px,py); else fctx.lineTo(px,py);
     }
     fctx.closePath();
-    fctx.clip();
-    // Two economies on what used to be four calls and a full-size fill, and the
-    // fog carves once per hero, per ally creep and per standing tower on EVERY
-    // frame — 16 to 32 sources — so both are worth having.
+    // FILL THE RAY SHAPE. It used to be clipped to and then painted through
+    // with a rectangle, which is the same picture by a longer road: Skia had to
+    // build a clip mask for a 60-odd-sided path and then shade every pixel of
+    // the bounding box through it. Filling the path with the same gradient
+    // paints exactly the region that survived the clip — the rectangle only
+    // ever existed to cover it — for one rasterised shape instead of two, and
+    // over the disc's area rather than the square around it.
     //
     // The rim gradient depends on nothing but the radius, and there are exactly
-    // three radii in the game, so building it at the origin and translating it
-    // into place makes it cacheable instead of rebuilt and thrown away.
+    // three radii in the game, so building it at the origin and caching it
+    // there is what makes it reusable rather than rebuilt and thrown away.
     //
-    // And the fill only needs the part of the rim box that can land on the
-    // mask. It is clipped to the ray polygon either way and the mask discards
-    // the rest, so trimming cannot change a pixel — it just stops Skia walking
-    // a 1400x1400 world-unit rectangle for a source sitting half off screen.
-    const rx0 = Math.max(s.x-s.r, fogBox.l), ry0 = Math.max(s.y-s.r, fogBox.t);
-    const rx1 = Math.min(s.x+s.r, fogBox.r), ry1 = Math.min(s.y+s.r, fogBox.b);
-    if(rx1 > rx0 && ry1 > ry0){
-      fctx.translate(s.x, s.y);
-      fctx.fillStyle = rimGradient(fctx, s.r);
-      fctx.fillRect(rx0-s.x, ry0-s.y, rx1-rx0, ry1-ry0);
-    }
+    // The old box was also trimmed to fogBox to keep Skia off a 1400x1400
+    // rectangle for a source half off screen. Nothing is lost with it gone: the
+    // mask surface covers the camera and fogBox is the camera plus a margin, so
+    // every pixel the trim removed is a pixel outside the surface, which the
+    // canvas discards for free.
+    fctx.fillStyle = rimGradient(fctx, s.r);
+    fctx.fill();
     fctx.restore();
   }
 
@@ -5810,10 +5883,39 @@ window.addEventListener('DOMContentLoaded', function(){
     maskCtx.globalCompositeOperation = 'lighter';
     maskCtx.setTransform(sx,0,0,sy,(-camera.x+shakeX)*sx,(-camera.y+shakeY)*sy);
     const left=camera.x-140, right=camera.x+W+140, top=camera.y-140, bot=camera.y+H+140;
-    fogBox.l = left; fogBox.t = top; fogBox.r = right; fogBox.b = bot;
+    // A source buried in ground another source has ALREADY lit to full white
+    // adds nothing, so it is not carved at all. The mask is composited with
+    // 'lighter': white laid on white that is already at full alpha clamps to
+    // the same white, whatever shape the second source would have carved. That
+    // saves the whole of its cost — two polygon fills and a tree relight, and
+    // the carve is most of the frame — and cannot move a pixel.
+    //
+    // Only a source with no tree in range is allowed to do the burying. One
+    // with shadows does not fill its own disc, and the ground it leaves dark is
+    // ground the buried source might have every right to light. The escort
+    // creeps walking inside a hero's sight are the case this is for.
+    fogCovers.length = 0;
+    // The box every carve landed in, in world units, so the blur below can be
+    // given the strip that has something in it instead of the whole surface.
+    let cx0 = Infinity, cy0 = Infinity, cx1 = -Infinity, cy1 = -Infinity;
     for(const s of visionSources){
       if(s.x+s.r<left || s.x-s.r>right || s.y+s.r<top || s.y-s.r>bot) continue;
+      let buried = false;
+      for(let i=0;i<fogCovers.length;i+=3){
+        const reach = fogCovers[i+2] - s.r;
+        if(reach <= 0) continue;
+        const dx = s.x-fogCovers[i], dy = s.y-fogCovers[i+1];
+        if(dx*dx + dy*dy <= reach*reach){ buried = true; break; }
+      }
+      if(buried) continue;
       carveVision(maskCtx, s);
+      if(s.x-s.r < cx0) cx0 = s.x-s.r;
+      if(s.y-s.r < cy0) cy0 = s.y-s.r;
+      if(s.x+s.r > cx1) cx1 = s.x+s.r;
+      if(s.y+s.r > cy1) cy1 = s.y+s.r;
+      // nearOf caches on the source and carveVision has just asked for it, so
+      // this is a field read rather than a second scan over the trees.
+      if(!nearOf(s).length) fogCovers.push(s.x, s.y, s.r*FOG_RIM_SOLID);
     }
     maskCtx.setTransform(1,0,0,1,0,0);
     maskCtx.globalCompositeOperation = 'source-over';
@@ -5830,9 +5932,22 @@ window.addEventListener('DOMContentLoaded', function(){
     // in the geometry, which keeps the vision test itself exact. The mask is
     // drawn at FOG_SCALE and stretched to the screen, so a couple of pixels
     // here spread to a soft band of several once it lands.
-    fogCtx.filter = fogEdgeFilter;
-    fogCtx.drawImage(maskCanvas, 0, 0);
-    fogCtx.filter = 'none';
+    //
+    // Skipped outright when nothing was carved: punching a sheet with an empty
+    // mask leaves the sheet exactly as it is, and a filtered draw is not a
+    // cheap way to do nothing. A team that can see nothing gets solid fog,
+    // which is the right picture.
+    //
+    // Worth knowing before optimising this line: a canvas filter costs the
+    // whole SOURCE SURFACE, not the region drawn. Blurring a 64-pixel corner of
+    // the mask measured exactly the same as blurring all of it, and so did
+    // copying the lit strip onto a surface its own size first. The cost is in
+    // having a filter at all.
+    if(cx1 > cx0){
+      fogCtx.filter = fogEdgeFilter;
+      fogCtx.drawImage(maskCanvas, 0, 0);
+      fogCtx.filter = 'none';
+    }
     fogCtx.globalCompositeOperation = 'source-over';
 
     ctx.save();
@@ -5840,9 +5955,13 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.drawImage(fogCanvas, 0, 0, W, H);
     ctx.restore();
   }
+  // Every shell in the air asks this of every tree in the world on every frame,
+  // and an open world holds a couple of hundred of them, so it compares squares
+  // rather than taking a square root it only wants to compare.
   function treeBlockingProjectile(px,py){
     for(const t of trees){
-      if(dist(px,py,t.x,t.y) < PROJ_R + t.r*TREE_BLOCK_FACTOR) return t;
+      const dx = px-t.x, dy = py-t.y, rr = PROJ_R + t.r*TREE_BLOCK_FACTOR;
+      if(dx*dx + dy*dy < rr*rr) return t;
     }
     return null;
   }
@@ -6459,16 +6578,22 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
   }
+  // A heal wave or a level-up can have a hundred and fifty of these alight at
+  // once, so the per-sparkle bookkeeping is worth counting: the star is written
+  // straight out in world coordinates rather than translated into place, and
+  // the save/restore pair that used to wrap each one is hoisted to the loop in
+  // render that calls this. Four canvas calls a sparkle, six hundred a frame,
+  // for exactly the same eight-pointed star.
   function drawSparkle(s){
     const t = s.life/s.maxLife;
     const alpha = Math.max(0,1-t) * (0.55+0.45*Math.sin((s.life+s.tw)*11));
     const size = 4.5*(1-t*0.4);
-    ctx.save(); ctx.globalAlpha=alpha; ctx.translate(s.x,s.y); ctx.fillStyle=s.col||'#FFF3C4';
+    const x = s.x, y = s.y;
+    ctx.globalAlpha=alpha; ctx.fillStyle=s.col||'#FFF3C4';
     ctx.beginPath();
-    ctx.moveTo(0,-size); ctx.lineTo(size*0.35,-size*0.35); ctx.lineTo(size,0); ctx.lineTo(size*0.35,size*0.35);
-    ctx.lineTo(0,size); ctx.lineTo(-size*0.35,size*0.35); ctx.lineTo(-size,0); ctx.lineTo(-size*0.35,-size*0.35);
+    ctx.moveTo(x,y-size); ctx.lineTo(x+size*0.35,y-size*0.35); ctx.lineTo(x+size,y); ctx.lineTo(x+size*0.35,y+size*0.35);
+    ctx.lineTo(x,y+size); ctx.lineTo(x-size*0.35,y+size*0.35); ctx.lineTo(x-size,y); ctx.lineTo(x-size*0.35,y-size*0.35);
     ctx.closePath(); ctx.fill();
-    ctx.restore();
   }
 
   function grantXP(h, amount){
@@ -6667,15 +6792,15 @@ window.addEventListener('DOMContentLoaded', function(){
   function updateStatStrip(){
     const h = playerTeam[activePlayerIdx];
     if(!h) return;
-    pointsLabelEl.textContent = h.points+' pts';
+    setText(pointsLabelEl, h.points+' pts');
     statStripEl.classList.toggle('noPoints', h.points<=0);
     for(const k of STAT_KEYS){
-      svEls[k].textContent = h.statLv[k];
+      setText(svEls[k], String(h.statLv[k]));
       spEls[k].classList.toggle('maxed', h.statLv[k]>=MAX_STAT_LEVEL);
     }
-    sdEls.agi.textContent = Math.round(heroSpeed(h))+' spd';
-    sdEls.maxHp.textContent = Math.round(h.maxHp)+' hp';
-    sdEls.maxMana.textContent = Math.round(h.maxMana)+' mp';
+    setText(sdEls.agi, Math.round(heroSpeed(h))+' spd');
+    setText(sdEls.maxHp, Math.round(h.maxHp)+' hp');
+    setText(sdEls.maxMana, Math.round(h.maxMana)+' mp');
     // The strip is the only place either rate is written down, so it is where
     // the base bonus shows: the number is what is actually ticking, not what the
     // build says, and the button goes green so the boost reads on a phone too
@@ -6683,11 +6808,11 @@ window.addEventListener('DOMContentLoaded', function(){
     // Mana carries the river bonus on top of the base one, so the two rates do
     // not always agree — they are computed apart.
     const rm = baseRegenMult(h), mm = manaRegenMult(h);
-    sdEls.hpRegen.textContent = (h.stats.hpRegen*rm).toFixed(1)+'/s'+(rm>1?' ×'+rm:'');
-    sdEls.manaRegen.textContent = (h.stats.manaRegen*mm).toFixed(1)+'/s'+(mm>1?' ×'+mm:'');
+    setText(sdEls.hpRegen, (h.stats.hpRegen*rm).toFixed(1)+'/s'+(rm>1?' ×'+rm:''));
+    setText(sdEls.manaRegen, (h.stats.manaRegen*mm).toFixed(1)+'/s'+(mm>1?' ×'+mm:''));
     spEls.hpRegen.parentElement.classList.toggle('regenBoost', rm>1);
     spEls.manaRegen.parentElement.classList.toggle('regenBoost', mm>1);
-    sdEls.range.textContent = Math.round(attackRange(h))+' rng';
+    setText(sdEls.range, Math.round(attackRange(h))+' rng');
   }
 
   // ---------- shadows ----------
@@ -9510,12 +9635,14 @@ window.addEventListener('DOMContentLoaded', function(){
     coinReady = true;
   };
   coinImg.src = 'data:image/png;base64,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';
+  // The destination rectangle is written out rather than reached by shifting
+  // the canvas under the sprite: a wave's worth of loot is seventy coins a
+  // frame, and a translate that is undone again immediately is three canvas
+  // calls to save one subtraction.
   function drawCoinSprite(sheet, x, y, hop, bobT, size){
     const f = Math.floor(bobT*COIN_FPS) % COIN_FRAMES;
     const w = size || COIN_DRAW, h = w*(COIN_FRAME_H/COIN_FRAME_W);
-    ctx.save(); ctx.translate(x, y+hop);
-    ctx.drawImage(sheet, f*COIN_FRAME_W, 0, COIN_FRAME_W, COIN_FRAME_H, -w/2, -h/2, w, h);
-    ctx.restore();
+    ctx.drawImage(sheet, f*COIN_FRAME_W, 0, COIN_FRAME_W, COIN_FRAME_H, x-w/2, y+hop-h/2, w, h);
   }
 
   // The log a chopped tree leaves on the ground, turning on the spot the way
@@ -10076,6 +10203,11 @@ window.addEventListener('DOMContentLoaded', function(){
       const off = u*half + Math.sin(now*0.5 + i*1.7)*half*0.03;
       const x = q.x - q.ty*off, y = q.y + q.tx*off;
       const L = rv.w*(0.09 + 0.07*r2)*(0.5 + sp*0.5);
+      // A river is up to twelve thousand units long and the camera sees three,
+      // so most of these specks were being stroked onto ground nobody is
+      // looking at. The pad is the streak's own length plus its widest stroke,
+      // so a speck with its head just off the edge still draws its tail in.
+      if(!onScreen(x, y, L + 6)) continue;
       const a = Math.sin(Math.PI*ph) * (0.36 + 0.64*(1-Math.abs(u)));
       // Halo over the whole streak, core over the leading half: the speck ends
       // up with a bright head and a tail that thins out behind it, which is the
@@ -10145,15 +10277,23 @@ window.addEventListener('DOMContentLoaded', function(){
   function drawFoam(pts, now, seed, amp, alpha){
     ctx.fillStyle = 'rgba(255,255,255,'+alpha+')';
     const N = pts.length;
+    const pad = 2.2 + amp + 4;        // the widest puff, and a little over
     for(let i=0;i<N;i++){
       const puff = 0.5 + 0.5*Math.sin(i*0.85 + now*1.8 + seed);
       if(puff < 0.38) continue;
+      // A long river's shoreline runs for hundreds of points, nearly all of
+      // them off the edge of the screen. The puff that is off it is skipped
+      // before it costs a path.
+      if(!onScreen(pts[i].x, pts[i].y, pad)) continue;
       ctx.beginPath();
       ctx.arc(pts[i].x, pts[i].y, 2.2 + puff*amp, 0, 7);
       ctx.fill();
     }
   }
   function drawGlintStar(x, y, s, a){
+    // The glints ride a river that is mostly off screen, so the one that is
+    // gets the path and the other six do not.
+    if(!onScreen(x, y, s*1.5 + 2)) return;
     ctx.save(); ctx.globalAlpha = a; ctx.translate(x,y); ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.moveTo(0,-s); ctx.lineTo(s*0.3,-s*0.3); ctx.lineTo(s*1.5,0); ctx.lineTo(s*0.3,s*0.3);
@@ -10314,11 +10454,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // A bird flies over the fog and is not subject to vision, but the mark it
   // throws is on the ground like every other shadow -- so it is drawn down
   // there with them, and a treetop it passes over hides it.
+  // A flock lives until it is a screen and a half from the camera, so at any
+  // moment a good share of one is out beyond the edge. Both passes test before
+  // they draw rather than leaving it to the canvas to discard the result.
   function drawBirdShadows(){
     if(!birdReady) return;
     for(const b of birds){
       const w = BIRD_W*b.sc, h = BIRD_H*b.sc;
       const yy = b.y + Math.sin(b.t*1.7 + b.bob)*5;
+      if(!onScreen(b.x+40, yy+70, w)) continue;
       softShadow(ctx, b.x+40, yy+70, w*0.46, h*0.26, 0.5);
     }
   }
@@ -10328,6 +10472,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const f = b.sp*BIRD_FRAMES + (Math.floor(b.t*12) % BIRD_FRAMES);
       const w = BIRD_W*b.sc, h = BIRD_H*b.sc;
       const yy = b.y + Math.sin(b.t*1.7 + b.bob)*5;
+      if(!onScreen(b.x, yy, w)) continue;
       ctx.save(); ctx.translate(b.x, yy);
       if(b.vx < 0) ctx.scale(-1,1);
       // Point along the heading. The mirror above already carries the sign of
@@ -10411,7 +10556,7 @@ window.addEventListener('DOMContentLoaded', function(){
   });
   window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
   canvas.addEventListener('mousemove', e=>{
-    const r = canvas.getBoundingClientRect();
+    const r = canvasRect();
     mouse.x = (e.clientX-r.left) * (W/r.width);
     mouse.y = (e.clientY-r.top) * (H/r.height);
     if(orderDrag && !orderDrag.id){
@@ -10487,7 +10632,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // canvas listener below cannot see those, and the tutorial card is now one
     // of them — an aim that freezes whenever the mouse crosses the card is a
     // worse bug than the one the card was solving.
-    const cr = canvas.getBoundingClientRect();
+    const cr = canvasRect();
     mouse.x = (e.clientX-cr.left) * (W/cr.width);
     mouse.y = (e.clientY-cr.top) * (H/cr.height);
     if(scout){
@@ -10695,7 +10840,22 @@ window.addEventListener('DOMContentLoaded', function(){
   const PINCH_WINDOW = 1200;     // ...within this many ms, or it reads as drift, not a pinch.
   function touchDist(t1, t2){ return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
 
-  function canvasRect(){ return canvas.getBoundingClientRect(); }
+  // The canvas box, remembered. Reading it is a synchronous layout, and the
+  // pointer handlers ask for it constantly — the two mousemove listeners each
+  // take one, and toWorld and toCanvasCoords take another inside them — so a
+  // mouse crossing the screen was making the browser re-lay the page out
+  // several times per movement, on top of the HUD styles the frame had just
+  // written. The box only moves when the stage does, which bumps layoutSeq;
+  // the quarter-second is a backstop for anything that moves it without
+  // telling us, and is far shorter than a person can aim in.
+  let canvasRectCache = null, canvasRectSeq = -1, canvasRectAt = -1e9;
+  function canvasRect(){
+    const now = performance.now();
+    if(canvasRectCache && canvasRectSeq === layoutSeq && now - canvasRectAt < 250) return canvasRectCache;
+    canvasRectCache = canvas.getBoundingClientRect();
+    canvasRectSeq = layoutSeq; canvasRectAt = now;
+    return canvasRectCache;
+  }
   function toCanvasCoords(clientX, clientY){
     const r = canvasRect();
     return { x:(clientX-r.left)*(W/r.width), y:(clientY-r.top)*(H/r.height) };
@@ -11927,17 +12087,34 @@ window.addEventListener('DOMContentLoaded', function(){
   // which reads as the bar swallowing them.
   let hudSparks = [];
   const hudAnchor = { xp:{x:0,y:0}, mp:{x:0,y:0}, hp:{x:0,y:0}, ok:false };
+  // Where the three bars are on screen. Four element boxes are read to work it
+  // out, and reading a box is a synchronous layout — worse here than usual,
+  // because render() has just written the HUD's own styles, so every frame was
+  // dirtying the layout and then immediately making the browser rebuild it.
+  //
+  // None of these numbers move while the window sits still, so they are taken
+  // when the stage is re-laid out, when play starts or stops, and otherwise
+  // four times a second: far oftener than the dock can slide in or out under
+  // them, and a spark in flight is aimed at a bar that has not moved anyway.
+  // The three points are also written in place rather than replaced, so a frame
+  // that does re-measure hands the collector nothing.
+  let hudAnchorAt = -1e9, hudAnchorLayout = -1, hudAnchorState = '';
   function refreshHudAnchor(){
-    if(state!=='playing'){ hudAnchor.ok = false; return; }
-    const c = canvas.getBoundingClientRect();
+    if(state!=='playing'){ hudAnchor.ok = false; hudAnchorState = state; return; }
+    const now = performance.now();
+    if(hudAnchor.ok && hudAnchorLayout === layoutSeq && hudAnchorState === state
+       && now - hudAnchorAt < 250) return;
+    const c = canvasRect();
     if(!c.width){ hudAnchor.ok = false; return; }
-    const map = (el)=>{
+    hudAnchorAt = now; hudAnchorLayout = layoutSeq; hudAnchorState = state;
+    const map = (el, into)=>{
       const r = el.getBoundingClientRect();
-      return { x:(r.left+r.width*0.45-c.left)*(W/c.width), y:(r.top+r.height*0.5-c.top)*(H/c.height) };
+      into.x = (r.left+r.width*0.45-c.left)*(W/c.width);
+      into.y = (r.top+r.height*0.5-c.top)*(H/c.height);
     };
-    hudAnchor.xp = map(xpFillEl.parentNode);
-    hudAnchor.mp = map(mpFillEl.parentNode);
-    hudAnchor.hp = map(hpFillEl.parentNode);
+    map(xpFillEl.parentNode, hudAnchor.xp);
+    map(mpFillEl.parentNode, hudAnchor.mp);
+    map(hpFillEl.parentNode, hudAnchor.hp);
     hudAnchor.ok = true;
   }
   function addHudSpark(wx, wy, key, col, payload){
@@ -12824,7 +13001,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // No waves, no timeout, no end. The clock counts up because "how long
       // have I been out here" is the only thing it can honestly say.
       timeLeft += dt;
-      timerEl.textContent = fmtTime(timeLeft);
+      setText(timerEl, fmtTime(timeLeft));
       owHudTick();
       // The world arrives here: what to load, then as much building as the
       // frame can afford. Both are Node-safe — no canvas, no DOM.
@@ -12835,12 +13012,12 @@ window.addEventListener('DOMContentLoaded', function(){
       // The clock still runs — the end card reports it — but the WAVE is the
       // score now, so that is what the HUD's right-hand slot reads.
       timeLeft += dt;
-      timerEl.textContent = 'Wave ' + Math.max(1, survWave);
+      setText(timerEl, 'Wave ' + Math.max(1, survWave));
       survTick(dt);
     } else if(tut.on){
       // The tutorial is a Match with the clock and the waves held back. The
       // phase that teaches waves releases them; the handover releases the rest.
-      timerEl.textContent = fmtTime(timeLeft);
+      setText(timerEl, fmtTime(timeLeft));
       if(!tut.holdWaves){
         spawnTimer -= dt;
         if(spawnTimer<=0){ spawnWave(); spawnTimer=WAVE_INTERVAL; }
@@ -12848,7 +13025,7 @@ window.addEventListener('DOMContentLoaded', function(){
     } else {
       timeLeft -= dt;
       if(timeLeft<=0){ timeLeft=0; endRound('timeout'); return; }
-      timerEl.textContent = fmtTime(timeLeft);
+      setText(timerEl, fmtTime(timeLeft));
       spawnTimer -= dt;
       if(spawnTimer<=0){ spawnWave(); spawnTimer=WAVE_INTERVAL; }
     }
@@ -15250,6 +15427,9 @@ window.addEventListener('DOMContentLoaded', function(){
   // so it is unbounded without ever re-centring or losing what you walked past.
   const OW_FOG_RES = 100, OW_FOG_PX = 128, OW_FOG_SPAN = OW_FOG_RES*OW_FOG_PX;
   const owFog = new Map();
+  // Bumped whenever the sheets are thrown away, so a source that remembers
+  // painting into the old ones knows to paint again.
+  let owFogGen = 0;
   let owMiniCv = null, owMaskCv = null;
   function owFogSheet(fx, fy, make){
     const k = keyOf(fx, fy);
@@ -15263,9 +15443,16 @@ window.addEventListener('DOMContentLoaded', function(){
     return sheet;
   }
   // Painted only when a source has actually moved: standing still costs nothing.
+  //
+  // It is the source's PLACE that is remembered, not the source: what gets
+  // painted depends on nothing but x, y and radius, and the sheets are only
+  // ever thrown away when a round is (owFogGen says when that happened), so a
+  // circle already burnt into them at those numbers cannot need burning again.
+  // The vision sources are pooled, which is what gives these fields somewhere
+  // to live from one frame to the next.
   function owFogTick(){
     for(const s of visionSources){
-      if(s._fogDone) continue;
+      if(s._fogGen === owFogGen && s._fogX === s.x && s._fogY === s.y && s._fogR === s.r) continue;
       const r = s.r/OW_FOG_RES;
       for(let fx = Math.floor((s.x - s.r)/OW_FOG_SPAN); fx <= Math.floor((s.x + s.r)/OW_FOG_SPAN); fx++)
         for(let fy = Math.floor((s.y - s.r)/OW_FOG_SPAN); fy <= Math.floor((s.y + s.r)/OW_FOG_SPAN); fy++){
@@ -15274,7 +15461,7 @@ window.addEventListener('DOMContentLoaded', function(){
           sheet.g.arc((s.x - fx*OW_FOG_SPAN)/OW_FOG_RES, (s.y - fy*OW_FOG_SPAN)/OW_FOG_RES, r, 0, 7);
           sheet.g.fill();
         }
-      s._fogDone = true;
+      s._fogGen = owFogGen; s._fogX = s.x; s._fogY = s.y; s._fogR = s.r;
     }
   }
   function owExploredKm2(){
@@ -15611,24 +15798,46 @@ window.addEventListener('DOMContentLoaded', function(){
     if(h.mode==='follow' && h.followTarget) return squadTogether ? 'ASSM' : 'FLLW';
     return 'HOLD';
   }
+  // A percentage written into a style, rounded to a tenth. The rounding is what
+  // makes the guard worth having: a bar that is regenerating moves by a
+  // thousandth of a percent a frame, which no screen can show and every write
+  // of which still costs a parse and a layout. A tenth of a percent of a
+  // 190-pixel bar is a fifth of a pixel.
+  function setPct(el, key, pct, prop){
+    if(!el) return;
+    const v = Math.round(pct*10)/10;
+    const shown = el._laneShown || (el._laneShown = {});
+    if(shown[key] === v) return;
+    shown[key] = v;
+    el.style[prop] = v + '%';
+  }
+  // Same bargain for a label: the string is built either way, but handing an
+  // unchanged one to the DOM is a layout nobody asked for.
+  function setText(el, text){
+    if(!el || el._laneText === text) return;
+    el._laneText = text;
+    el.textContent = text;
+  }
   function updatePartyUI(){
     for(let i=0;i<3;i++){
       const h=playerTeam[i];
       const chip=pchips[i];
+      const p=pparts[i];
+      if(!chip || !p) continue;
       chip.classList.toggle('active', i===activePlayerIdx);
       chip.classList.toggle('dead', !h.alive);
       chip.classList.toggle('solo', h!==playerTeam[0] && h.followTarget!==playerTeam[0]);
       const st = heroStatus(h, i);
       if(chip.dataset.stat !== st){
         chip.dataset.stat = st;
-        chip.querySelector('.pstat').textContent = st;
+        p.stat.textContent = st;
       }
       // The portrait only ever changes when the chip changes hero, which is
       // once a match — and the card is a data URL a hundred kilobytes long, so
       // writing it every frame would mean handing the style system that string
       // sixty times a second for nothing. The type it is already showing is the
       // guard, the same way .pstat guards on its four letters.
-      const card = chip.querySelector('.pcard');
+      const card = p.card;
       if(card.dataset.type !== h.type){
         card.dataset.type = h.type;
         const art = HERO_CARDS[h.type];
@@ -15636,12 +15845,11 @@ window.addEventListener('DOMContentLoaded', function(){
         card.style.backgroundImage = art ? 'url("' + art + '")' : '';
         card.style.color = HERO_STATS[h.type].colorPlayer;
       }
-      chip.querySelector('.pdeathCd').style.height =
-        (h.alive ? 0 : Math.max(0, Math.min(100, h.respawnTimer/RESPAWN_TIME*100))) + '%';
-      chip.querySelector('.pbar.hp span').style.width = Math.max(0,h.hp/h.maxHp*100)+'%';
-      chip.querySelector('.pbar.mp span').style.width = Math.max(0,h.mana/h.maxMana*100)+'%';
-      chip.querySelector('.pbar.xp span').style.width = Math.max(0,h.xp/h.xpToNext*100)+'%';
-      chip.querySelector('.plevel').textContent = h.level;
+      setPct(p.death, 'h', h.alive ? 0 : Math.max(0, Math.min(100, h.respawnTimer/RESPAWN_TIME*100)), 'height');
+      setPct(p.hp, 'w', Math.max(0,h.hp/h.maxHp*100), 'width');
+      setPct(p.mp, 'w', Math.max(0,h.mana/h.maxMana*100), 'width');
+      setPct(p.xp, 'w', Math.max(0,h.xp/h.xpToNext*100), 'width');
+      if(p.shown.level !== h.level){ p.shown.level = h.level; p.level.textContent = h.level; }
     }
     const activeH = playerTeam[activePlayerIdx];
     const skillKey = activeH.type==='carry'?'dash':activeH.type==='tank'?'rocket':'heal';
@@ -16027,7 +16235,14 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.beginPath(); ctx.arc(pt.x,pt.y,(pt.pr||4)*a,0,7);
       ctx.fillStyle=pt.color; ctx.globalAlpha=a; ctx.fill(); ctx.globalAlpha=1;
     }
-    for(const s of sparkles){ if(onScreen(s.x,s.y,24)) drawSparkle(s); }
+    // One save/restore for the whole shower rather than one per spark: all
+    // drawSparkle touches is globalAlpha and fillStyle, and both are set on
+    // every one of them.
+    if(sparkles.length){
+      ctx.save();
+      for(const s of sparkles){ if(onScreen(s.x,s.y,24)) drawSparkle(s); }
+      ctx.restore();
+    }
 
     for(const f of floaters){
       if(!onScreen(f.spawnX,f.spawnY,230) || !isVisible(f.spawnX,f.spawnY,26)) continue;
@@ -16133,16 +16348,23 @@ window.addEventListener('DOMContentLoaded', function(){
     if(state==='playing'){
       const activeH = playerTeam[activePlayerIdx];
       const s = HERO_STATS[activeH.type];
-      hpFillEl.style.width = (activeH.hp/activeH.maxHp*100)+'%';
-      hpTextEl.textContent = Math.round(activeH.hp)+'/'+Math.round(activeH.maxHp);
-      mpFillEl.style.width = (activeH.mana/activeH.maxMana*100)+'%';
+      // Every line here used to be written on every frame, and the numbers
+      // behind them barely move: a hero standing in his own base regenerates a
+      // twentieth of a hit point a frame, which rounds to the same text and the
+      // same bar width for a second at a time. The writes are guarded instead —
+      // setPct for the bars, a remembered string for the labels — because a
+      // style or textContent write that changes nothing still costs a parse and
+      // still dirties the layout the next getBoundingClientRect has to rebuild.
+      setPct(hpFillEl, 'w', activeH.hp/activeH.maxHp*100, 'width');
+      setText(hpTextEl, Math.round(activeH.hp)+'/'+Math.round(activeH.maxHp));
+      setPct(mpFillEl, 'w', activeH.mana/activeH.maxMana*100, 'width');
       mpFillEl.parentNode.classList.toggle('dry', manaDryT > 0);
-      mpTextEl.textContent = Math.round(activeH.mana)+'/'+Math.round(activeH.maxMana);
-      xpFillEl.style.width = (activeH.xp/activeH.xpToNext*100)+'%';
-      xpTextEl.textContent = Math.round(activeH.xp)+'/'+Math.round(activeH.xpToNext);
-      hudLevelEl.textContent = 'Lv.'+activeH.level;
-      dashCdFillEl.style.height = (activeH.skillCd/s.skillCd*100)+'%';
-      skillBtnCdEl.style.height = (activeH.skillCd/s.skillCd*100)+'%';
+      setText(mpTextEl, Math.round(activeH.mana)+'/'+Math.round(activeH.maxMana));
+      setPct(xpFillEl, 'w', activeH.xp/activeH.xpToNext*100, 'width');
+      setText(xpTextEl, Math.round(activeH.xp)+'/'+Math.round(activeH.xpToNext));
+      setText(hudLevelEl, 'Lv.'+activeH.level);
+      setPct(dashCdFillEl, 'h', activeH.skillCd/s.skillCd*100, 'height');
+      setPct(skillBtnCdEl, 'h', activeH.skillCd/s.skillCd*100, 'height');
       // A shell in the air turns the skill into a detonator for as long as it is
       // up. The button glows, because a second press that does something new is
       // worth more than a cooldown ring nobody is watching.
@@ -16208,6 +16430,24 @@ window.addEventListener('DOMContentLoaded', function(){
   const FF = (typeof location !== 'undefined' && location.protocol === 'file:')
     ? Math.max(1, Math.min(32, parseInt((/(?:^|[?&])speed=(\d+)/.exec(location.search || '') || [])[1] || '1', 10)))
     : 1;
+  // Whether anything the canvas paints can actually be seen. The intro card and
+  // the menu each lay a SOLID background over the whole stage — #0a0f16 and
+  // #EEEAE2, not the translucent veil the other overlays use — so while either
+  // is up the field, the water and the fog behind them are invisible, and
+  // drawing them was a full frame of work, every frame, for a picture nobody
+  // can look at. Sitting on the title screen measured ninety milliseconds a
+  // frame; it is now a few microseconds and a phone stays cool on it.
+  //
+  // Everything else keeps drawing. The pause and end screens are that
+  // translucent veil with the field showing through, and a loading round holds
+  // roundHold up on purpose so the curtain frames warm the draw path — skipping
+  // those would move the cost into the first second of play, which is the one
+  // place it must not be.
+  function fieldHidden(){
+    if(roundHold) return false;
+    return (introScreen && !introScreen.classList.contains('hidden'))
+        || (startScreen && !startScreen.classList.contains('hidden'));
+  }
   function loop(now){
     const dt = Math.min(0.05,(now-last)/1000); last=now;
     // The extra steps share the catch below on purpose: a crash in a
@@ -16215,7 +16455,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // rAF is re-armed in a finally, so one bad frame can no longer kill the
     // whole game. Losing a frame is survivable; losing the loop is not.
     try { for(let i=1;i<FF;i++) update(dt);
-          update(dt); render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
+          update(dt); if(!fieldHidden()) render(); syncThemeColor(); syncRiverVoice(); if(roundHold) warmFrames++; }
     catch(err){ if(!loop._warned){ loop._warned = true; console.error('frame error', err); } }
     finally { requestAnimationFrame(loop); }
   }
@@ -17385,7 +17625,7 @@ window.addEventListener('DOMContentLoaded', function(){
     const shud = document.getElementById('scoreHud');
     if(shud) shud.classList.add('hidden');
     timeLeft = ROUND_TIME;
-    timerEl.textContent = fmtTime(ROUND_TIME);
+    setText(timerEl, fmtTime(ROUND_TIME));
     tutAdvance();
   }
   // The tutorial has its own map, so it ends rather than dissolving: the last
@@ -17415,7 +17655,7 @@ window.addEventListener('DOMContentLoaded', function(){
     tutStop();
     state = 'idle';
     // The tile pool and the fog belong to the world being left.
-    bgTiles.clear(); owFog.clear();
+    bgTiles.clear(); owFog.clear(); owFogGen++;
     bottomDock.classList.add('hidden');
     partyEl.classList.add('hidden');
     skillBtnEl.style.display = 'none';
@@ -17707,7 +17947,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // an Open World round has to start on exactly today's world, with nothing
     // of the last one's caches left to be read by anything.
     regionCache.clear(); riverCache.clear(); loaded.clear(); genCount.clear();
-    bgTiles.clear(); owFog.clear(); worldDiff = blankDiff(); basePlaza = null; lastGenMs = 0;
+    bgTiles.clear(); owFog.clear(); owFogGen++; worldDiff = blankDiff(); basePlaza = null; lastGenMs = 0;
     genQueue.length = 0; owWarmQueue.length = 0; owChunkTimer = 0; owLastFocus = '';
     WX0 = WY0 = 0; WX1 = WORLD_W; WY1 = WORLD_H;
     CAMX0 = CAMY0 = 0; CAMX1 = WORLD_W; CAMY1 = WORLD_H;
@@ -17773,7 +18013,7 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const t of playerTowers.concat(enemyTowers)){ t.hp=t.maxHp; t.flash=0; t.atkCd=0; t.hpLag=1; t.noHitT=0; }
     macro = { state:'lane', t:0, lane:0, tower:null, commitT:0, defendT:0 };
     xpCountEl.textContent='0';
-    timerEl.textContent = gameMode==='survival' ? 'Wave 1' : (gameMode==='openworld' ? '0:00' : fmtTime(ROUND_TIME));
+    setText(timerEl, gameMode==='survival' ? 'Wave 1' : (gameMode==='openworld' ? '0:00' : fmtTime(ROUND_TIME)));
     // Not startScreen: guardedStart owns exactly when that gets hidden —
     // immediately for a path with no page to turn, or on a delay for one
     // that does — and startRound runs inside beginRoundLoad's RAF chain,
@@ -18128,7 +18368,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // The round length is ROUND_TIME and nowhere else. The button and the idle
   // clock used to be hand-typed, and both read 5:00 against a ten-minute round.
   startBtn.innerHTML = 'Match &middot; ' + fmtTime(ROUND_TIME);
-  timerEl.textContent = fmtTime(ROUND_TIME);
+  setText(timerEl, fmtTime(ROUND_TIME));
 
   /* ------------------------------------------------------------------ music
      Two pieces. "Before the Lanes" plays over the menu and the end screen;
