@@ -21,6 +21,7 @@ tools/
   artifact-html.js  strips the document skeleton for a Claude Artifact build
   shoot.js          drives the game headless and photographs it
   music-demo.js     the music on a page with both of its dials and a voice picker
+  music-render.js   the piece, and each forest voice, written out as WAV files
   sfx-demo.js       every sound effect on a soundboard
 docs/
   GAMEPLAY.md      screenshots from a played match and a survival round
@@ -120,12 +121,19 @@ news, not bad, so it never touches the celeste and never sours anything. It
 plays one of four forest voices instead, and there is exactly one live at a
 time:
 
-| | |
-|---|---|
-| `grove` | **Rosewood** — a marimba lilting three against the four-beat bar |
-| `hunt` | **Hand drums** — palm, heel and fingers, no pitch at all, and a bass that walks |
-| `glade` | **Glass hum** — a held hum over the chord with a low bell in the gaps |
-| `horns` | **Horn call** — two long calls a chord, a fifth apart, answered at the top |
+| | | |
+|---|---|---|
+| `grove` | **Rosewood** — a marimba lilting three against the four-beat bar | |
+| `hunt` | **Hand drums** — palm, heel and fingers, no pitch at all, and a bass that walks | |
+| `glade` | **Glass hum** — a held hum over the chord with a low bell in the gaps | **in use** |
+| `horns` | **Horn call** — two long calls a chord, a fifth apart, answered at the top | |
+
+**Glass hum is the adopted voice** and the other three are kept on purpose.
+They are not dead code waiting for a tidy-up: they are written, levelled
+against each other and reachable from both pickers, they cost a few hundred
+events in a list that is walked by a cursor and never searched, and the reason
+a choice was built rather than a single voice is that the choice may be made
+again — for a boss, a night, a second mode or a second opinion.
 
 **The picker is on the pause menu**, under Resume, and pressing one while the
 game is paused previews it immediately — the forest number is frozen while
@@ -141,9 +149,11 @@ argue — in Open World, where there are no enemy heroes, it is open all round.
 numbers, which voice is live, and how many mobs are feeding the second one.
 
 To hear it without playing, `node tools/music-demo.js out.html` writes a page
-with both dials, the voice picker and a meter per layer. The synth and both
-pieces are lifted out of `index.html` between the `music:engine` markers, so
-what is auditioned there is what plays in the game.
+with both dials, the voice picker and a meter per layer; its **Hear all four**
+button plays each voice for eight seconds in order. To get the sound out of the
+browser entirely, `node tools/music-render.js out/` writes the piece and each
+voice as a WAV. Both lift the synth and both pieces out of `index.html` between
+the `music:engine` markers, so what you audition is what plays in the game.
 
 ## Fast-forward
 

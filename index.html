@@ -2723,15 +2723,27 @@ window.addEventListener('DOMContentLoaded', function(){
      than by amount — the point of having four is that the choice is audible in
      the first bar, not after a minute of comparing.
 
-     Exactly one is live. `quarryDefault` names it; the audition page switches
-     between them while the piece plays, and ?mob=<key> picks one in the game.
+     Exactly one is live. `quarryDefault` names it; the pause menu switches
+     between them mid-round, the audition page switches while the piece plays,
+     and ?mob=<key> is the shortcut.
+
+     ALL FOUR STAY, whichever one is adopted. Three of them are not dead code
+     to be pruned on the next tidy-up: they are written, levelled and reachable
+     from two pickers, they cost a few hundred events in a list that is walked
+     by a cursor and never searched, and the whole reason a choice was built
+     rather than a single voice is that the choice may be made again. A later
+     mode, a boss, a night cycle or a second opinion all want one of the other
+     three, and none of them is cheaper to rewrite than to keep.
 
                  instrument        register    rhythm                 harmony
        grove     rosewood bars     66–74       3 against the 4-bar    chord tones
        hunt      hands on skin     —           a groove, flat out     none at all
        glade     hum and low bell  59–71       floating, no pulse     fourths and fifths
        horns     stopped pipe      50–62       two long calls         open fifths */
-  quarryDefault: 'grove',
+  // Adopted after auditioning all four end to end: the mildest of them, the
+  // only one that adds no rhythm of its own, and the one that says "something
+  // is here" without asking for anything.
+  quarryDefault: 'glade',
   quarry: {
     // The marimba one. The figure moves in dotted eighths over a four-beat
     // bar, so it comes back round to the downbeat every three beats and never
