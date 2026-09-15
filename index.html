@@ -19467,6 +19467,15 @@ window.addEventListener('DOMContentLoaded', function(){
   // so canvas.width alone is off by that factor and lands the crop on the HUD.
   window.__laneW = ()=>W;
   window.__laneH = ()=>H;
+  // The tutorial's arrow and rings are painted on the canvas, so a script
+  // driving the lesson has no way to read where it is being sent — it can only
+  // guess a direction and hope. Same reason as __laneBirds: a screenshot of a
+  // step has to be able to REACH that step by walking there.
+  window.__laneTut = ()=>({
+    on: !!tut.on, step: tut.i, rings: tut.rings.map(r=>({ x:r.x, y:r.y, r:r.r, hit:!!r.hit })),
+    mark: tut.mark ? { x:tut.mark.x, y:tut.mark.y } : null,
+    goal: tutGoalEl ? tutGoalEl.textContent : ''
+  });
   // What a player can see, for the screenshot scripts that have to PLAY their
   // way to a state — walk to a creep, hold fire, wait for the kill — rather
   // than reach in and set it. Read-only: positions, bars and cooldowns of the
