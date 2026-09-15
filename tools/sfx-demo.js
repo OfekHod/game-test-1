@@ -108,7 +108,7 @@ const page = `<title>Lane Soundboard</title>
 <div class="wrap">
   <header>
     <h1>Lane — <em>sound effects</em></h1>
-    <p class="lede">Six one-shots and one river, synthesised on the spot from a handful of oscillators
+    <p class="lede">Every one-shot in the game and one river, synthesised on the spot from a handful of oscillators
       and two shared noise buffers: no samples, no files, a few hundred bytes in all. This page runs the same code the
       game does. The traces are each sound's real envelope, rendered offline.</p>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Press a button or a key to start audio</span></div>
@@ -120,6 +120,26 @@ const page = `<title>Lane Soundboard</title>
     <div class="row" style="--rail:var(--gold)"><span class="key">2</span><span class="t"><b>Crit a creep</b><span>The same hit with a ring six milliseconds in — noticed without becoming a second sound.</span></span><canvas data-wave="crit"></canvas><button data-i="crit">Play</button></div>
     <div class="row" style="--rail:var(--bone)"><span class="key">3</span><span class="t"><b>Hit a hero</b><span>Lower and heavier: a thock rather than a tick. Something with weight took that.</span></span><canvas data-wave="hero"></canvas><button data-i="hero">Play</button></div>
     <div class="row" style="--rail:var(--hurt)"><span class="key">4</span><span class="t"><b>Take a hit</b><span>Duller and twice as long, with a sawtooth swept shut underneath. The one you must react to.</span></span><canvas data-wave="hurt"></canvas><button data-i="hurt">Play</button></div>
+    <div class="row" style="--rail:var(--gold)"><span class="key"></span><span class="t"><b>Last-hit a creep</b><span>The tick with a brighter crack and the crit's ring cut to half. Gone, not looted.</span></span><canvas data-wave="i:kill"></canvas><button data-i="kill">Play</button></div>
+    <div class="row" style="--rail:var(--gold)"><span class="key"></span><span class="t"><b>Kill a hero</b><span>A hollow crack over a timber-weight body, and two notes falling a fifth under it.</span></span><canvas data-wave="i:heroKill"></canvas><button data-i="heroKill">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Sword landing</b><span>The tank's blow. Lowest of the hits on the living &mdash; the body starts where the hero's ends.</span></span><canvas data-wave="i:heavy"></canvas><button data-i="heavy">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>You die</b><span>Timber's body under the hurt groan doubled, and a half-second wash after it.</span></span><canvas data-wave="i:death" data-sec="1.1"></canvas><button data-i="death">Play</button></div>
+  </div>
+
+  <h2>Siege</h2>
+  <div class="rows">
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Shell on a tower</b><span>A short high crack with almost nothing under it. Stone does not give.</span></span><canvas data-wave="i:stone"></canvas><button data-i="stone">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Tower falls</b><span>Timber a third again the size, the dust sweeping down for six tenths of a second, and a second landing behind the first.</span></span><canvas data-wave="i:collapse" data-sec="1.2"></canvas><button data-i="collapse">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>Rocket lands</b><span>Lowpassed, not banded: pressure rather than pitch. Two bodies 30 ms apart and debris over the top.</span></span><canvas data-wave="i:boom" data-sec="1.0"></canvas><button data-i="boom">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>Tower shell lands</b><span>The same blast at half. A siege should rumble under the fight, not be the fight.</span></span><canvas data-wave="i:boom:0.5" data-sec="1.0"></canvas><button data-i="boom" data-amp="0.5">Play</button></div>
+  </div>
+
+  <h2>Shots</h2>
+  <div class="rows">
+    <div class="row" style="--rail:var(--gold)"><span class="key"></span><span class="t"><b>Flame round</b><span>The carry's held fire, five a second. Short, quiet, mostly high, with a moment of burn after the crack.</span></span><canvas data-wave="s:fire"></canvas><button data-s="fire">Play</button></div>
+    <div class="row" style="--rail:var(--mana)"><span class="key"></span><span class="t"><b>Bolt</b><span>The support's shot. Lighter still.</span></span><canvas data-wave="s:bolt"></canvas><button data-s="bolt">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>Rocket launch</b><span>A thump for the charge and a band swept UP for once &mdash; the air shoved out ahead of the shell.</span></span><canvas data-wave="s:rocket"></canvas><button data-s="rocket">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Sword swing</b><span>A whoosh with no body at all. The weight is in the landing.</span></span><canvas data-wave="s:swing"></canvas><button data-s="swing">Play</button></div>
   </div>
 
   <h2>Pickups</h2>
@@ -131,6 +151,22 @@ const page = `<title>Lane Soundboard</title>
   <h2>Ability</h2>
   <div class="rows">
     <div class="row" style="--rail:var(--blink)"><span class="key">7</span><span class="t"><b>Blink</b><span>Two sounds, 120 ms apart: air closing over where you were, then a landing where you are.</span></span><canvas data-wave="blink"></canvas><button data-t="1">Play</button></div>
+    <div class="row" style="--rail:var(--blink)"><span class="key"></span><span class="t"><b>Respawn</b><span>The blink's arriving half and nothing else. "The hero is now HERE."</span></span><canvas data-wave="f:respawn"></canvas><button data-f="respawn">Play</button></div>
+    <div class="row" style="--rail:var(--mana)"><span class="key"></span><span class="t"><b>Heal cast</b><span>One sine gliding up a fourth with no transient. Liquid leaving the hands.</span></span><canvas data-wave="f:healCast"></canvas><button data-f="healCast">Play</button></div>
+    <div class="row" style="--rail:var(--mana)"><span class="key"></span><span class="t"><b>Heal lands</b><span>The level-up's smaller, softer cousin. Three percent of pitch either way per cast.</span></span><canvas data-wave="f:heal"></canvas><button data-f="heal">Play</button></div>
+    <div class="row" style="--rail:var(--gold)"><span class="key"></span><span class="t"><b>Level up</b><span>A bell run up a major arpeggio onto a two-octave chord. An enemy's plays at a third the size.</span></span><canvas data-wave="f:levelUp" data-sec="1.0"></canvas><button data-f="levelUp">Play</button></div>
+    <div class="row" style="--rail:var(--blink)"><span class="key"></span><span class="t"><b>Skill ready</b><span>Two sines a fifth apart, the second held. A question answered.</span></span><canvas data-wave="f:ready"></canvas><button data-f="ready">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>Denied</b><span>A press that did nothing. A short low buzz, quieter than everything around it.</span></span><canvas data-wave="f:deny"></canvas><button data-f="deny">Play</button></div>
+  </div>
+
+  <h2>The round and the HUD</h2>
+  <div class="rows">
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Wave</b><span>A low horn on the D both pieces of music are written in. A note from the score, not a thing on the map.</span></span><canvas data-wave="f:wave" data-sec="0.8"></canvas><button data-f="wave">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Switch hero</b><span>Two ticks a fifth apart. The smallest possible "that took".</span></span><canvas data-wave="u:switch" data-sec="0.3"></canvas><button data-u="switch">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Give an order</b><span>A crinkle with a blip under it, because an order is a thing written down.</span></span><canvas data-wave="u:order" data-sec="0.3"></canvas><button data-u="order">Play</button></div>
+    <div class="row" style="--rail:var(--gold)"><span class="key"></span><span class="t"><b>Win</b><span>The level-up's chord an octave down and held, then a fourth up with the sparkle.</span></span><canvas data-wave="st:win" data-sec="1.8"></canvas><button data-st="win">Play</button></div>
+    <div class="row" style="--rail:var(--hurt)"><span class="key"></span><span class="t"><b>Lose</b><span>The minor shape of the same chord, lower and longer, with the hurt groan under it.</span></span><canvas data-wave="st:lose" data-sec="1.8"></canvas><button data-st="lose">Play</button></div>
+    <div class="row" style="--rail:var(--bone)"><span class="key"></span><span class="t"><b>Draw</b><span>A bare major triad in the middle. No sparkle, no groan.</span></span><canvas data-wave="st:draw" data-sec="1.5"></canvas><button data-st="draw">Play</button></div>
   </div>
 
   <h2>Ambience</h2>
@@ -205,7 +241,13 @@ ${engine}
     return rig;
   }
   const mid = { pan: 0, gain: 1 };
-  const hit = (k, p) => { const r = ready(); if(r) r.impact(k, p || mid); };
+  const hit = (k, p, amp) => { const r = ready(); if(r) r.impact(k, p || mid, amp); };
+  const shoot = k => { const r = ready(); if(r) r.shot(k, mid); };
+  // The placed one-shots take a { pan, gain }; the unplaced ones take nothing
+  // and ignore it, so one call shape serves both.
+  const one = k => { const r = ready(); if(r) r[k](mid); };
+  const sting = k => { const r = ready(); if(r) r.stinger(k); };
+  const uiTick = k => { const r = ready(); if(r) r.ui(k); };
   const pick = (k, n, p) => { const r = ready(); if(r) r.pickup(k, n || 0, p || mid); };
   const blink = (a, b) => { const r = ready(); if(r) r.teleport(a || mid, b || mid, 0.12); };
   // The river is a place, not an event, so its two buttons are toggles rather
@@ -255,7 +297,11 @@ ${engine}
     const b = e.target.closest('button');
     if(!b){ ready(); return; }
     flash(b);
-    if(b.dataset.i) hit(b.dataset.i);
+    if(b.dataset.i) hit(b.dataset.i, null, b.dataset.amp ? +b.dataset.amp : undefined);
+    else if(b.dataset.s) shoot(b.dataset.s);
+    else if(b.dataset.f) one(b.dataset.f);
+    else if(b.dataset.st) sting(b.dataset.st);
+    else if(b.dataset.u) uiTick(b.dataset.u);
     else if(b.dataset.p) pick(b.dataset.p, 0);
     else if(b.dataset.t) blink();
     else if(b.dataset.r) river(+b.dataset.r);
@@ -283,17 +329,29 @@ ${engine}
      and reduced to peaks — the real envelope, not a drawing of one. It needs
      no gesture, so the page has its waveforms before anything is clicked. */
 
-  const COLOR = { creep:'--bone', crit:'--gold', hero:'--bone', hurt:'--hurt', gold:'--gold', mana:'--mana', blink:'--blink' };
-  function trace(cv, kind){
+  // A bare name is the original seven; "i:kind[:amp]", "s:kind", "f:name",
+  // "st:kind" and "u:kind" reach the rest of the rig the way the buttons do.
+  function play(r, spec, p){
+    const [fam, kind, amp] = spec.split(':');
+    if(kind == null){
+      if(spec === 'blink') r.teleport(p, p, 0.12);
+      else if(spec === 'gold' || spec === 'mana') r.pickup(spec, 0, p);
+      else r.impact(spec, p);
+    }
+    else if(fam === 'i') r.impact(kind, p, amp ? +amp : undefined);
+    else if(fam === 's') r.shot(kind, p);
+    else if(fam === 'f') r[kind](p);
+    else if(fam === 'st') r.stinger(kind);
+    else if(fam === 'u') r.ui(kind);
+  }
+  function trace(cv, kind, sec){
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if(!OAC) return;
-    const sec = 0.75, sr = 44100;
-    const oc = new OAC(1, Math.floor(sr * sec), sr);
+    const sr = 44100;
+    const oc = new OAC(1, Math.floor(sr * (sec || 0.75)), sr);
     const r = createLaneSfx(oc);
     const p = { pan: 0, gain: 1 };
-    if(kind === 'blink') r.teleport(p, p, 0.12);
-    else if(kind === 'gold' || kind === 'mana') r.pickup(kind, 0, p);
-    else r.impact(kind, p);
+    play(r, kind, p);
     oc.startRendering().then(buf => {
       const d = buf.getChannelData(0);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -302,7 +360,12 @@ ${engine}
       const c = cv.getContext('2d');
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       const css = getComputedStyle(document.documentElement);
-      c.fillStyle = css.getPropertyValue(COLOR[kind] || '--bone').trim() || '#D8CBB0';
+      // The rail's colour, so the trace and the row agree about what family a
+      // sound is in without a second table to keep in step.
+      const row = cv.closest('.row');
+      const rail = row ? getComputedStyle(row).getPropertyValue('--rail').trim() : '';
+      const tok = rail.indexOf('var(') === 0 ? rail.slice(4, -1) : '';
+      c.fillStyle = (tok ? css.getPropertyValue(tok).trim() : '') || '#D8CBB0';
       const cols = w, per = Math.floor(d.length / cols);
       // Normalised per sound: these are shapes to compare, not levels.
       let peak = 1e-6;
@@ -319,7 +382,7 @@ ${engine}
   // to run before the listeners were attached, so one throw in here took the
   // whole page's interactivity with it.
   document.querySelectorAll('canvas[data-wave]').forEach(cv => {
-    try{ trace(cv, cv.dataset.wave); }catch(err){ console.error('trace failed', err); }
+    try{ trace(cv, cv.dataset.wave, cv.dataset.sec ? +cv.dataset.sec : 0); }catch(err){ console.error('trace failed', err); }
   });
 
   const vol = document.getElementById('vol'), volv = document.getElementById('volv');
