@@ -860,7 +860,6 @@
   .killBanner i{display:block;font-style:normal;font-size:15px;font-weight:800;letter-spacing:.2em;
     text-indent:.2em;color:#FFF3D6;margin-top:2px;}
   .killBanner.streak b{color:#FF9E80;}
-  @media (max-width:640px){ .killBanner b{font-size:38px;} .killBanner i{font-size:12px;} }
   @media (prefers-reduced-motion:reduce){ .killBanner{transition:opacity .16s ease;transform:none;} }
 
   /* Tutorial card. It sits above the dock rather than over it — the dock's
@@ -909,6 +908,11 @@
     100%{box-shadow:0 0 0 0 rgba(255,213,79,0);transform:scale(1);}
   }
   .tutPulse{animation:tutPulse 1s cubic-bezier(.4,0,.4,1) infinite;border-radius:10px;}
+  /* The skill square can wear both at once: the tutorial asking for a press and
+     the skill's own pop when it comes back. Listing the two keeps the ring
+     running through the half second readyPop used to take it away for. */
+  .ability.tutPulse.ready,.skillBtn.tutPulse.ready{animation:readyPop .45s ease-out, tutPulse 1s cubic-bezier(.4,0,.4,1) infinite;}
+  .ability.tutPulse.denied,.skillBtn.tutPulse.denied{animation:skillDeny .2s ease-out, tutPulse 1s cubic-bezier(.4,0,.4,1) infinite;}
   /* The party ROW gets highlighted for steps that are not about any one card
      (call the squad back, push a lane) — a keyboard press or a pinch, not a
      tap on a chip. Scaling three chips up and down as one block reads as
@@ -994,7 +998,8 @@
     .sPlus{width:15px;height:15px;font-size:11px;line-height:13px;}
     /* The strip scrolls sideways here, so a button at its far end is a
        button past the edge of the screen. Next to the label instead. */
-    .sAuto{order:-1;margin-left:0;padding:3px 7px;font-size:10px;}
+    .sAuto{order:-1;margin-left:0;margin-right:5px;padding:5px 9px;font-size:10px;min-height:28px;}
+    .killBanner b{font-size:38px;} .killBanner i{font-size:12px;}
     .tip{width:188px;font-size:10.5px;padding:6px 8px;}
     .waveBanner{top:13%;}
     .waveBanner span{font-size:15px;}
@@ -6020,13 +6025,17 @@ window.addEventListener('DOMContentLoaded', function(){
       // last thing left up. Only his: the rest of the team spends its own
       // points (grantXP).
       const line = (dy, text, color, big, life) => {
-        const f = { x:h.x, y:h.y-h.r-dy, spawnX:h.x, spawnY:h.y-h.r-dy, text, color,
+        const f = { x:h.x, y:h.y-dy, spawnX:h.x, spawnY:h.y-dy, text, color,
           big:!!big, isXp:false, crit:false, life:0, maxLife:life, owner:null, slotY:0 };
         floaters.push(f); return f;
       };
-      const head  = line(112, 'LEVEL UP!', '#FFD54F', true, 1.1);
-      const level = line(60,  'Lv.'+h.level, '#ffffff', true, 1.1);
-      const pts   = h===playerTeam[activePlayerIdx] ? line(12, '+3 PTS', '#8FE3FF', false, 1.3) : null;
+      // Hung off the top of the bar stack rather than off the hitbox, so the
+      // lines clear the hp/mana/xp bars and the level pill at any zoom instead
+      // of printing across the numbers the level-up just changed.
+      const top = h.y - heroAnchorY(h);
+      const head  = line(top + 100, 'LEVEL UP!', '#FFD54F', true, 1.1);
+      const level = line(top + 48,  'Lv.'+h.level, '#ffffff', true, 1.1);
+      const pts   = h===playerTeam[activePlayerIdx] ? line(top + 2, '+3 PTS', '#8FE3FF', false, 1.3) : null;
       h._lvFx = { head, level, pts, gained:3 };
     }
     h.levelGlow = 1.6; h.glowCol = FX_PAL.level.glow;
@@ -9942,6 +9951,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // still says which side it came from.
     if(dirX !== undefined) kickCam(dirX, dirY, 2.5 + frac*4);
   }
+  let hurtGrad = null, hurtGradW = 0, hurtGradH = 0;
   function drawHurtOverlay(){
     let a = hurtFlash;
     // Under 30% the rim breathes on its own, deeper the lower you are, so
@@ -9949,14 +9959,22 @@ window.addEventListener('DOMContentLoaded', function(){
     const me = playerTeam[activePlayerIdx];
     if(state==='playing' && me && me.alive){
       const f = me.hp/me.maxHp;
-      if(f < 0.3) a = Math.max(a, (0.25 + 0.5*(0.3-f)/0.3)*(0.6+0.4*Math.sin(performance.now()/1000*4)));
+      // From zero at the threshold, so it fades in rather than snapping on for
+      // a hero trading chip damage against regen on the boundary.
+      if(f < 0.3) a = Math.max(a, (0.8*(0.3-f)/0.3)*(0.6+0.4*Math.sin(performance.now()/1000*4)));
     }
     if(a <= 0.004) return;
-    const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.26, W/2,H/2, Math.max(W,H)*0.6);
-    g.addColorStop(0,    'rgba(198,26,26,0)');
-    g.addColorStop(0.62, 'rgba(188,20,20,'+(a*0.2).toFixed(3)+')');
-    g.addColorStop(1,    'rgba(146,8,8,'+(a*0.52).toFixed(3)+')');
-    ctx.save(); ctx.fillStyle=g; ctx.fillRect(0,0,W,H); ctx.restore();
+    // Built once per view size and faded with globalAlpha, the way the vignette
+    // is: re-authoring the stops allocated a full-screen gradient every frame
+    // for as long as a hero stayed low, which is when frames matter most.
+    if(!hurtGrad || hurtGradW !== W || hurtGradH !== H){
+      hurtGrad = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.26, W/2,H/2, Math.max(W,H)*0.5);
+      hurtGrad.addColorStop(0,    'rgba(198,26,26,0)');
+      hurtGrad.addColorStop(0.62, 'rgba(188,20,20,0.38)');
+      hurtGrad.addColorStop(1,    'rgba(146,8,8,0.85)');
+      hurtGradW = W; hurtGradH = H;
+    }
+    ctx.save(); ctx.globalAlpha = Math.min(1, a); ctx.fillStyle=hurtGrad; ctx.fillRect(0,0,W,H); ctx.restore();
   }
 
   // ---------- input ----------
@@ -10880,6 +10898,8 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   function useSkill(h,dx,dy,wmx,wmy){
+    h.skillReadyT = 0;   // spent: the pop belongs to the cooldown ENDING, not to this
+
     if(h.type==='carry') triggerDash(h,dx,dy,wmx,wmy);
     else if(h.type==='tank') castRocket(h,wmx,wmy);
     else if(h.type==='support') castHeal(h,HEAL_RANGE_MANUAL);
@@ -11220,13 +11240,14 @@ window.addEventListener('DOMContentLoaded', function(){
     target.hp -= dmg; target.flash = 0.2;
     sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : 'hero', target.x, target.y);
     registerHurt(target, dmg, target.x-c.x, target.y-c.y);
-    addHitFloater(target, dmg, dmgColor(target.side==='player', false), false);
+    addHitFloater(target, dmg, dmgColor(target.side==='player', false), false, false);
     applyKnockbackImpulse(target, target.x-c.x, target.y-c.y, KNOCKBACK_HERO*0.45);
     if(target.hp<=0){
       target.alive=false; target.respawnTimer=RESPAWN_TIME; target.hp=0;
       addScore(target.side==='player' ? 'enemy' : 'player', PTS.hero, target.x, target.y);
       addBurst(target.x, target.y, '#FF6B6B', 24, 2.2);
       spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL, target.maxHp);
+
       if(target===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.35);
       noteHeroKill(target, null, c.neutral ? 'THE FOREST' : 'CREEPS');
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
@@ -11446,10 +11467,13 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   // Damage over a hero goes into that hero's column. Damage over anything else
   // stays where it landed, because there the position IS the information.
-  function addHitFloater(victim, dmg, color, crit){
+  // `big` and `crit` are separate answers: a killing blow is bigger, a crit
+  // wears the word. Overloading one argument onto both printed "CRITICAL" over
+  // every hero death — and a hero can never crit (see applyHeroHit).
+  function addHitFloater(victim, dmg, color, crit, big){
     const isHero = !!(victim.type && HERO_STATS[victim.type]);
-    if(isHero) addFloater(victim.x, heroAnchorY(victim), String(dmg), color, crit, false, crit, victim);
-    else addFloater(victim.x, victim.y-victim.r-8, String(dmg), color, crit, false, crit);
+    if(isHero) addFloater(victim.x, heroAnchorY(victim), String(dmg), color, big, false, crit, victim);
+    else addFloater(victim.x, victim.y-victim.r-8, String(dmg), color, big, false, crit);
   }
   // A shot mana refused is the one refusal with nothing to see: no bullet, no
   // sound, and on touch the aim ping still lands where you pointed, so the tap
@@ -11726,7 +11750,10 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const h of playerTeam){
       if(!h.alive) continue;
       const d=dist(x,y,h.x,h.y);
-      if(d < (h===you ? PICKUP_MAGNET_RADIUS_YOU : PICKUP_MAGNET_RADIUS) && d<bd){bd=d;best=h;}
+      // Not in the tutorial: its orbs never expire, so a wider reach quietly
+      // banks a lesson's worth of them and the levels step arrives as old news.
+      const reach = (h===you && !tut.on) ? PICKUP_MAGNET_RADIUS_YOU : PICKUP_MAGNET_RADIUS;
+      if(d < reach && d<bd){bd=d;best=h;}
     }
     for(const h of enemyTeam){ if(h.alive){ const d=dist(x,y,h.x,h.y); if(d<PICKUP_MAGNET_RADIUS && d<bd){bd=d;best=h;} } }
     return best;
@@ -12439,10 +12466,14 @@ window.addEventListener('DOMContentLoaded', function(){
   }
 
   // Every switch goes through here so the camera always knows one happened.
-  function focusHero(i){
+  function focusHero(i, quiet){
     if(i<0 || i>=playerTeam.length || !playerTeam[i].alive) return false;
     if(i!==activePlayerIdx){
-      sfxUi('switch');
+      // A press the LAST hero was refused is not a press this one made. Without
+      // this, holding a dash on cooldown and then taking over the tank fired a
+      // rocket nobody aimed — and completed the tutorial's squad step by itself.
+      skillBufferT = 0; clickBufferT = 0; skillDenyT = 0;
+      if(!quiet) sfxUi('switch');
       glideCam();
       dropRocketCam();   // you asked for a different hero; the shell keeps flying without the camera
       // The hero you were driving holds where you left him instead of quietly
@@ -12485,7 +12516,9 @@ window.addEventListener('DOMContentLoaded', function(){
   function switchToNextLiving(){
     for(let step=1; step<=3; step++){
       const idx=(activePlayerIdx+step)%3;
-      if(focusHero(idx)) return;
+      // Quietly: this is the game moving you off a corpse, not a button you
+      // pressed, and the confirmation tick belongs to the press.
+      if(focusHero(idx, true)) return;
     }
   }
   function cyclePlayer(dir){
@@ -12833,9 +12866,11 @@ window.addEventListener('DOMContentLoaded', function(){
       // Refused. A press a hair early waits for the cooldown; a press with no
       // mana behind it says so on the bar. Either way the widget shakes, so a
       // press that did nothing is seen to have done nothing.
+      // A press a hair early is not refused, it is held — the pop when the
+      // cooldown lands is its answer, and shaking "no" at it contradicts the
+      // skill firing a moment later. Only a real refusal shakes.
       if(h.skillCd>0 && !skillLive) skillBufferT = TAP_BUFFER;
-      else if(h.skillCd<=0 && h.mana<s.skillManaCost) noteNoMana(h);
-      skillDenyT = 0.2;
+      else { if(h.skillCd<=0 && h.mana<s.skillManaCost) noteNoMana(h); skillDenyT = 0.2; }
     }
     const len=Math.sqrt(dx*dx+dy*dy)||1;
     const spd = heroSpeed(h, dx, dy);          // the keys say which way: the current can read them
@@ -14167,9 +14202,11 @@ window.addEventListener('DOMContentLoaded', function(){
     // regens between hits instead of retaliating.
     if(creep.huge && attackerHero){ creep.lastAttacker = attackerHero; creep.lastAttackerT = 4; }
     sfxImpact(isCrit ? 'crit' : (meleeHitCtx ? 'heavy' : 'creep'), creep.x, creep.y);
-    // The killing blow prints gold and big: at a glance, that number was the
-    // one that mattered.
-    addFloater(creep.x, creep.y-creep.r-6, String(dmg), lethal ? '#FFD54F' : dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit || lethal, false, isCrit);
+    // The killing blow prints gold and big — but only YOURS. Two waves trading
+    // in a lane kill each other a dozen times a minute, and gold on all of it
+    // marks the busiest thing on screen rather than the one that was yours.
+    const mineKill = lethal && attackerHero === playerTeam[activePlayerIdx];
+    addFloater(creep.x, creep.y-creep.r-6, String(dmg), mineKill ? '#FFD54F' : dmgColor(side==='enemy' && !creep.neutral, isCrit), isCrit || mineKill, false, isCrit);
     addBurst(creep.x, creep.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5, 1.4);
     applyKnockbackImpulse(creep, dirX, dirY, KNOCKBACK_CREEP*(isCrit?1.7:1));
     if(isCrit && side==='player') shake=Math.max(shake,0.25);
@@ -14227,7 +14264,11 @@ window.addEventListener('DOMContentLoaded', function(){
     // ones your team-mates take: it is the only one you have to react to.
     sfxImpact(target===playerTeam[activePlayerIdx] ? 'hurt' : (meleeHitCtx ? 'heavy' : 'hero'), target.x, target.y);
     registerHurt(target, dmg, dirX, dirY);
-    addHitFloater(target, dmg, lethal ? '#FFD54F' : dmgColor(target.side==='player', isCrit), isCrit || lethal);
+    // Gold and big is "you did that", so it is only ever an ENEMY hero dying to
+    // the hero you are driving. Your own death keeps the red it has always had:
+    // the one number that should read as bad news must not read as a reward.
+    const mine = lethal && target.side === 'enemy' && attackerHero === playerTeam[activePlayerIdx];
+    addHitFloater(target, dmg, mine ? '#FFD54F' : dmgColor(target.side==='player', isCrit), isCrit, isCrit || mine);
     addBurst(target.x, target.y, isCrit?'#FFD54F':'#FFF3D6', isCrit?12:5, 1.4);
     applyKnockbackImpulse(target, dirX, dirY, KNOCKBACK_HERO*(isCrit?1.5:1));
     if(isCrit) shake=Math.max(shake,0.25);
@@ -14266,7 +14307,8 @@ window.addEventListener('DOMContentLoaded', function(){
       } else {
         showKillBanner('ENEMY DOWN', cause || 'TOWER', false);
         sfxKill('heroKill', target.x, target.y);
-        roundStats.heroKills++;
+        // Not counted as a kill: the end card's number is what YOUR heroes did,
+        // and a forest camp finishing an enemy carry is not that.
       }
     } else {
       target.streak = 0;
@@ -14305,7 +14347,10 @@ window.addEventListener('DOMContentLoaded', function(){
     h.alive=true; h.hp=h.maxHp; h.mana=h.maxMana;
     h.x=h.homeX; h.y=h.homeY; h.vx=0; h.vy=0; h.invuln=0.5; h.kt=0; h.dashing=false;
     h.standX=null; h.standY=null; h.siegeT=null; h.backoffT=0;
-    if(h.side==='player') sfxRespawn(h.x, h.y);
+    h.flash = 0;         // a corpse's flash never ticks, so it would pop white here
+    // Unplaced for the hero you are driving: the camera is still where he died,
+    // and placing it there is silent whenever that was past the middle of the map.
+    if(h.side==='player'){ if(h===playerTeam[activePlayerIdx]) sfxRespawn(); else sfxRespawn(h.x, h.y); }
     // a corpse must never stay latched as a sticky target
     h._laneT=null; h._campT=null; h._campSpook=null; h._closeTo=null; h._act=null; h._actT=0;
     h._campClaim=null; h._campSeen=0; h._task=null; h._taskT=0;
@@ -14369,12 +14414,12 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.drawImage(sheet, f*APEX_FRAME_W, 0, APEX_FRAME_W, APEX_FRAME_H, -sw/2, c.r*0.9-sh, sw, sh);
       const flashSheet = swinging ? apexAtkFlash : apexFlash;
       if(c.flash>0 && flashSheet){
-        ctx.globalAlpha = Math.min(1, c.flash*5);
+        ctx.globalAlpha = flashAlpha(c.flash);
         ctx.drawImage(flashSheet, f*APEX_FRAME_W, 0, APEX_FRAME_W, APEX_FRAME_H, -sw/2, c.r*0.9-sh, sw, sh);
         ctx.globalAlpha = 1;
       }
       ctx.restore();
-      const bw = c.r*1.9, bh = 6;
+      const au = unitsPerPx(), bw = Math.max(c.r*1.9, 30*au), bh = 6*au;
       drawBar(-bw/2, -c.r*2.55-12, bw, bh, c.hp/c.maxHp, c.hpLag, HP_COLOR);
       ctx.restore();
       return;
@@ -14449,7 +14494,10 @@ window.addEventListener('DOMContentLoaded', function(){
       // Screen-pixel sizes, like the heroes' (see heroBarGeom); the hang is
       // still in world units because the sprite it hangs off is.
       const u = unitsPerPx();
-      const bw = Math.max(c.r*1.9, 30*u), bh = (c.big?5:3.5)*u;
+      // Capped to the wave's own lateral pitch: three escorts 46 units apart
+      // with 75-unit bars is one slab, and a bar that cannot be told from its
+      // neighbour's says nothing at all.
+      const bw = Math.min(WAVE_SPACING*0.85, Math.max(c.r*1.9, 30*u)), bh = (c.big?5:3.5)*u;
       drawBar(-bw/2, c.r*MOB_FOOT - sh*MOB_HEAD - 10 - bh, bw, bh, c.hp/c.maxHp, c.hpLag, HP_COLOR);
       ctx.restore();
       return;
@@ -14601,14 +14649,19 @@ window.addEventListener('DOMContentLoaded', function(){
     ctx.strokeStyle='rgba(90,200,232,.3)';
     // World units on a camera that is not 1:1 (see drawRocketSplashRings), so
     // the dash and the stroke scale with the zoom to stay the same on screen.
-    ctx.setLineDash([9*VIEW_ZOOM,11*VIEW_ZOOM]); ctx.lineWidth=2*VIEW_ZOOM;
+    const ru = unitsPerPx();
+    ctx.setLineDash([9*ru,11*ru]); ctx.lineWidth=2*ru;
     const R = attackRange(h);
     if(HERO_STATS[h.type].melee){
       // A sword reaches into a cone, not a circle. The wedge is the swing
       // meleeSwing will actually make, turned with him, so what is in it is
-      // what the click will hit.
+      // what the click will hit — and it is filled, because two dashed strokes
+      // a hundred units apart do not read as one shape over grass.
       const a = h.facing;
-      ctx.beginPath(); ctx.moveTo(h.x,h.y); ctx.arc(h.x,h.y,R,a-MELEE_HALF_ARC,a+MELEE_HALF_ARC); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(h.x,h.y); ctx.arc(h.x,h.y,R,a-MELEE_HALF_ARC,a+MELEE_HALF_ARC); ctx.closePath();
+      ctx.fillStyle='rgba(90,200,232,.10)'; ctx.fill();
+      ctx.setLineDash([]); ctx.lineWidth=3*ru; ctx.strokeStyle='rgba(90,200,232,.5)';
+      ctx.stroke();
     } else {
       ctx.beginPath(); ctx.arc(h.x,h.y,R,0,7); ctx.stroke();
     }
@@ -14806,7 +14859,10 @@ window.addEventListener('DOMContentLoaded', function(){
     if(showXp){ y -= xpH; xpY = y; y -= gap; }
     if(showMana){ y -= mpH; mpY = y; y -= gap; }
     y -= hpH;
-    return { u, w: Math.max(h.r*2.2, (you ? 56 : 44)*u), hpH, mpH, xpH, hpY: y, mpY, xpY };
+    // Clamped against the hero himself: the floor was written for the desktop
+    // view, where a 5-unit bar had become two pixels. The phone never had that
+    // problem and a bar wider than the man under it is its own kind of wrong.
+    return { u, w: Math.min(Math.max(h.r*2.2, (you ? 56 : 44)*u), h.r*3.4), hpH, mpH, xpH, hpY: y, mpY, xpY };
   }
   function drawHeroBars(h, showMana, showXp){
     const g = heroBarGeom(h, showMana, showXp), u = g.u, w = g.w;
@@ -14910,7 +14966,7 @@ window.addEventListener('DOMContentLoaded', function(){
     }
     // Drawn in world units, and the desktop world is drawn small: scaled by
     // the zoom so the crosshair is the same size to look at on either.
-    const u = VIEW_ZOOM;
+    const u = unitsPerPx();
     ctx.save(); ctx.translate(rx,ry);
     ctx.strokeStyle = capped ? 'rgba(200,80,50,.75)' : 'rgba(90,62,27,.65)';
     ctx.lineWidth=1.6*u;
@@ -15438,6 +15494,8 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx.restore();
     }
     if(anyAlive || soonest === Infinity) return;
+    // The centred banner is already counting the soonest one down; its own mark
+    // would print the same number over the same corpse.
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.font = "800 "+(30*u)+"px 'Baloo 2', sans-serif";
@@ -15547,7 +15605,6 @@ window.addEventListener('DOMContentLoaded', function(){
     drawAimLine(worldMouseX, worldMouseY);
     drawOrders();
     drawPings();
-    drawSlashes();
     drawRocketSplashRings();   // an aim marker, so it sits with the ranges and under the units
 
     drawBurns();            // scorched ground, under everything that walks on it
@@ -15722,6 +15779,10 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
+    // Over the units, not under them: the one thing a swing's arc has to say is
+    // how far it reached, and in the crowded swing it exists for it was being
+    // painted beneath the bodies it had just cut.
+    drawSlashes();
     for(const list of [allyCreeps, enemyCreeps, neutralCreeps])
       for(const c of list) if(isStunned(c) && onScreen(c.x,c.y,60)) drawStunMark(c);
     for(const list of [playerTeam, enemyTeam])
@@ -15819,11 +15880,12 @@ window.addEventListener('DOMContentLoaded', function(){
       const bob = Math.sin(performance.now()/260)*2;
       ctx.save();
       ctx.textAlign = 'center';
-      ctx.font = "800 "+(15*VIEW_ZOOM)+"px 'Baloo 2', sans-serif";   // world units: see drawReticle
-      ctx.lineWidth = 4*VIEW_ZOOM; ctx.strokeStyle = '#5A3E1B';
-      ctx.strokeText(label, rocketCam.x, rocketCam.y - 30*VIEW_ZOOM + bob);
+      const lu = unitsPerPx();   // world units per css px: the real conversion
+      ctx.font = "800 "+(15*lu)+"px 'Baloo 2', sans-serif";
+      ctx.lineWidth = 4*lu; ctx.strokeStyle = '#5A3E1B';
+      ctx.strokeText(label, rocketCam.x, rocketCam.y - 30*lu + bob);
       ctx.fillStyle = '#FFD54F';
-      ctx.fillText(label, rocketCam.x, rocketCam.y - 30*VIEW_ZOOM + bob);
+      ctx.fillText(label, rocketCam.x, rocketCam.y - 30*lu + bob);
       ctx.restore();
     }
 
@@ -15962,17 +16024,21 @@ window.addEventListener('DOMContentLoaded', function(){
       skillBtnCdEl.style.height = curtain+'%';
       // Whole seconds only: under one the curtain is nearly gone and a "1"
       // that lingers reads as slower than the cooldown really is.
-      const cdNum = activeH.skillCd >= 1 ? String(Math.ceil(activeH.skillCd)) : '';
+      // A shell in the air is the one state where the square is NOT unavailable:
+      // the canvas is telling the player to press it again, so it must not also
+      // be wearing a countdown and a grey coat.
+      const armedNow = hasLiveRocket(activeH);
+      const cdNum = (!armedNow && activeH.skillCd >= 1) ? String(Math.ceil(activeH.skillCd)) : '';
       if(dashCdNumEl.textContent !== cdNum){ dashCdNumEl.textContent = cdNum; skillBtnCdNumEl.textContent = cdNum; }
       // A shell in the air turns the skill into a detonator for as long as it is
       // up. The button glows, because a second press that does something new is
       // worth more than a cooldown ring nobody is watching. The rest are the
       // skill's own states: cooling, the pop when it comes back, a refused
       // press, and no mana to cast it with.
-      const armed = hasLiveRocket(activeH);
+      const armed = armedNow;
       for(const wdg of [dashCdFillEl.parentNode, skillBtnEl]){
         wdg.classList.toggle('armed', armed);
-        wdg.classList.toggle('cooling', activeH.skillCd > 0);
+        wdg.classList.toggle('cooling', activeH.skillCd > 0 && !armed);
         wdg.classList.toggle('ready', activeH.skillReadyT > 0);
         wdg.classList.toggle('denied', skillDenyT > 0);
         wdg.classList.toggle('noMana', noMana);
@@ -16067,6 +16133,8 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const k of STAT_KEYS) h.statLv[k] = 1 + (START_BUILD[h.type][k] || 0);
     recomputeStats(h);
     h.level=1; h.xp=0; h.xpToNext=xpForLevel(1); h.points=0;
+    // Last round's fight must not be playing under this one's first seconds.
+    h.combatT=99; h.skillReadyT=0; h.flash=0; h._musicHit=false; h._musicCt=null;
     h.homeX=hx; h.homeY=hy; h.x=hx; h.y=hy; h.vx=0; h.vy=0;
     h.maxHp=h.stats.maxHp; h.hp=h.maxHp; h.maxMana=h.stats.maxMana; h.mana=h.maxMana;
     h.alive=true; h.respawnTimer=0;
@@ -17568,8 +17636,9 @@ window.addEventListener('DOMContentLoaded', function(){
     mouse.x = W/2; mouse.y = H/2;
     timeLeft = (gameMode==='survival' || gameMode==='openworld') ? 0 : ROUND_TIME;
     xpLooted=0; lastHits=0; spawnTimer=0; shake=0; hitStop=0; kick.t=9; roundSeconds=0; isMouseDown=false; assembleCd=0;
-    for(const h of playerTeam){ h.sprintT = 0; h.streak = 0; h.killRun = 0; h.lastKillT = -9; }
+    for(const h of playerTeam){ h.sprintT = 0; h.streak = 0; h.killRun = 0; h.lastKillT = -9; h.skillReadyT = 0; }
     roundStats = { heroKills:0, deaths:0, streak:0, bestStreak:0, creepKills:0 };
+    killBump = 0;
     firstWaveSpawns = 0;
     hideKillBanner();
     score = { player:0, enemy:0 };
@@ -18957,7 +19026,9 @@ window.addEventListener('DOMContentLoaded', function(){
     if(!p) return;
     if(!sfxGate('boom', 0.08)) return;
     sfxRig.impact('boom', p, quiet ? 0.5 : 1);
-    musicDuck(0.6, 0.6);
+    // A hero's rocket is an event; a tower shells the wave every second, and a
+    // score that dips for each of them pumps for the whole of any siege.
+    if(!quiet) musicDuck(0.6, 0.6);
   }
 
   // 'stone' on every shell, 'collapse' once. The stone gate is what turns a
