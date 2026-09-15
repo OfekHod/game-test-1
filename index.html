@@ -11411,7 +11411,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // cone on the frame of the click with nothing on screen but a puff at the
   // hand, so the reach and the shape of a hit were a guess.
   let slashes = [];
-  function addSlash(h, ang, reach){ slashes.push({ h, ang, reach, life:0, max:0.16 }); }
+  function addSlash(h, ang, reach){ slashes.push({ h, ang, reach, life:0, max:0.24 }); }
   function updateSlashes(dt){
     for(let i=slashes.length-1;i>=0;i--){ slashes[i].life+=dt; if(slashes[i].life>slashes[i].max) slashes.splice(i,1); }
   }
@@ -11419,14 +11419,16 @@ window.addEventListener('DOMContentLoaded', function(){
     for(const sl of slashes){
       const t = sl.life/sl.max, h = sl.h;
       if(!onScreen(h.x, h.y, sl.reach+40)) continue;
-      const a0 = sl.ang - MELEE_HALF_ARC, sweep = MELEE_HALF_ARC*2*Math.min(1, t/0.6 + 0.25);
-      const R = sl.reach + h.r*0.6;
+      const a0 = sl.ang - MELEE_HALF_ARC, sweep = MELEE_HALF_ARC*2*Math.min(1, t/0.5 + 0.3);
+      const R = sl.reach + h.r*0.6, u = unitsPerPx();
       ctx.save();
-      ctx.globalAlpha = (1-t)*0.9;
-      ctx.strokeStyle = h.side==='player' ? '#FFE9A6' : '#FFB39E';
-      ctx.lineCap = 'round'; ctx.lineWidth = 6*(1-t) + 2;
+      ctx.globalAlpha = (1-t)*0.95;
+      ctx.strokeStyle = h.side==='player' ? '#FFF1C4' : '#FFB39E';
+      // Stroke width in screen pixels: a world-unit line was two pixels on a
+      // desktop and vanished under the number it was meant to explain.
+      ctx.lineCap = 'round'; ctx.lineWidth = (4*(1-t) + 1.5)*u;
       ctx.beginPath(); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.stroke();
-      ctx.globalAlpha = (1-t)*0.22;
+      ctx.globalAlpha = (1-t)*0.3;
       ctx.fillStyle = ctx.strokeStyle;
       ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.closePath(); ctx.fill();
       ctx.restore();
