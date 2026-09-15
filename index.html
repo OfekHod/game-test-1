@@ -3159,12 +3159,16 @@ window.addEventListener('DOMContentLoaded', function(){
   // A phone is held close and shows a small window; a monitor is further away
   // and can carry far more map. Raising the logical resolution on desktop
   // means everything is drawn smaller and more of the map is visible at once.
-  // 1.5, down from 2: at twice the phone's view the hero you are driving was
-  // a thumbnail of himself, and a hit you cannot see landing does not land.
+  // 2.25, up from 1.5: the desktop camera sits half again as far back, so a
+  // lane's worth of fight fits on the screen instead of the stretch either
+  // side of you. The sprite pays for it — the earlier 2 was pulled back to 1.5
+  // because the hero was a thumbnail of himself — so anything meant to be READ
+  // at this distance has to be sized in world units against VIEW_ZOOM, not
+  // guessed at (see drawRippleRing, and the lineWidth at the drag ray).
   // Everything that sizes off the view (W, H, VIEW_AREA, the tile pool, the
   // minimap's placement) follows from this one number.
   const DESKTOP = !(('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
-  const VIEW_ZOOM = DESKTOP ? 1.5 : 1;
+  const VIEW_ZOOM = DESKTOP ? 2.25 : 1;
   const BASE_W = 1600*VIEW_ZOOM, BASE_H = 1000*VIEW_ZOOM;
   const VIEW_AREA = BASE_W*BASE_H;
   // THE WORLD MUST NOT SCALE WITH THE VIEW. WORLD_W was derived from BASE_W, so
@@ -3197,10 +3201,19 @@ window.addEventListener('DOMContentLoaded', function(){
   // off of it and runs long before drawMinimap is ever called.
   // 30% bigger than the original 150 — towers and hero faces need the room.
   const MM_SCALE = 1.3;
-  let MM_W = Math.round(150*MM_SCALE), MM_H = Math.round(150*MM_SCALE);
+  // THE PANEL IS MEASURED IN WORLD UNITS, so every step the camera takes back
+  // shrinks it on screen even though nothing about it changed. Moving desktop
+  // from 1.5 to 2.25 took a 195-unit panel down by a third — small enough that
+  // a fallen tower's pip no longer read as different from a standing one — so
+  // the camera's move is carried into the panel and it holds the size it has
+  // always had. Desktop only: the phone camera has not moved (VIEW_ZOOM is 1
+  // there), and 1.5 is the zoom the panel's numbers below were chosen against.
+  const MM_VIEW = DESKTOP ? VIEW_ZOOM/1.5 : 1;
+  let MM_W = Math.round(150*MM_SCALE*MM_VIEW), MM_H = Math.round(150*MM_SCALE*MM_VIEW);
   let MM_WORLD = 4000;                // how much world the panel shows (A1)
   const MM_TOP = 16, MM_RIGHT = 16;   // MM_W/MM_H follow the window in Open World (A1)
-  const MM_CAMP_R = 2.8*MM_SCALE, MM_TOWER_R = 6.5, MM_TOWER_R_MAIN = 9.5, MM_HERO_R = 8;
+  const MM_CAMP_R = 2.8*MM_SCALE*MM_VIEW, MM_TOWER_R = 6.5*MM_VIEW,
+        MM_TOWER_R_MAIN = 9.5*MM_VIEW, MM_HERO_R = 8*MM_VIEW;
 
   // The canvas fills the stage and the stage fills the screen. Logical
   // resolution follows the stage's real measured size rather than
@@ -7426,7 +7439,7 @@ window.addEventListener('DOMContentLoaded', function(){
       return '<b>'+names[h.type]+'</b>Hold to fire. Shots fly exactly where you point.<br><i>'
         + Math.round(heroBasicDmg(h))+' damage &middot; '+s.basicInterval.toFixed(2)+'s between shots &middot; '+s.basicManaCost+' mana</i>';
     }
-    if(h.type==='carry') return '<b>Dash</b>Blink forward, damaging everything you pass through, and briefly untargetable. '
+    if(h.type==='carry') return '<b>Dash</b>Blink the way you are aiming &mdash; wherever a shot would go, walking or not &mdash; damaging everything you pass through, and briefly untargetable. '
       + 'Anything that dies on the way through refunds the cooldown instantly &mdash; chain it as long as your mana holds.<br><i>'
       + Math.round(heroDashDmg(h))+' damage &middot; '+Math.round(heroDashDist(h))+' range &middot; '+s.skillManaCost+' mana &middot; '+s.skillCd.toFixed(1)+'s cooldown<br>Range grows every level.</i>';
     if(h.type==='tank') return '<b>Rocket</b>A slow rocket that explodes on impact and hits everything in the blast. '
@@ -14233,7 +14246,14 @@ window.addEventListener('DOMContentLoaded', function(){
         say = h.y + Math.sin(h.facing)*ROCKET_TRAVEL_MAX;
       }
       skillBufferT = 0;
-      useSkill(h,dx,dy,sax,say);
+      // The blink goes where you are AIMING, never where you are walking. On a
+      // mouse that is the cursor — the same point a click would shoot at — so
+      // blinking backwards out of a fight no longer needs you to let go of the
+      // keys first, which is the one moment you least want to be tidying up
+      // your left hand. triggerDash falls back to the aim point when the
+      // direction it is handed is zero, so the desktop path simply never hands
+      // it one. Touch still passes the stick, where the aim ray IS the stick.
+      useSkill(h, usedTouch?dx:0, usedTouch?dy:0, sax, say);
       if(tut.on) tutNote('skill', h.type);
     } else if(skillPressed){
       // Refused. A press a hair early waits for the cooldown; a press with no
@@ -16513,7 +16533,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // still being evaluated.
   function owMinimapSize(){
     MM_WORLD = Math.max(4000, Math.min(8000, 2.2*Math.max(W, H)));
-    const px = Math.max(195, Math.min(300, Math.round(MM_WORLD/20.5)));
+    // MM_WORLD already follows the view, so the ratio the panel takes of the
+    // screen holds on its own — it is the two ENDS that are fixed world sizes,
+    // and at VIEW_ZOOM 2.25 a desktop hit the 300 ceiling and started shrinking
+    // again. Both ends move with the camera, same as MM_W does above.
+    const px = Math.round(Math.max(195*MM_VIEW, Math.min(300*MM_VIEW, MM_WORLD/20.5)));
     MM_W = MM_H = px;
   }
   // A4: what you have seen stays drawn, dimmed; what you can see right now is
@@ -18090,7 +18114,7 @@ window.addEventListener('DOMContentLoaded', function(){
   {
     title:'The blink',
     text:()=>tutPick(
-      '<k>Space</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.',
+      '<k>Space</k> blinks you at the cursor &mdash; wherever a click would shoot, whichever way you are walking &mdash; damaging everything you pass through and leaving you untargetable. A kill in passing refunds the cooldown.',
       'The <k>square button</k> blinks you forward, damaging everything you pass through and leaving you untargetable on the way. A kill in passing refunds the cooldown.'),
     goal:()=>'Kill this one with the blink alone',
     // No take-over stage first — you are already driving him — so the arrow
