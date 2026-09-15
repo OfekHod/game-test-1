@@ -5,3 +5,6 @@ node_modules/
 # Artifact test builds (tools/artifact-html.js output) — published to Claude,
 # not checked in.
 /lane-*.html
+
+# Isolated worktrees the coding agent creates while working on a branch
+/.claude/worktrees/
