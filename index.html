@@ -10636,7 +10636,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // A melee hero gains reach at a third the rate, so investing in range still
     // helps it connect without ever turning the sword into a rifle.
     const reach = attackRange(h), dmg = heroBasicDmg(h);
-    addSlash(h, ang, reach);
+    const swingFx = addSwing(h, ang, reach);
     const inArc = (x,y,r)=> dist(h.x,h.y,x,y) <= reach + r &&
       Math.abs(angleDiff(ang, Math.atan2(y-h.y, x-h.x))) <= MELEE_HALF_ARC;
     addBurst(h.x+Math.cos(ang)*h.r*1.6, h.y+Math.sin(ang)*h.r*1.6, '#FFE9A6', 9);
@@ -10673,6 +10673,7 @@ window.addEventListener('DOMContentLoaded', function(){
       applyCreepHit(c, list, idx, h.side, c.x-h.x, c.y-h.y, dmg, h);
     }
     meleeHitCtx = false;
+    swingFx.hit = (heroHits.length + creepHits.length) > 0;
     if(heroHits.length || creepHits.length) refundOnHit(h);
     // Buildings only if the sweep found nothing living — otherwise a hero
     // standing at its own tower would soak a free hit on the tower every swing.
@@ -11632,31 +11633,51 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   }
   let pings = [];
-  // A swing's arc, drawn for a few frames: the sword used to resolve its whole
-  // cone on the frame of the click with nothing on screen but a puff at the
-  // hand, so the reach and the shape of a hit were a guess.
-  let slashes = [];
+  // THE REACH IS SHOWN BY USING IT. A cone drawn under the tank at all times is
+  // furniture — the eye stops seeing it within a minute, and it sits over the
+  // grass he is walking on. So the same wedge is drawn only on the swing that
+  // spent it, blooming from half its reach out to all of it and gone in a third
+  // of a second: the shape still says exactly what the click covered, and it
+  // says it at the moment the answer is worth something.
+  let swings = [];
   let meleeHitCtx = false;   // true while a swing is resolving its hits
-  function addSlash(h, ang, reach){ slashes.push({ h, ang, reach, life:0, max:0.24 }); }
-  function updateSlashes(dt){
-    for(let i=slashes.length-1;i>=0;i--){ slashes[i].life+=dt; if(slashes[i].life>slashes[i].max) slashes.splice(i,1); }
+  const SWING_FX_TIME = 0.34;
+  function addSwing(h, ang, reach){
+    const sw = { h, ang, reach, hit:false, life:0, max:SWING_FX_TIME };
+    swings.push(sw); return sw;
   }
-  function drawSlashes(){
-    for(const sl of slashes){
-      const t = sl.life/sl.max, h = sl.h;
-      if(!onScreen(h.x, h.y, sl.reach+40)) continue;
-      const a0 = sl.ang - MELEE_HALF_ARC, sweep = MELEE_HALF_ARC*2*Math.min(1, t/0.5 + 0.3);
-      const R = sl.reach + h.r*0.6, u = unitsPerPx();
+  function updateSwings(dt){
+    for(let i=swings.length-1;i>=0;i--){ swings[i].life+=dt; if(swings[i].life>swings[i].max) swings.splice(i,1); }
+  }
+  function drawSwings(){
+    const u = unitsPerPx();
+    for(const sw of swings){
+      const t = sw.life/sw.max, h = sw.h;
+      if(!onScreen(h.x, h.y, sw.reach+40)) continue;
+      // Out, not around: the radius eases to full and the alpha rises over the
+      // first frames before it goes, so it reads as a bloom rather than a
+      // flicker. A swing that connected is the brighter one — the same shape
+      // twice over is the difference between a miss and a hit.
+      const e = 1 - Math.pow(1-t, 2.2);
+      const R = sw.reach*(0.5 + 0.5*e) + h.r*0.5;
+      const a = (t < 0.15 ? t/0.15 : Math.pow(1 - (t-0.15)/0.85, 1.6)) * (sw.hit ? 1 : 0.62);
+      const rgb = h.side==='player' ? '90,200,232' : '232,150,120';
+      const a0 = sw.ang - MELEE_HALF_ARC, a1 = sw.ang + MELEE_HALF_ARC;
       ctx.save();
-      ctx.globalAlpha = (1-t)*0.95;
-      ctx.strokeStyle = h.side==='player' ? '#FFF1C4' : '#FFB39E';
-      // Stroke width in screen pixels: a world-unit line was two pixels on a
-      // desktop and vanished under the number it was meant to explain.
-      ctx.lineCap = 'round'; ctx.lineWidth = (4*(1-t) + 1.5)*u;
-      ctx.beginPath(); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.stroke();
-      ctx.globalAlpha = (1-t)*0.3;
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.arc(h.x, h.y, R, a0, a0 + sweep); ctx.closePath(); ctx.fill();
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.arc(h.x, h.y, R, a0, a1); ctx.closePath();
+      ctx.fillStyle = 'rgba('+rgb+','+(a*0.22).toFixed(3)+')';
+      ctx.fill();
+      // The two sides are the quiet part of the shape; the far edge is the one
+      // that is travelling, so it carries the weight. Without that the wedge
+      // grows without ever looking like it is moving.
+      ctx.lineWidth = (1.6*(1-t) + 0.9)*u;
+      ctx.strokeStyle = 'rgba('+rgb+','+(a*0.42).toFixed(3)+')';
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(h.x, h.y, R, a0, a1);
+      ctx.lineWidth = (3.4*(1-t) + 1.4)*u;
+      ctx.strokeStyle = 'rgba('+rgb+','+(a*0.9).toFixed(3)+')';
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -12638,7 +12659,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateAssembleAuras(dt);
     updateDashFx(dt);
     updatePings(dt);
-    updateSlashes(dt);
+    updateSwings(dt);
     updateFireBlasts(dt);
     updateBirds(dt);
     updateHudSparks(dt);
@@ -14638,26 +14659,16 @@ window.addEventListener('DOMContentLoaded', function(){
   function drawTowerRange(t){ ctx.save(); ctx.strokeStyle='rgba(90,62,27,.15)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(t.x,t.y,TOWER_RANGE,0,7); ctx.stroke(); ctx.restore(); }
 
   function drawAttackRange(h){
+    // A sword's reach is not a standing ring: drawSwings blooms the cone on the
+    // swing that used it, which is the moment the shape answers a question.
+    if(HERO_STATS[h.type].melee) return;
     ctx.save();
     ctx.strokeStyle='rgba(90,200,232,.3)';
     // World units on a camera that is not 1:1 (see drawRocketSplashRings), so
     // the dash and the stroke scale with the zoom to stay the same on screen.
     const ru = unitsPerPx();
     ctx.setLineDash([9*ru,11*ru]); ctx.lineWidth=2*ru;
-    const R = attackRange(h);
-    if(HERO_STATS[h.type].melee){
-      // A sword reaches into a cone, not a circle. The wedge is the swing
-      // meleeSwing will actually make, turned with him, so what is in it is
-      // what the click will hit — and it is filled, because two dashed strokes
-      // a hundred units apart do not read as one shape over grass.
-      const a = h.facing;
-      ctx.beginPath(); ctx.moveTo(h.x,h.y); ctx.arc(h.x,h.y,R,a-MELEE_HALF_ARC,a+MELEE_HALF_ARC); ctx.closePath();
-      ctx.fillStyle='rgba(90,200,232,.10)'; ctx.fill();
-      ctx.setLineDash([]); ctx.lineWidth=3*ru; ctx.strokeStyle='rgba(90,200,232,.5)';
-      ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.arc(h.x,h.y,R,0,7); ctx.stroke();
-    }
+    ctx.beginPath(); ctx.arc(h.x,h.y,attackRange(h),0,7); ctx.stroke();
     ctx.restore();
   }
   // The blast the shell would make if it went off right now, drawn around it all
@@ -15780,7 +15791,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // Over the units, not under them: the one thing a swing's arc has to say is
     // how far it reached, and in the crowded swing it exists for it was being
     // painted beneath the bodies it had just cut.
-    drawSlashes();
+    drawSwings();
     for(const list of [allyCreeps, enemyCreeps, neutralCreeps])
       for(const c of list) if(isStunned(c) && onScreen(c.x,c.y,60)) drawStunMark(c);
     for(const list of [playerTeam, enemyTeam])
@@ -17625,7 +17636,7 @@ window.addEventListener('DOMContentLoaded', function(){
     // A finger still down when the round ended would otherwise keep the trigger
     // held into the next one, and a swing from the last round would draw over
     // the first frame of this one.
-    fireTouch=null; slashes=[]; clickBufferT=0; skillBufferT=0; skillDenyT=0;
+    fireTouch=null; swings=[]; clickBufferT=0; skillBufferT=0; skillDenyT=0;
     scoutTouch=null; scout=null; dropRocketCam();
     hideJoystick(moveJoyEl);
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
