@@ -9945,6 +9945,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // the order you cannot otherwise give: everything else posts a hero to a spot.
   function laneOrder(h, half){
     if(!h || !h.alive) return;
+    sfxUi('order');
     squadTogether = false;
     // HAND HIM OVER FIRST, then write the order. focusHero deliberately cancels
     // a lane order on the hero you are leaving — "he holds where you left him
@@ -9970,6 +9971,7 @@ window.addEventListener('DOMContentLoaded', function(){
   }
   function soloOrder(h, wx, wy){
     if(tut.on) tutNote('solo', wx, wy);
+    sfxUi('order');
     squadTogether = false;
     h.mode='moveto'; h.moveTarget={x:wx,y:wy}; h.followTarget=null;
     h.standX=null; h.standY=null;
@@ -9990,6 +9992,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // squad off its lanes.
   function followOrder(h, target){
     if(!h || !h.alive || !target || target===h) return;
+    sfxUi('order');
     squadTogether = false;
     h.mode='follow'; h.followTarget=target; h.moveTarget=null;
     h.standX=null; h.standY=null;
@@ -10030,6 +10033,7 @@ window.addEventListener('DOMContentLoaded', function(){
     return (t && t !== d.hero && t.alive) ? t : null;
   }
   function groupOrder(wx, wy){
+    sfxUi('order');
     squadTogether = false;      // you have just posted the formation yourself
     let clicked=null, bd=Infinity;
     for(const h of playerTeam.concat(enemyTeam)){
@@ -10318,7 +10322,7 @@ window.addEventListener('DOMContentLoaded', function(){
     h.muzzleT = MUZZLE_TIME;
     h.recoil = 1;                 // shoves the hero, not the camera: see drawHeroBody
     muzzleBlast(h);
-    sfxShot(h.type==='carry' ? 'fire' : 'bolt', h.x, h.y);
+    sfxShot(h.type==='carry' ? 'fire' : 'bolt', h.x, h.y, h.side==='player');
   }
 
   // Projectiles already die on trees, so a shot through a trunk is a wasted
@@ -10622,6 +10626,9 @@ window.addEventListener('DOMContentLoaded', function(){
     h.skillCd = s.skillCd;
     h.mana -= s.skillManaCost;
     spawnHealWave(h, range);
+    // The cast, for the hero you are driving. The landing (sfxHeal) is placed
+    // on whoever the ring reaches, and plays for the AI's heals too.
+    if(h === playerTeam[activePlayerIdx]) sfxHealCast(h.x, h.y);
   }
 
   function useSkill(h,dx,dy,wmx,wmy){
@@ -10717,6 +10724,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // That is the correct behaviour for a Match and an unwinnable lesson here.
       if(!(tut.on && tut.holdFoeWaves)) spawnLaneWave(l,'enemy');
     }
+    sfxWave();
   }
   // How big wave w is, w counted from 1. Nothing but the spawner reads these, so
   // a tuning pass is four constants and no other code.
@@ -10801,6 +10809,7 @@ window.addEventListener('DOMContentLoaded', function(){
   // a new round, the end card — clears it, or it survives the round it announced.
   let waveBannerTimer = 0;
   function showWaveBanner(w, sub){
+    sfxWave();
     waveBannerNumEl.textContent = w;
     waveBannerSubEl.textContent = sub || '';
     waveBannerSubEl.classList.toggle('on', !!sub);
@@ -11176,6 +11185,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function noteNoMana(h){
     if(noManaT > 0) return;
     noManaT = NO_MANA_GAP;
+    sfxDeny();
     manaDryT = 0.5;                     // the bar flashes too, so you know which one
     addFloater(h.x, heroAnchorY(h), 'NO MANA', '#9FE3FF', false, false, false, h);
   }
@@ -12074,6 +12084,7 @@ window.addEventListener('DOMContentLoaded', function(){
   function focusHero(i){
     if(i<0 || i>=playerTeam.length || !playerTeam[i].alive) return false;
     if(i!==activePlayerIdx){
+      sfxUi('switch');
       glideCam();
       dropRocketCam();   // you asked for a different hero; the shell keeps flying without the camera
       // The hero you were driving holds where you left him instead of quietly
@@ -13795,6 +13806,10 @@ window.addEventListener('DOMContentLoaded', function(){
     tower.noHitT = 0;
     tower.flash=0.18;
     addFloater(tower.x, tower.y-tower.r-10, String(dmg), dmgColor(tower.side==='player', isCrit), isCrit, false, isCrit);
+    // Every shell on the stone is a tick — the gate thins a siege to what the
+    // ear can follow — and the one that brings it down is its own sound.
+    sfxTower('stone', tower.x, tower.y);
+    if(wasUp && tower.hp<=0) sfxTower('collapse', tower.x, tower.y);
   }
 
   function respawnHero(h){
@@ -17511,32 +17526,89 @@ window.addEventListener('DOMContentLoaded', function(){
       // -15dB) is what keeps a fast flurry of them from just clipping.
       chop:  { crack: [0.99, 1500, 3.2, 0.050], body: [210,  78, 0.72, 0.11] },
       timber:{ crack: [0.51,  520, 0.9, 0.180], body: [120,  40, 0.75, 0.34] },
+      // The hits that END something. A last-hit you landed is the creep tick
+      // with a brighter crack and the crit's ring at half its length: enough
+      // to say "that one is gone", not enough to be mistaken for loot. A hero
+      // kill is a stab — a hollow crack over a timber-weight body with two
+      // falling notes under it, because a death gets a cadence and a click
+      // does not. The tank's sword landing sits lowest of the hits on the
+      // living: mostly body, and the body starts where the hero's ends.
+      kill:    { crack: [0.50, 3000, 1.3, 0.065], body: [340, 100, 0.34, 0.12], ring: 0.55 },
+      heroKill:{ crack: [0.56, 1400, 1.0, 0.120], body: [150,  46, 0.70, 0.30], stab: true },
+      heavy:   { crack: [0.50, 1300, 0.9, 0.100], body: [170,  55, 0.50, 0.20] },
+      // Masonry. A shell on a tower is a short high crack with almost nothing
+      // under it — stone does not give, so there is no body to hear. The tower
+      // coming down is timber a third again the size, with a sweep falling
+      // through the spectrum for six tenths of a second (the dust) and a
+      // second landing 180ms behind the first, which is what makes it several
+      // pieces coming down rather than one big log.
+      stone:   { crack: [0.62,  900, 2.5, 0.060], body: [260, 120, 0.22, 0.07] },
+      collapse:{ crack: [0.66,  520, 0.9, 0.230], body: [156,  52, 0.95, 0.44], rubble: true },
+      // The rocket landing. Lowpassed rather than banded: an explosion has no
+      // pitch, it is pressure. Two bodies 30ms apart so it rolls rather than
+      // thumps, and a sparkle of debris over the top for the size. A tower's
+      // shell plays it at half (impact's amp) so a siege is a rumble under the
+      // fight rather than a fight of its own.
+      boom:    { crack: [0.70,  420, 0.8, 0.220], body: [110,  34, 0.80, 0.45], type: 'lowpass', blast: true },
+      // You dying. Timber's body — something heavy going down — under the hurt
+      // groan doubled, and a half-second lowpassed wash after it that is the
+      // sound of the screen going grey.
+      death:   { crack: [0.44,  600, 0.8, 0.160], body: [120,  40, 0.75, 0.34], groan: 2, wash: true },
     };
 
-    function impact(kind, p){
+    // amp scales the whole event: the same sound, smaller. It is how a tower's
+    // shell plays the rocket at half without a second table row.
+    function impact(kind, p, amp){
       const spec = IMPACT[kind] || IMPACT.creep;
       const t = ctx.currentTime + 0.002;
       const dest = place(p);
+      const a = amp == null ? 1 : amp;
       const j = 0.93 + Math.random() * 0.14;
       const c = spec.crack, b = spec.body;
-      burst(dest, t, c[0], c[1] * j, c[2], c[3]);
-      tone(dest, t, 'triangle', b[0] * j, b[1] * j, b[2], b[3]);
+      burst(dest, t, c[0] * a, c[1] * j, c[2], c[3], spec.type);
+      tone(dest, t, 'triangle', b[0] * j, b[1] * j, b[2] * a, b[3]);
       // A crit rings. Two partials a fifth apart, started six milliseconds in
       // so they read as part of the same hit rather than a second sound after
       // it — much later and it stops being a crit and starts being a pickup.
+      // A number instead of true is the same ring cut to that fraction.
       if(spec.ring){
-        tone(dest, t + 0.006, 'sine', 1580 * j, 1580 * j, 0.15, 0.30, 0.004);
-        tone(dest, t + 0.006, 'sine', 2370 * j, 2370 * j, 0.09, 0.22, 0.004);
+        const rd = spec.ring === true ? 1 : spec.ring;
+        tone(dest, t + 0.006, 'sine', 1580 * j, 1580 * j, 0.15 * a, 0.30 * rd, 0.004);
+        tone(dest, t + 0.006, 'sine', 2370 * j, 2370 * j, 0.09 * a, 0.22 * rd, 0.004);
       }
       // Taking one gets a low sawtooth under it, filtered nearly shut. It is
       // felt more than heard, and it is the whole difference between "I hit
-      // something" and "something hit me".
+      // something" and "something hit me". Doubled — a second one a few cents
+      // off and 40ms behind — it stops being a hit and becomes a fall.
       if(spec.groan){
         const lp = ctx.createBiquadFilter();
         lp.type = 'lowpass'; lp.frequency.value = 620; lp.Q.value = 0.7;
         lp.connect(dest);
-        tone(lp, t, 'sawtooth', 190 * j, 62 * j, 0.28, 0.24);
+        tone(lp, t, 'sawtooth', 190 * j, 62 * j, 0.28 * a, 0.24);
+        if(spec.groan === 2) tone(lp, t + 0.04, 'sawtooth', 176 * j, 50 * j, 0.26 * a, 0.36);
       }
+      // The stab under a hero kill: two sawtooth notes a fifth apart, the
+      // second lower and longer, through a lowpass so they are brass rather
+      // than a buzzer. A falling fifth is the oldest "it is over" there is.
+      if(spec.stab){
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = 0.8;
+        lp.connect(dest);
+        tone(lp, t + 0.01, 'sawtooth', mtof(67) * j, mtof(67) * j, 0.16 * a, 0.10, 0.004);
+        tone(lp, t + 0.09, 'sawtooth', mtof(60) * j, mtof(60) * j, 0.18 * a, 0.22, 0.004);
+      }
+      // The tower's dust and its second landing.
+      if(spec.rubble){
+        burst(dest, t + 0.02, 0.45 * a, 300, 0.8, 0.60, 'lowpass', 80);
+        tone(dest, t + 0.18, 'triangle', 120 * j, 40 * j, 0.60 * a, 0.34);
+        burst(dest, t + 0.18, 0.30 * a, 480 * j, 0.9, 0.16);
+      }
+      // The blast's second body and the debris coming down after it.
+      if(spec.blast){
+        tone(dest, t + 0.03, 'triangle', 90 * j, 30 * j, 0.55 * a, 0.40);
+        burst(dest, t + 0.04, 0.22 * a, 5000, 1.2, 0.30, 'highpass');
+      }
+      if(spec.wash) burst(dest, t + 0.03, 0.30 * a, 500, 0.7, 0.50, 'lowpass', 90);
     }
 
     /* -------------------------------------------------------------- shots */
@@ -17550,6 +17622,15 @@ window.addEventListener('DOMContentLoaded', function(){
     const SHOT = {
       fire: { crack: [0.30, 3400, 1.0, 0.075, 700], body: [520, 140, 0.16, 0.075], tail: true },
       bolt: { crack: [0.22, 2900, 1.2, 0.050, 1200], body: [640, 260, 0.10, 0.050] },
+      // The rocket leaving the tube: a low thump for the charge and, for once,
+      // a band swept UP — the air being shoved out ahead of it — so the launch
+      // and the landing (impact 'boom') are a rising and a falling pair the
+      // way the blink's two halves are.
+      rocket: { crack: [0.34, 600, 1.0, 0.250, 4000], body: [180, 60, 0.40, 0.12] },
+      // The tank's sword through the air. No body at all: a swing that has not
+      // landed yet weighs nothing, and the landing (impact 'heavy') is where
+      // the weight goes.
+      swing:  { crack: [0.40, 3000, 1.0, 0.090, 600], body: null },
     };
     function shot(kind, p){
       const spec = SHOT[kind] || SHOT.bolt;
@@ -17558,7 +17639,7 @@ window.addEventListener('DOMContentLoaded', function(){
       const j = 0.94 + Math.random() * 0.12;
       const c = spec.crack, b = spec.body;
       burst(dest, t, c[0], c[1] * j, c[2], c[3], 'bandpass', c[4] * j);
-      tone(dest, t, 'triangle', b[0] * j, b[1] * j, b[2], b[3]);
+      if(b) tone(dest, t, 'triangle', b[0] * j, b[1] * j, b[2], b[3]);
       // A flame round keeps burning for a moment after the crack. Low-passed
       // and a third the level, so it is the shape of the sound rather than a
       // second sound after it.
@@ -17643,23 +17724,29 @@ window.addEventListener('DOMContentLoaded', function(){
     // high noise over it the way an old side-scroller rings a level-up. Pure
     // sines alone rang thin at this speed, so a quiet triangle rides under
     // each run note for a body the sparkle then sits on top of.
-    function levelUp(p){
+    //
+    // Three percent of pitch either way, so a lane levelling together is four
+    // fanfares and not one fanfare four times. amp is for the other side's:
+    // an enemy levelling is news you should hear, at a third the size.
+    function levelUp(p, amp){
       const t = ctx.currentTime + 0.002;
       const dest = place(p);
+      const a = amp == null ? 1 : amp;
+      const j = 0.97 + Math.random() * 0.06;
       const root = 79; // G5 — high enough to clear the coin's own register
       const run = [0, 4, 7, 12];
       run.forEach((semi, i) => {
-        const f = mtof(root + semi);
+        const f = mtof(root + semi) * j;
         const tt = t + i * 0.058;
-        tone(dest, tt, 'sine', f, f, 0.30, 0.16, 0.004);
-        tone(dest, tt, 'triangle', f, f, 0.12, 0.12, 0.004);
+        tone(dest, tt, 'sine', f, f, 0.30 * a, 0.16, 0.004);
+        tone(dest, tt, 'triangle', f, f, 0.12 * a, 0.12, 0.004);
       });
       const ct = t + run.length * 0.058 + 0.01;
       [0, 7, 12, 16].forEach(semi => {
-        const f = mtof(root + semi);
-        tone(dest, ct, 'sine', f, f, 0.20, 0.55, 0.01);
+        const f = mtof(root + semi) * j;
+        tone(dest, ct, 'sine', f, f, 0.20 * a, 0.55, 0.01);
       });
-      burst(dest, ct, 0.16, 7000, 1.1, 0.32, 'highpass');
+      burst(dest, ct, 0.16 * a, 7000, 1.1, 0.32, 'highpass');
     }
 
     // A heal is the level-up's smaller, softer cousin: the same rising
@@ -17670,10 +17757,111 @@ window.addEventListener('DOMContentLoaded', function(){
     function heal(p){
       const t = ctx.currentTime + 0.002;
       const dest = place(p);
-      const f = mtof(76); // E5
+      const f = mtof(76) * (0.97 + Math.random() * 0.06); // E5, give or take
       tone(dest, t, 'sine', f, f * 1.5, 0.20, 0.26, 0.012);
       tone(dest, t + 0.05, 'sine', f * 1.26, f * 1.26, 0.16, 0.32, 0.01);
       tone(dest, t, 'sine', f * 2, f * 2, 0.06, 0.20, 0.012);
+    }
+
+    /* ------------------------------------------------- the other good news
+       and the bad. Same palette as the level-up and the heal — sines and
+       triangles, noise only where something is actually rustling — so every
+       piece of news in the game is one family, and the impacts stay the only
+       things with a crack in them. Most of these are unplaced: they are about
+       the button, the round or the HUD, not a point on the map. */
+
+    // The skill coming off cooldown. Two sines a fifth apart, the second held
+    // longer: a rising fifth is what a question being answered sounds like.
+    function ready(){
+      const t = ctx.currentTime + 0.002;
+      const j = 0.98 + Math.random() * 0.04;
+      tone(master, t, 'sine', mtof(83) * j, mtof(83) * j, 0.18, 0.04, 0.003);
+      tone(master, t + 0.04, 'sine', mtof(90) * j, mtof(90) * j, 0.18, 0.12, 0.003);
+    }
+
+    // A press that did nothing. A short low buzz falling a tone, filtered
+    // nearly shut. It is the one sound in the file meant to be slightly
+    // unpleasant, and it is quieter than everything around it so that it
+    // never turns into a punishment for pressing a button.
+    function deny(){
+      const t = ctx.currentTime + 0.002;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 0.8;
+      lp.connect(master);
+      tone(lp, t, 'sawtooth', 140, 110, 0.20, 0.12, 0.004);
+    }
+
+    // The heal being CAST, as against the heal landing (heal, above): one sine
+    // gliding up a fourth over a third of a second with no transient at all,
+    // the mana pickup's gesture a fifth down. It is liquid leaving the hands,
+    // not arriving anywhere.
+    function healCast(p){
+      const t = ctx.currentTime + 0.002;
+      const dest = place(p);
+      const f = mtof(69) * (0.97 + Math.random() * 0.06);
+      tone(dest, t, 'sine', f, f * 1.335, 0.22, 0.30, 0.02);
+      tone(dest, t, 'sine', f * 2, f * 2.67, 0.06, 0.24, 0.03);
+    }
+
+    // The end of the round. Unplaced and unjittered: it plays once, and it is
+    // the one sound that should be the same every time. A win is the
+    // level-up's chord an octave lower and held, then again a fourth up with
+    // the same sparkle — the cadence every fanfare ends on. A loss is the
+    // minor shape of the same chord, lower and longer, with the hurt groan
+    // under it so the two could not be confused with the picture off. A draw
+    // is neither: a bare major triad in the middle, no sparkle and no groan.
+    function stinger(kind){
+      const t = ctx.currentTime + 0.002;
+      const chord = (root, semis, at, dur, amp) => semis.forEach(s => {
+        const f = mtof(root + s);
+        tone(master, at, 'sine', f, f, amp, dur, 0.02);
+        tone(master, at, 'triangle', f, f, amp * 0.35, dur * 0.7, 0.02);
+      });
+      if(kind === 'win'){
+        chord(74, [0, 7, 12, 16], t, 0.9, 0.20);
+        chord(79, [0, 7, 12, 16], t + 0.35, 0.9, 0.20);
+        burst(master, t + 0.35, 0.16, 7000, 1.1, 0.40, 'highpass');
+      } else if(kind === 'lose'){
+        chord(62, [0, 3, 7, 12], t, 1.2, 0.20);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 620; lp.Q.value = 0.7;
+        lp.connect(master);
+        tone(lp, t, 'sawtooth', 190, 62, 0.28, 0.5);
+      } else {
+        chord(67, [0, 7, 12], t, 1.0, 0.18);
+      }
+    }
+
+    // A wave leaving the base. A low horn — two triangles a fifth apart with a
+    // slow attack — on the D both pieces of music are written in, so it is a
+    // note from the score rather than a thing on the map. The base is never on
+    // screen when it happens, which is why it is not placed.
+    function wave(){
+      const t = ctx.currentTime + 0.002;
+      for(const n of [50, 57]){
+        const f = mtof(n);
+        tone(master, t, 'triangle', f, f, 0.15, 0.5, 0.05);
+      }
+    }
+
+    // Coming back. The blink's arriving half and nothing else: by the time it
+    // matters the player has heard it a hundred times as "the hero is now
+    // HERE", which is the whole message.
+    function respawn(p){ teleport(null, p, 0); }
+
+    // Two UI sounds for two kinds of press. Switching hero is two ticks a
+    // fifth apart, the smallest possible "that took". An order is a crinkle —
+    // the page turn's texture at a tenth of the length — with a blip under it,
+    // because an order is a thing written down.
+    function ui(kind){
+      const t = ctx.currentTime + 0.002;
+      if(kind === 'order'){
+        burst(master, t, 0.28, 6000, 2.3, 0.06);
+        tone(master, t + 0.01, 'triangle', mtof(79), mtof(79), 0.13, 0.06, 0.003);
+      } else {
+        tone(master, t, 'triangle', mtof(76), mtof(76), 0.12, 0.04, 0.002);
+        tone(master, t + 0.05, 'triangle', mtof(83), mtof(83), 0.12, 0.05, 0.002);
+      }
     }
 
     /* ----------------------------------------------------------- teleport */
@@ -17951,8 +18139,9 @@ window.addEventListener('DOMContentLoaded', function(){
       return (riverRig = { set });
     }
 
-    return { impact, shot, pickup, teleport, pageTurn, levelUp, heal, riverVoice,
-             master, kinds: Object.keys(IMPACT) };
+    return { impact, shot, pickup, teleport, pageTurn, levelUp, heal,
+             healCast, ready, deny, stinger, wave, respawn, ui, riverVoice,
+             master, kinds: Object.keys(IMPACT), shots: Object.keys(SHOT) };
   }
   /* sfx:engine end */
 
@@ -17991,13 +18180,22 @@ window.addEventListener('DOMContentLoaded', function(){
   // Eight voices per tenth of a second, and a floor on the gap between two of
   // the same kind. Everything past that is dropped rather than queued: a hit
   // that arrives late is worse than one that never arrives.
+  //
+  // Except the news. Being hit, a kill, the rocket landing, a level, the
+  // skill coming back, dying, a tower falling and the end of the round are
+  // each the one sound its frame is FOR, and a wave dying at the same moment
+  // must not be allowed to eat it: those skip the window and keep only their
+  // own gap. They still count against it, so a burst of news thins the ticks
+  // around it rather than piling on top of them.
+  const SFX_PRIORITY = { hurt: 1, boom: 1, levelup: 1, ready: 1, death: 1, collapse: 1, stinger: 1 };
   let sfxWinAt = -9, sfxWinN = 0;
   const sfxLast = Object.create(null);
   function sfxGate(kind, gap){
     const now = musicCtx.currentTime;
     if(now - (sfxLast[kind] || -9) < gap) return false;
     if(now - sfxWinAt > 0.1){ sfxWinAt = now; sfxWinN = 0; }
-    if(++sfxWinN > 8) return false;
+    const priority = SFX_PRIORITY[kind] || kind.indexOf('kill:') === 0;
+    if(++sfxWinN > 8 && !priority) return false;
     sfxLast[kind] = now;
     return true;
   }
@@ -18025,12 +18223,12 @@ window.addEventListener('DOMContentLoaded', function(){
   // both can fire for several heroes within the same frame (a wave levelling
   // a whole lane, a heal sweep crossing three allies) and each of those is
   // its own piece of good news worth hearing, not a duplicate to drop.
-  function sfxLevelUp(wx, wy){
+  function sfxLevelUp(wx, wy, amp){
     if(!sfxReady()) return;
     const p = sfxPlace(wx, wy);
     if(!p) return;
     if(!sfxGate('levelup', 0.05)) return;
-    sfxRig.levelUp(p);
+    sfxRig.levelUp(p, amp);
   }
   function sfxHeal(wx, wy){
     if(!sfxReady()) return;
@@ -18044,12 +18242,100 @@ window.addEventListener('DOMContentLoaded', function(){
   // so it gets its own gate. Dropping one shot in a stream of them costs
   // nothing; letting all of them through costs every other sound in the mix
   // its slot in the eight-voice window.
-  function sfxShot(kind, wx, wy){
+  //
+  // Yours and theirs on separate gates: their held fire must never be able to
+  // swallow your own trigger, which is the one shot you are listening for.
+  function sfxShot(kind, wx, wy, mine){
     if(!sfxReady()) return;
     const p = sfxPlace(wx, wy);
     if(!p) return;
-    if(!sfxGate('shot:' + kind, 0.055)) return;
+    if(!sfxGate('shot:' + kind + (mine ? ':me' : ':foe'), 0.055)) return;
     sfxRig.shot(kind, p);
+  }
+
+  // Kills have their own gate rather than sfxImpact's so a last-hit is never
+  // dropped because the blow that caused it has just played. kind is 'kill'
+  // (a creep you finished) or 'heroKill'; the sword landing ('heavy') and the
+  // swing are ordinary impact and shot kinds.
+  function sfxKill(kind, wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('kill:' + kind, 0.08)) return;
+    sfxRig.impact(kind, p);
+  }
+
+  // The rocket landing. quiet is a tower's shell — the same sound at half —
+  // so a siege reads as under the fight rather than as the fight. Either way
+  // the music dips for a moment: a blast the score plays straight through is
+  // a blast that did not happen.
+  function sfxBoom(wx, wy, quiet){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('boom', 0.08)) return;
+    sfxRig.impact('boom', p, quiet ? 0.5 : 1);
+    musicDuck(0.6, 0.6);
+  }
+
+  // 'stone' on every shell, 'collapse' once. The stone gate is what turns a
+  // siege into a rhythm the ear can follow instead of a rattle.
+  function sfxTower(kind, wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate(kind, kind === 'collapse' ? 0.3 : 0.08)) return;
+    sfxRig.impact(kind, p);
+  }
+
+  function sfxDeath(wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('death', 0.1)) return;
+    sfxRig.impact('death', p);
+    musicDuck(0.6, 0.6);
+  }
+  function sfxRespawn(wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('respawn', 0.1)) return;
+    sfxRig.respawn(p);
+  }
+  function sfxHealCast(wx, wy){
+    if(!sfxReady()) return;
+    const p = sfxPlace(wx, wy);
+    if(!p) return;
+    if(!sfxGate('healcast', 0.1)) return;
+    sfxRig.healCast(p);
+  }
+
+  // Unplaced: the button, the round and the HUD have no place on the map.
+  function sfxSkillReady(){
+    if(!sfxReady()) return;
+    if(!sfxGate('ready', 0.1)) return;
+    sfxRig.ready();
+  }
+  function sfxDeny(){
+    if(!sfxReady()) return;
+    if(!sfxGate('deny', 0.1)) return;
+    sfxRig.deny();
+  }
+  function sfxStinger(kind){
+    if(!sfxReady()) return;
+    if(!sfxGate('stinger', 0.5)) return;
+    sfxRig.stinger(kind);
+  }
+  function sfxWave(){
+    if(!sfxReady()) return;
+    if(!sfxGate('wave', 0.5)) return;
+    sfxRig.wave();
+  }
+  function sfxUi(kind){
+    if(!sfxReady()) return;
+    if(!sfxGate('ui:' + kind, 0.06)) return;
+    sfxRig.ui(kind);
   }
 
   // Consecutive pickups climb the ladder; a second without one and you are
@@ -18215,6 +18501,37 @@ window.addEventListener('DOMContentLoaded', function(){
   const THREAT_FALL = 2.4;
   let threat = 0;
 
+  // A kill you have just had a hand in lifts the number for a while whether or
+  // not anyone is still near: the fight is not over because the enemy is
+  // dead, it is over when the music says so. The kill sites raise it, capped
+  // so a whole wave dying is a lift and not a jump, and it comes down at
+  // THREAT_FALL like everything else here.
+  let killBump = 0;
+  const KILL_BUMP_CAP = 0.6;
+  function musicKillBump(n){
+    killBump = Math.min(KILL_BUMP_CAP, killBump + (n == null ? 0.2 : n));
+  }
+
+  // Dip the match track for a moment and bring it back, for the two sounds
+  // big enough that a score playing straight through them would make them
+  // small: the rocket landing and you dying. Restored by a timer rather than
+  // from update(), which stops for the pause menu and runs eight times a
+  // frame under ?speed= — either would leave the music at the wrong level. A
+  // second dip inside the first restores to the level before EITHER.
+  let duckTimer = 0, duckBase = -1;
+  function musicDuck(level, seconds){
+    const m = musicTracks.play;
+    if(!m) return;
+    if(duckBase < 0) duckBase = m.level;
+    m.setLevel(level);
+    clearTimeout(duckTimer);
+    duckTimer = setTimeout(() => {
+      const t = musicTracks.play;
+      if(t && duckBase >= 0) t.setLevel(duckBase);
+      duckBase = -1;
+    }, seconds * 1000);
+  }
+
   function threatAt(x, y){
     let sum = 0;
     for(const e of enemyTeam){
@@ -18228,9 +18545,31 @@ window.addEventListener('DOMContentLoaded', function(){
   // music answers is whether YOU are about to be jumped. Dead, it decays to
   // nothing rather than snapping, so the respawn is quiet without the fade
   // being audible as an event of its own.
+  //
+  // Proximity is not the only thing that makes a fight, so it is not the only
+  // thing read. A blow landed on him or by him in the last three seconds holds
+  // a floor under the number — he is in a fight with someone even if the
+  // someone has already backed off to where the shares are nothing — and the
+  // kills he has just had a hand in lift it above that.
+  //
+  // combatT counts up from a blow (applyHeroHit resets it), but it also counts
+  // up from nothing at the start of a round, and the first three seconds of a
+  // match are not a fight: the floor would fade the pulse layer in and straight
+  // back out. So it waits for the count to actually be reset once this life.
+  const COMBAT_FLOOR = 0.3;
+  const COMBAT_FLOOR_FOR = 3;
   function updateMusicThreat(dt){
     const me = playerTeam[activePlayerIdx];
-    const target = (me && me.alive) ? threatAt(me.x, me.y) : 0;
+    const live = !!(me && me.alive);
+    killBump *= Math.exp(-dt / THREAT_FALL);
+    let floor = 0;
+    if(live){
+      const ct = me.combatT || 0;
+      if(me._musicCt != null && ct < me._musicCt) me._musicHit = true;
+      me._musicCt = ct;
+      if(me._musicHit && ct < COMBAT_FLOOR_FOR) floor = COMBAT_FLOOR;
+    }
+    const target = Math.max(live ? threatAt(me.x, me.y) : 0, floor, killBump);
     const tau = target > threat ? THREAT_RISE : THREAT_FALL;
     threat += (target - threat) * (1 - Math.exp(-dt / tau));
     const m = musicTracks.play;
