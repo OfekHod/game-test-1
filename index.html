@@ -296,14 +296,21 @@
     font-size:17px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;
     cursor:pointer;flex:0 0 auto;padding:0;}
   .hudIconBtn:active{transform:translateY(2px);}
-  /* Survival's slot reads "Wave 12" where a Match reads "10:00", and the xp
-     beside it grows a digit at a time all round. On a phone that was enough to
-     wrap the slot onto two lines, and then — once it could not wrap — to push
-     its last character off the edge of the screen. So: neither span ever
-     wraps, and the slot never shrinks. */
+  /* Survival's slot reads "Wave 12" where a Match reads "10:00", and the wood
+     count beside it grows a digit at a time all round. On a phone that was
+     enough to wrap the slot onto two lines, and then — once it could not wrap
+     — to push its last character off the edge of the screen. So: neither span
+     ever wraps, and the slot never shrinks. */
   .hud-right>span{white-space:nowrap;}
   .hud-abilities{min-width:0;}
-  .xpGem{display:inline-block;width:11px;height:11px;background:var(--gold);margin-right:8px;transform:rotate(45deg);vertical-align:0;box-shadow:inset 0 0 0 2px rgba(0,0,0,.15);}
+  /* The icon is the first frame of the log sprite itself — at theta 0 the
+     billet is side on with no end cap showing, which is the one frame of the
+     turn that reads as a log at 19px. Same strip the drop uses, assigned in JS
+     so the data URI is not written into this file a second time; the brown
+     underneath is what shows until it decodes. 16 frames of 44x28 scaled to
+     19 wide is the 304px background. */
+  .woodChip{display:inline-block;width:19px;height:12px;margin-right:8px;vertical-align:-2px;
+    border-radius:3px;background:#9C6B3C no-repeat 0 0/304px 12px;}
 
   /* justify-content:center made a too-tall panel overflow at BOTH ends, and the
      top overflow cannot be scrolled to. On a short window that put the buttons
@@ -918,12 +925,12 @@
     .hud-abilities{gap:4px;}
     .ability{width:38px;height:38px;border-radius:10px;}
     .ability .skillIcon{width:34px;height:34px;border-radius:8px;}
-    /* The slot holds "Wave 12" and an xp count that grows all round, where a
+    /* The slot holds "Wave 12" and a wood count that grows all round, where a
        Match's clock was a fixed five characters. A point smaller and a
        tighter gap is what keeps both on one line at the width of a phone. */
-    .hud-right{gap:8px;font-size:12.5px;}
+    .hud-right{gap:7px;font-size:12.5px;}
     .hudIconBtn{width:30px;height:30px;font-size:12.5px;border-radius:8px;}
-    .xpGem{width:9px;height:9px;margin-right:4px;}
+    .woodChip{width:15px;height:9.5px;margin-right:4px;vertical-align:-1px;background-size:240px 9.5px;}
 
     /* Same card, same nameplate, at the width a phone has. 56px is where a run
        of size calls landed: 58 crowded the screen, 29 stopped being a picture,
@@ -962,7 +969,7 @@
     .ability{width:32px;height:32px;border-radius:8px;}
     .ability .skillIcon{width:28px;height:28px;border-radius:6px;}
     .hudLevel{font-size:10px;padding:2px 5px;}
-    .hud-right{font-size:12.5px;gap:10px;}
+    .hud-right{font-size:12.5px;gap:8px;}
     .hudIconBtn{width:24px;height:24px;font-size:10.5px;border-radius:6px;}
     .party{top:calc(6px + var(--sat));left:calc(6px + var(--sal));}
     .skillBtn{bottom:27%;}
@@ -1079,7 +1086,7 @@ window.addEventListener('DOMContentLoaded', function(){
         <div class="hud-right">
           <button class="hudIconBtn" id="pauseBtn" type="button" aria-label="Pause" title="Pause">&#10074;&#10074;</button>
           <button class="hudIconBtn" id="exitBtn" type="button" aria-label="End match" title="End match">&#10005;</button>
-          <span><span class="xpGem"></span><span id="xpCount">0</span> xp</span>
+          <span><span class="woodChip" id="woodChip"></span><span id="woodCount">0</span> wood</span>
           <span id="timer">10:00</span>
         </div>
       </div>
@@ -2674,7 +2681,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const startSurvBtn = document.getElementById('startSurvBtn');
   const startTutBtn = document.getElementById('startTutBtn');
   const restartBtn = document.getElementById('restartBtn');
-  const xpCountEl = document.getElementById('xpCount');
+  const woodCountEl = document.getElementById('woodCount');
+  const woodChipEl = document.getElementById('woodChip');
   const timerEl = document.getElementById('timer');
   const pauseBtnEl = document.getElementById('pauseBtn');
   const exitBtnEl = document.getElementById('exitBtn');
@@ -3892,6 +3900,10 @@ window.addEventListener('DOMContentLoaded', function(){
   // the keep-out in walkLane, whether the wave is soaking the shells — still
   // reads every tower on the map, because a building it may not attack can
   // still kill it.
+  // The other list. pushTowers is named for what a hero PUSHES into and returns
+  // the opposing side's buildings; this is the side's own, which until repair
+  // existed nothing had any reason to ask for.
+  function ownTowers(h){ return h.side==='player' ? playerTowers : enemyTowers; }
   function pushTowers(h){
     const own = h.side==='player' ? enemyTowers : playerTowers;
     if(gameMode !== 'survival' || h.side !== 'enemy') return own;
@@ -4523,10 +4535,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // Logs lying on the ground, on the same terms as the coins: they belong to
   // whoever walks over them.
   let woodDrops = [];
-  // The wood the player's side has banked. Counted and nothing else — there is
-  // no wood in the HUD yet, and nothing to spend it on until there is something
-  // to build.
-  let woodBanked = 0;
+  // Timber in hand, one bank per side. It buys tower repair — see repairTower —
+  // and a tank carries his side's share of it in a way the others do not: half
+  // of it spills on the grass when he goes down. Both sides keep one because
+  // both sides can now cut, spend and lose it; only the player's is on screen.
+  let woodBanked = { player:0, enemy:0 };
   // Every bush and every rock on the map, laid down by generateDecor. All of
   // them are solid and all of them are drawn live, sorted against the units.
   let props = [];
@@ -9342,6 +9355,15 @@ window.addEventListener('DOMContentLoaded', function(){
       for(const t of oppTowers){
         if(t.hp>0 && dist(h.x,h.y,t.x,t.y) <= reach + t.r){ applyTowerHit(t, dmg); return; }
       }
+      // Your OWN wall, and the swing mends it instead of breaking it: a log off
+      // the counter for REPAIR_PER_WOOD of it, one per swing. Above the trunks
+      // because a tank standing at his own gate with a tree in the cone means
+      // to be repairing; below everything hostile because a base with enemies
+      // in the yard wants defending first, and that is what the empty-cone test
+      // wrapping this block already says.
+      for(const t of ownTowers(h)){
+        if(t.hp>0 && dist(h.x,h.y,t.x,t.y) <= reach + t.r && repairTower(t, h)) return;
+      }
       // Nothing to fight and no wall to break, so the swing is free and it goes
       // into the nearest trunk in the cone. Last of everything deliberately: a
       // fight fought in a wood never spends a swing on the scenery.
@@ -9865,6 +9887,7 @@ window.addEventListener('DOMContentLoaded', function(){
       addScore(target.side==='player' ? 'enemy' : 'player', PTS.hero, target.x, target.y);
       addBurst(target.x, target.y, '#FF6B6B', 20);
       spawnKillDrops(target.x, target.y, 3, false, XP_HERO_KILL, target.maxHp);
+      dropTankWood(target);
       if(target===playerTeam[activePlayerIdx]) shake = Math.max(shake, 0.35);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
@@ -10674,7 +10697,11 @@ window.addEventListener('DOMContentLoaded', function(){
   // while it is still coming down across them. The logs are on screen and
   // tumbling for all of it — held only means not yet magnetic. `away` is the
   // heading the blow came in on, which the toss throws them along.
-  function spawnWood(x, y, n, hold, away){
+  // `value` is how much timber one log is worth. A tree's logs are worth one
+  // each; a pile spilled by a dying tank packs a whole bank into WOOD_PILE_MAX
+  // of them, because half of a good bank is thirty logs and thirty logs on the
+  // grass is a slideshow, not a drop.
+  function spawnWood(x, y, n, hold, away, value){
     for(let i=0;i<n;i++){
       // Slower out of the trunk than a coin is out of a kill. A log thrown as
       // hard as a coin can land past the magnet's reach, and a tree you felled
@@ -10697,6 +10724,7 @@ window.addEventListener('DOMContentLoaded', function(){
         z: rand(WOOD_START_Z[0], WOOD_START_Z[1]),
         vz: rand(WOOD_TOSS_UP[0], WOOD_TOSS_UP[1]),
         mode:'toss', bobT: rand(0,10), trailCol:'#D9AE79', ttl:WOOD_TTL,
+        value: value || 1,
         dwell:WOOD_DWELL + (hold || 0) });
     }
   }
@@ -10718,21 +10746,30 @@ window.addEventListener('DOMContentLoaded', function(){
       w.vx = 0; w.vy = 0; w.mode = 'idle';
     }
   }
-  // Wood is the player's. The enemy team has no use for it and nothing to spend
-  // it on, so its heroes walk over a log rather than hoovering up something
-  // that would then leave the game entirely.
+  // Wood belongs to whoever walks over it, the same as a coin does. It used to
+  // be the player's alone, on the argument that the enemy had nothing to spend
+  // it on; a tower they can now mend is that something, so a log dropped in
+  // front of an enemy tank is a log lost. The reach is still the wide one —
+  // see WOOD_MAGNET_RADIUS — which now cuts both ways: at 280 units a log is
+  // stealable from more than twice a coin's distance, and a tank who dies
+  // spilling half a bank is spilling it inside somebody's reach.
   function nearestWoodCollector(x, y){
     let best = null, bd = WOOD_MAGNET_RADIUS;
-    for(const h of playerTeam){ if(h.alive){ const d = dist(x,y,h.x,h.y); if(d<bd){ bd=d; best=h; } } }
+    for(const team of [playerTeam, enemyTeam]){
+      for(const h of team){ if(h.alive){ const d = dist(x,y,h.x,h.y); if(d<bd){ bd=d; best=h; } } }
+    }
     return best;
   }
   function collectWood(w, h){
-    woodBanked += 1;
-    sfxPickup('wood', w.x, w.y);
+    woodBanked[h.side] += (w.value || 1);
+    // Only your own side chimes, for the reason collectXpOrb gives: an enemy
+    // tank hoovering up a pile two steps away reads as your pickup and is not.
+    if(h.side==='player'){
+      sfxPickup('wood', w.x, w.y);
+      woodCountEl.textContent = woodBanked.player;
+    }
     addBurst(w.x, w.y, '#D9AE79', 10);
     addPing(h.x, h.y-h.r*0.35, '#E0BB84', 5, 30, 0.28);
-    // No HUD spark and no counter on screen: there is nowhere for it to fly to
-    // and nothing to spend it on yet. The number is kept, and that is all.
   }
   function updateWoodDrops(dt){
     for(let i=woodDrops.length-1;i>=0;i--){
@@ -10748,6 +10785,32 @@ window.addEventListener('DOMContentLoaded', function(){
       const taker = updatePickup(w, dt, w.dwell > 0 ? (()=>null) : nearestWoodCollector,
                                  WOOD_PULL);
       if(taker){ collectWood(w, taker); woodDrops.splice(i,1); }
+    }
+  }
+  // A tank is the one who fells the trees and the one carrying when he dies:
+  // half his side's bank goes on the grass where he fell, for either team to
+  // walk over. The carry and the support drop nothing — losing the TANK is
+  // what costs you the timber, which is the whole of the rule.
+  //
+  // The toss gets a hold about as long as a tree's own fall, for the reason
+  // spawnWood's does: a log that turns magnetic while it is still in the air
+  // stops falling, freezes at that height and flies in with its shadow shrunk
+  // away underneath it.
+  const WOOD_PILE_MAX = 6;
+  const WOOD_DEATH_HOLD = 1.0;
+  function dropTankWood(h){
+    if(h.type !== 'tank') return;
+    if(tut.on && tut.holdDrops) return;       // the gate spawnKillDrops keeps, for its reasons
+    const lost = Math.floor(woodBanked[h.side]*0.5);
+    if(lost <= 0) return;
+    woodBanked[h.side] -= lost;
+    if(h.side==='player') woodCountEl.textContent = woodBanked.player;
+    // Split to the last unit, so walking the whole pile back gets the whole
+    // half back — a pile that rounded would quietly burn timber on every death.
+    const n = Math.min(WOOD_PILE_MAX, lost);
+    const each = Math.floor(lost/n), over = lost % n;
+    for(let i=0;i<n;i++){
+      spawnWood(h.x, h.y, 1, WOOD_DEATH_HOLD, undefined, each + (i<over ? 1 : 0));
     }
   }
 
@@ -12692,6 +12755,7 @@ window.addEventListener('DOMContentLoaded', function(){
       addBurst(target.x,target.y,'#FF6B6B',22);
       shake=Math.max(shake,0.4);
       spawnKillDrops(target.x, target.y, 3, isCrit, XP_HERO_KILL, target.maxHp);
+      dropTankWood(target);
       if(target.side==='player' && playerTeam.indexOf(target)===activePlayerIdx) switchToNextLiving();
     }
   }
