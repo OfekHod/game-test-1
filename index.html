@@ -973,6 +973,20 @@
   .pauseModal .tutTitle{display:block;font-size:19px;margin-bottom:8px;}
   .pauseModal p{margin:0;font-size:13.5px;line-height:1.45;}
   .pauseModal .tutRow{justify-content:center;margin-top:16px;}
+  /* The forest-voice picker. Four buttons under Resume, because the one place
+     a player is already stopped and thinking about the music is the pause
+     menu — and because the published build has no address bar of its own, so
+     ?mob= cannot be the only way to change it. */
+  .pausePick{margin-top:18px !important;padding-top:14px;border-top:1px solid rgba(255,243,214,.18);
+    font-size:11.5px !important;letter-spacing:.04em;text-transform:uppercase;opacity:.72;}
+  .voiceRow{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:9px;pointer-events:auto;}
+  .voiceRow button{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:12px;cursor:pointer;
+    border:2px solid rgba(255,243,214,.28);border-radius:9px;padding:7px 10px;line-height:1.1;
+    background:rgba(20,14,6,.35);color:#FFF3D6;}
+  .voiceRow button small{display:block;font-weight:600;font-size:9.5px;opacity:.62;margin-top:2px;
+    text-transform:uppercase;letter-spacing:.05em;}
+  .voiceRow button[aria-pressed=true]{background:#5AC8E8;color:#0a3a4a;border-color:#5AC8E8;}
+  .voiceRow button:active{transform:translateY(2px);}
 
   /* Compact layout: narrow screens OR short screens (a phone in landscape is
      ~850px wide but only ~390px tall, so a width-only query never fires). */
@@ -1130,6 +1144,8 @@ window.addEventListener('DOMContentLoaded', function(){
         <b class="tutTitle">Paused</b>
         <p id="pauseNote">Nothing moves until you resume.</p>
         <div class="tutRow"><button class="go" id="pauseResumeBtn">Resume</button></div>
+        <p class="pausePick" id="mobVoiceNote">Forest music &mdash; what a mob nearby sounds like</p>
+        <div class="voiceRow" id="mobVoiceRow"></div>
       </div>
       <div class="pauseModal hidden" id="pauseConfirmPage">
         <b class="tutTitle" id="pauseConfirmTitle">End this game?</b>
@@ -1581,6 +1597,15 @@ window.addEventListener('DOMContentLoaded', function(){
     const busBass   = chan('bass',   0.48,  0.00, 0.08, 1400);
     const busBell   = chan('bell',   0.26,  0.30, 0.46, 9000);
     const busPad    = chan('pad',    0.11,  0.00, 0.40, 2200);
+    // The forest's three. Nothing routes here in either piece as written —
+    // they speak only when the game says something that is not a hero is
+    // close — so these are what the quarry layers sound like when they arrive,
+    // not a level either track otherwise reaches. Panned left of centre on
+    // purpose: the celeste that carries the threat sits at +0.28, and the two
+    // cues have to be separable when a camp is being cleared during a gank.
+    const busMallet = chan('mallet', 0.30, -0.26, 0.30, 7000);
+    const busDrum   = chan('drum',   0.34,  0.16, 0.16, 3000);
+    const busWind   = chan('wind',   0.24, -0.08, 0.42, 3600);
 
     /* -------------------------------------------------- one-shot noise buf */
 
@@ -1766,6 +1791,155 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     }
 
+    /* ------------------------------------------------- the forest's voices
+
+       Four instruments that exist for one question — is there something close
+       that is NOT a hero — and they are written to answer it pleasantly. That
+       is the whole brief: the threat cue is a celeste above everything else in
+       the piece plus a minor ninth, and this one has to be noticed without
+       being feared. So none of these is a bell, none of them goes above the
+       piano, and every note any of them plays is a chord tone.
+
+       Which one you hear is a choice, not a mix: exactly one flavour is live
+       at a time (see setFlavour), and the four differ by instrument, by
+       register, by rhythm and by harmony rather than by amount. */
+
+    // Rosewood bar. A marimba's resonator tunes the first overtones to 1:4:10
+    // — a struck bar left alone is inharmonic and sour, which is the whole
+    // difference between a marimba and a plank — and the tenth is gone in a
+    // fraction of the time the fundamental takes. The mallet is the burst on
+    // top: a hard head is a click with a pitch to it, which is what the
+    // bandpass is for.
+    function mallet(t, midi, vel, ampScale){
+      const f0 = mtof(midi);
+      const peak = 0.40 * ampScale * Math.pow(vel, 1.15);
+      const base = clamp(0.95 * Math.pow(261.6 / f0, 0.55), 0.22, 1.7);
+      for(const [r, a, ds] of [[1, 1, 1], [4.01, 0.28, 0.32], [10.05, 0.10, 0.14]]){
+        const f = f0 * r;
+        if(f > nyq * 0.9) continue;
+        const osc = ctx.createOscillator();
+        osc.type = 'sine'; osc.frequency.value = f;
+        const g = ctx.createGain();
+        const dur = base * ds;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(a * peak, t + 0.004);
+        g.gain.setTargetAtTime(0, t + 0.004, dur * 0.30);
+        osc.connect(g); g.connect(busMallet);
+        osc.start(t); osc.stop(t + dur + 0.25);
+      }
+      const hs = ctx.createBufferSource();
+      hs.buffer = hammerBuf;
+      const hb = ctx.createBiquadFilter();
+      hb.type = 'bandpass'; hb.frequency.value = clamp(f0 * 5.5, 300, 6000); hb.Q.value = 1.3;
+      const hg = ctx.createGain();
+      hg.gain.value = 0.15 * ampScale * Math.pow(vel, 1.6);
+      hs.connect(hb); hb.connect(hg); hg.connect(busMallet);
+      hs.start(t);
+    }
+
+    // Hand drum. A struck head is tight at the moment of the blow and relaxes
+    // as it rings, so its pitch FALLS — that drop is most of what separates a
+    // drum from a short bass note, and leaving it out was the first version's
+    // mistake. Three sounds off one recipe, by where the hand lands: the low
+    // is a palm in the middle of the head, the mid is the heel by the rim, and
+    // the slap is fingers on the edge and almost all noise.
+    //          [ pitch, length, tone, noise centre, noise ]
+    const DRUM = {
+      low:  [ 96, 0.36, 0.60,  650, 0.30],
+      mid:  [170, 0.22, 0.44, 1500, 0.55],
+      slap: [300, 0.10, 0.13, 2700, 1.00],
+    };
+    function drum(t, kind, vel, ampScale){
+      const [f, dur, tone, nf, noise] = DRUM[kind] || DRUM.mid;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f * 1.9, t);
+      osc.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(tone * 0.55 * ampScale * vel, t + 0.003);
+      g.gain.setTargetAtTime(0, t + 0.004, dur * 0.30);
+      osc.connect(g); g.connect(busDrum);
+      osc.start(t); osc.stop(t + dur + 0.2);
+
+      const ns = ctx.createBufferSource();
+      ns.buffer = hammerBuf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = nf; bp.Q.value = 0.8;
+      const ng = ctx.createGain();
+      ng.gain.value = noise * 0.20 * ampScale * vel;
+      ns.connect(bp); bp.connect(ng); ng.connect(busDrum);
+      ns.start(t);
+    }
+
+    // A round wooden horn. Odd partials over even ones is what makes a stopped
+    // pipe hollow rather than brassy, and the vibrato arrives only after the
+    // note has been held: a horn that wobbles from the first instant is an
+    // organ preset, not a player.
+    function horn(t, midi, vel, durSec, ampScale){
+      const f0 = mtof(midi);
+      const stop = t + durSec + 0.5;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = clamp(f0 * 6, 700, 3600); lp.Q.value = 0.8;
+      const g = ctx.createGain();
+      const a = 0.30 * ampScale * Math.pow(vel, 1.1);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(a, t + 0.15);
+      g.gain.setValueAtTime(a, t + durSec * 0.8);
+      g.gain.linearRampToValueAtTime(0, stop);
+      lp.connect(g); g.connect(busWind);
+
+      const vib = ctx.createOscillator();
+      vib.type = 'sine'; vib.frequency.value = 4.6;
+      const vibG = ctx.createGain();
+      vibG.gain.setValueAtTime(0, t);
+      vibG.gain.linearRampToValueAtTime(f0 * 0.007, t + Math.min(1.0, durSec * 0.6));
+      vib.connect(vibG);
+      for(const [r, amp] of [[1, 1], [2, 0.20], [3, 0.40], [5, 0.11]]){
+        const f = f0 * r;
+        if(f > nyq * 0.9) continue;
+        const o = ctx.createOscillator();
+        o.type = 'sine'; o.frequency.value = f;
+        // In cents, not in hertz: one gain for every partial would wobble the
+        // fundamental a semitone and the fifth partial a fifth of one, and the
+        // note would go sour every time it wavered.
+        const pv = ctx.createGain(); pv.gain.value = r;
+        vibG.connect(pv); pv.connect(o.frequency);
+        const og = ctx.createGain(); og.gain.value = amp;
+        o.connect(og); og.connect(lp);
+        o.start(t); o.stop(stop + 0.05);
+      }
+      vib.start(t); vib.stop(stop + 0.05);
+    }
+
+    // A hum rather than a voice: two triangles a few cents apart with the
+    // octave barely audible over them, under a filter that follows the pitch.
+    // No attack at all — it is the one thing in either piece you notice
+    // arriving only once it is already there, which is exactly the job when
+    // the news is mild.
+    function hum(t, midi, vel, durSec, ampScale){
+      const f0 = mtof(midi);
+      const stop = t + durSec + 0.9;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = clamp(f0 * 4.2, 500, 2600); lp.Q.value = 0.9;
+      const g = ctx.createGain();
+      const a = 0.26 * ampScale * vel;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(a, t + Math.min(0.9, durSec * 0.5));
+      g.gain.setValueAtTime(a, t + durSec * 0.72);
+      g.gain.linearRampToValueAtTime(0, stop);
+      lp.connect(g); g.connect(busWind);
+      for(let u = 0; u < 3; u++){
+        const o = ctx.createOscillator();
+        o.type = u === 2 ? 'sine' : 'triangle';
+        o.frequency.value = f0 * (u === 2 ? 2 : 1);
+        o.detune.value = u === 0 ? -8 : u === 1 ? 9 : 0;
+        const og = ctx.createGain(); og.gain.value = u === 2 ? 0.16 : 0.5;
+        o.connect(og); og.connect(lp);
+        o.start(t); o.stop(stop + 0.05);
+      }
+    }
+
     /* ---------------------------------------------------------- intensity */
 
     /* One number, 0 to 1, for how much trouble is nearby. The game works it
@@ -1806,8 +1980,62 @@ window.addEventListener('DOMContentLoaded', function(){
     const TIER_FADE = 0.14;                 // and how far above that it is fully in
     let intensity = 0;
 
-    function layerGain(tier){
+    /* ------------------------------------------------------------- quarry
+
+       The second number, and the second axis: how much of the forest is
+       standing next to you. Everything above is about heroes and is written to
+       worry you; this is about mobs and must not. A player walking into a camp
+       is about to be paid, not jumped, and a piece that reacted to both the
+       same way would be telling him the wrong thing twice.
+
+       So it is a separate input with a separate ladder, a separate set of
+       voices (the four above) and a separate rule about what it may touch. It
+       is NOT another way of moving `intensity`: routed through the same number
+       the celeste would eventually arrive over a camp of three easy mobs, and
+       the one sound in the game that means "a hero is on you" would have been
+       spent on scenery.
+
+       Two tiers rather than three, because there is less to say. Against the
+       game's share — one over the distance, 1 at 300 units and 0 at 1100,
+       added per mob and capped, with the apex counted from nearly twice as far:
+
+                          one mob   a camp of three   the apex
+         tier 1 in          743           948           1338
+         tier 2 in          423           717            762
+         pinned             300           582            540
+
+       Tier 1 is a mob at the edge of its clearing — you can see it, and it has
+       not seen you. Tier 2 is standing in the camp. */
+    const QUARRY_IN = [0, 0.18, 0.60];
+    const QUARRY_FADE = 0.16;
+    let quarry = 0;
+
+    // Exactly one flavour sounds. The rest are arranged, sorted into the same
+    // event list and skipped a beat before they would have made a node, which
+    // is what makes switching between them instant and free.
+    const FLAVOURS = [];
+    for(const key in song.quarry || {}){
+      const f = song.quarry[key];
+      FLAVOURS.push({ key, label: f.label, blurb: f.blurb, voices: f.voices });
+    }
+    let flavour = song.quarryDefault || (FLAVOURS[0] ? FLAVOURS[0].key : null);
+
+    // The fight wins, always. A hero closing is the one thing this music
+    // exists to tell you about, and a marimba playing under the celeste is an
+    // argument between two cues where there should be one. So the forest fades
+    // out across exactly the run-up to the warning and is silent from the beat
+    // it speaks — in Open World, where no enemy hero exists, this is 1 for the
+    // whole round and costs nothing.
+    function quarryDuck(){ return clamp(1 - intensity / TIER_IN[1], 0, 1); }
+
+    function layerGain(tier, axis, flav){
       if(!tier) return 1;
+      if(axis === 'quarry'){
+        if(flav && flav !== flavour) return 0;
+        const lo = QUARRY_IN[tier];
+        if(lo == null) return 0;
+        return clamp((quarry - lo) / QUARRY_FADE, 0, 1) * quarryDuck();
+      }
       const lo = TIER_IN[tier];
       if(lo == null) return 0;
       return clamp((intensity - lo) / TIER_FADE, 0, 1);
@@ -1822,10 +2050,13 @@ window.addEventListener('DOMContentLoaded', function(){
     // range is exactly where the information is worth most: it is the only
     // warning you get before you can see anybody. At 0.7 a fifth of the way in
     // is already a third of the effect.
-    function shadeValues(u){
+    function shadeValues(u, q){
       const e = Math.pow(u, 0.7);
+      // The forest's own continuous move, ducked by the same rule its notes
+      // are: past the celeste's threshold there is no forest left to shade.
+      const qd = Math.pow(clamp(q || 0, 0, 1), 0.8) * clamp(1 - u / TIER_IN[1], 0, 1);
       return {
-        u,
+        u, q: q || 0, qd,
         padMul:  1 + 1.9 * e,
         padLp:   (buses.pad ? buses.pad.lpBase : 0) * (1 + 1.1 * e),
         // Down as the layers arrive, so the top of the range is a change of
@@ -1847,10 +2078,28 @@ window.addEventListener('DOMContentLoaded', function(){
         // A shorter tail reads as a smaller room, and a smaller room reads as
         // close. Most of what makes the match theme sound like it is happening
         // somewhere else is this one number.
-        wet:     0.9 - 0.38 * e,
+        // How much of the forest axis the fight is leaving alive. Read by the
+        // audition page so the picture of the duck and the duck itself are the
+        // same number.
+        duck:    clamp(1 - u / TIER_IN[1], 0, 1),
+        // Two things pull on the room and they pull opposite ways, which is
+        // the point: trouble closing in shortens the tail until the piece is
+        // happening on top of you, and a forest around you lengthens it. A
+        // player who can hear which way the room went knows which kind of
+        // company he has before either cue has played a note.
+        wet:     0.9 - 0.38 * e + 0.14 * qd,
+        // What the mallet, drum and wind buses are worth right now. Not a
+        // fade-in — the layers do that themselves — but the difference
+        // between a mob at the treeline and a camp you are standing in, for
+        // whichever flavour is live.
+        forest:  0.55 + 0.70 * qd,
+        // The guitar brightens for the forest too, a third as much as it does
+        // for a hero. It is the voice that never stops, so it is the only way
+        // to say "something is out there" before any new instrument has to.
+        gtrLpQ:  1 + 0.30 * qd,
       };
     }
-    let sh = shadeValues(0);
+    let sh = shadeValues(0, 0);
 
     // Targets, never jumps. A fifth of a second is short enough that walking
     // into range is felt as it happens and long enough that a hero weaving in
@@ -1860,10 +2109,21 @@ window.addEventListener('DOMContentLoaded', function(){
       const set = (prm, v) => prm.setTargetAtTime(v, now, T);
       const pad = buses.pad, gtr = buses.guitar, pno = buses.piano, bel = buses.bell;
       if(pad){ set(pad.g.gain, pad.gBase * sh.padMul); set(pad.lp.frequency, sh.padLp); }
-      if(gtr){ set(gtr.g.gain, gtr.gBase * sh.gtrMul); set(gtr.lp.frequency, sh.gtrLp); }
+      if(gtr){ set(gtr.g.gain, gtr.gBase * sh.gtrMul); set(gtr.lp.frequency, sh.gtrLp * sh.gtrLpQ); }
       if(pno) set(pno.g.gain, pno.gBase * sh.pnoMul);
       if(bel) set(bel.g.gain, bel.gBase * sh.bellMul);
+      for(const key of ['mallet', 'drum', 'wind']){
+        const b = buses[key];
+        if(b) set(b.g.gain, b.gBase * sh.forest);
+      }
       set(wet.gain, sh.wet);
+    }
+
+    // Both numbers land on one set of targets, so both setters go through
+    // here rather than each recomputing half of the mix.
+    function restage(){
+      sh = shadeValues(intensity, quarry);
+      shade();
     }
 
     /* --------------------------------------------------------- scheduling */
@@ -1874,7 +2134,7 @@ window.addEventListener('DOMContentLoaded', function(){
       // A layer note below its tier does not exist: not scheduled, not faded,
       // no node built for it.
       if(ev.tier){
-        const lg = layerGain(ev.tier);
+        const lg = layerGain(ev.tier, ev.axis, ev.flav);
         if(lg < 0.04) return;
         a *= lg;
       }
@@ -1883,6 +2143,10 @@ window.addEventListener('DOMContentLoaded', function(){
       else if(ev.k === 'b') pluck(t, ev.p, ev.v, 'bass', a);
       else if(ev.k === 'c') bell(t, ev.p, ev.v, a);
       else if(ev.k === 'd') pad(t, ev.n, ev.d * spb, a);
+      else if(ev.k === 'm') mallet(t, ev.p, ev.v, a);
+      else if(ev.k === 'k') drum(t, ev.drum, ev.v, a);
+      else if(ev.k === 'w') horn(t, ev.p, ev.v, ev.d * spb, a);
+      else if(ev.k === 'h') hum(t, ev.p, ev.v, ev.d * spb, a);
     }
 
     // Warm the string cache for the pitches the piece uses, so the first pass
@@ -1954,9 +2218,26 @@ window.addEventListener('DOMContentLoaded', function(){
         const n = clamp(v == null ? 0 : v, 0, 1);
         if(n === intensity) return;
         intensity = n;
-        sh = shadeValues(n);
-        shade();
+        restage();
       },
+      // The forest's number. Separate setter, separate axis; the two are
+      // combined in exactly two places — quarryDuck and the shading — and
+      // nowhere else.
+      setQuarry(v){
+        const n = clamp(v == null ? 0 : v, 0, 1);
+        if(n === quarry) return;
+        quarry = n;
+        restage();
+      },
+      // Which of the forest's voices is the live one. Every flavour's notes
+      // are already in the event list, so this takes effect within a lookahead
+      // window — a quarter of a second — with nothing rebuilt and no gap.
+      setFlavour(key){
+        if(!FLAVOURS.length) return flavour;
+        if(FLAVOURS.some(f => f.key === key)) flavour = key;
+        return flavour;
+      },
+      flavours: FLAVOURS,
       // The demo page draws its meters and its mix panel off these, so the
       // picture on it and the sound out of it can never disagree about where a
       // layer comes in or what the mix is doing when it does.
@@ -1964,6 +2245,10 @@ window.addEventListener('DOMContentLoaded', function(){
       shading(){ return sh; },
       tiers: TIER_IN.slice(),
       tierFade: TIER_FADE,
+      quarryTiers: QUARRY_IN.slice(),
+      quarryFade: QUARRY_FADE,
+      get quarry(){ return quarry; },
+      get flavour(){ return flavour; },
       get intensity(){ return intensity; },
       get level(){ return level; },
       get running(){ return running; },
@@ -2142,6 +2427,45 @@ window.addEventListener('DOMContentLoaded', function(){
             const p = step.rel != null ? ch.bass + step.rel
                                        : pickFrom(ch.notes, step.i) + 12 * (step.oct || 0);
             push(step.k || 'c', t + jitter(0.008), p, step.v, { a: amp, tier: pat.tier });
+          }
+        }
+      }
+    }
+
+    // --- the forest layers -------------------------------------------------
+    // The same machinery as the threat layers, on the other axis, and last for
+    // the same reason they were: the jitter comes off one deterministic
+    // stream, so anything arranged ahead of a voice moves that voice's
+    // micro-timing. With both layer sets after everything else, a quiet match
+    // in an empty forest is still the piece exactly as written.
+    //
+    // EVERY flavour is arranged, not just the live one, and each event carries
+    // the name of the flavour it belongs to; fire() drops the ones that are not
+    // playing before a node is built. Arranging on a switch would be a rebuild
+    // and a re-sort in the middle of a bar, and the audition page switches
+    // between them while the music runs.
+    for(const fname in song.quarry || {}){
+      const flav = song.quarry[fname];
+      for(const pname in flav.patterns){
+        const pat = flav.patterns[pname];
+        for(const ch of song.chords){
+          const sec = sectionAt(ch.b);
+          const amp = sec.amp == null ? 1 : sec.amp;
+          for(let cell = 0; cell < ch.dur; cell += pat.span){
+            for(const step of pat.steps){
+              const t = ch.b + cell + step.b;
+              if(t >= ch.b + ch.dur - 0.001 || t >= song.loopBeats) continue;
+              const extra = { a: amp, tier: pat.tier, axis: 'quarry', flav: fname };
+              // A drum has no pitch, and the two held voices need to know how
+              // long for — clipped to the end of the chord, so a horn never
+              // sustains across a change it was not written against.
+              if(step.drum) extra.drum = step.drum;
+              if(step.hold) extra.d = Math.min(step.hold, ch.b + ch.dur - t);
+              const p = step.rel != null ? ch.bass + step.rel
+                      : step.i != null ? pickFrom(ch.notes, step.i) + 12 * (step.oct || 0)
+                      : 0;
+              push(step.k || 'm', t + jitter(0.007), p, step.v, extra);
+            }
           }
         }
       }
@@ -2476,6 +2800,142 @@ window.addEventListener('DOMContentLoaded', function(){
     swell: { tier: 3, span: 8, steps: [ { b: 0, k: 'd', rel: [19, 25], v: 1 } ] },
   },
 
+  /* What a MOB walking towards you adds to it, four ways.
+
+     The threat layers above are written to worry you. These are written to do
+     the opposite job with the same machinery: something is close, it is worth
+     something, and it is not going to gank you. A player standing in a camp is
+     about to be paid.
+
+     So every note here is a chord tone, nothing goes above MIDI 74 (the threat
+     celeste owns everything above that and must keep owning it), and the four
+     differ from each other by INSTRUMENT, REGISTER, RHYTHM and HARMONY rather
+     than by amount — the point of having four is that the choice is audible in
+     the first bar, not after a minute of comparing.
+
+     Exactly one is live. `quarryDefault` names it; the pause menu switches
+     between them mid-round, the audition page switches while the piece plays,
+     and ?mob=<key> is the shortcut.
+
+     ALL FOUR STAY, whichever one is adopted. Three of them are not dead code
+     to be pruned on the next tidy-up: they are written, levelled and reachable
+     from two pickers, they cost a few hundred events in a list that is walked
+     by a cursor and never searched, and the whole reason a choice was built
+     rather than a single voice is that the choice may be made again. A later
+     mode, a boss, a night cycle or a second opinion all want one of the other
+     three, and none of them is cheaper to rewrite than to keep.
+
+                 instrument        register    rhythm                 harmony
+       grove     rosewood bars     66–74       3 against the 4-bar    chord tones
+       hunt      hands on skin     —           a groove, flat out     none at all
+       glade     hum and low bell  59–71       floating, no pulse     fourths and fifths
+       horns     stopped pipe      50–62       two long calls         open fifths */
+  // Adopted after auditioning all four end to end: the mildest of them, the
+  // only one that adds no rhythm of its own, and the one that says "something
+  // is here" without asking for anything.
+  quarryDefault: 'glade',
+  quarry: {
+    // The marimba one. The figure moves in dotted eighths over a four-beat
+    // bar, so it comes back round to the downbeat every three beats and never
+    // sits still — a lilt rather than a pulse, which is the difference between
+    // something inviting and something marching at you.
+    grove: {
+      label: 'Rosewood', voices: 'marimba',
+      blurb: 'Wooden bars in a three-against-four lilt, up where nothing else in the piece lives. Warm, busy, and it never lands twice in the same place.',
+      patterns: {
+        lope: { tier: 1, span: 4, steps: [
+          { b: 0,    k: 'm', i: 2, oct: 1, v: 0.40 },
+          { b: 0.75, k: 'm', i: 4, oct: 1, v: 0.26 },
+          { b: 1.5,  k: 'm', i: 3, oct: 1, v: 0.32 },
+          { b: 2.25, k: 'm', i: 5, oct: 1, v: 0.24 },
+          { b: 3,    k: 'm', i: 4, oct: 1, v: 0.30 },
+        ] },
+        // Between the lope's notes, never on them: the figure gets denser
+        // without a second voice arriving, which is the same trick the threat
+        // ladder's sixteenths play and the only one either of them share.
+        sparkle: { tier: 2, span: 2, steps: [
+          { b: 0.375, k: 'm', i: 5, oct: 1, v: 0.20 },
+          { b: 1.125, k: 'm', i: 3, oct: 1, v: 0.16 },
+        ] },
+        // And one low bar on the third beat for a floor to stand on.
+        stomp: { tier: 2, span: 4, steps: [ { b: 2, k: 'm', i: 0, oct: 0, v: 0.34 } ] },
+      },
+    },
+    // The one with no pitch in it at all. Nothing to clash with the piece, so
+    // it can be the loudest of the four without ever being in the way — and a
+    // drum is the only thing here a player will tap along to.
+    hunt: {
+      label: 'Hand drums', voices: 'skin and rope',
+      blurb: 'Palm, heel and fingers on a frame drum, and nothing else. No pitch, so it cannot argue with the guitar; at the top the bass gets up and walks.',
+      patterns: {
+        pulse: { tier: 1, span: 4, steps: [
+          { b: 0,   k: 'k', drum: 'low',  v: 0.52 },
+          { b: 1,   k: 'k', drum: 'slap', v: 0.22 },
+          { b: 1.5, k: 'k', drum: 'mid',  v: 0.34 },
+          { b: 2.5, k: 'k', drum: 'low',  v: 0.40 },
+          { b: 3,   k: 'k', drum: 'slap', v: 0.20 },
+          { b: 3.5, k: 'k', drum: 'mid',  v: 0.30 },
+        ] },
+        flurry: { tier: 2, span: 2, steps: [
+          { b: 0.25, k: 'k', drum: 'slap', v: 0.14 },
+          { b: 0.75, k: 'k', drum: 'mid',  v: 0.18 },
+          { b: 1.25, k: 'k', drum: 'slap', v: 0.13 },
+          { b: 1.75, k: 'k', drum: 'mid',  v: 0.16 },
+        ] },
+        // The match theme's bass plays the root and nothing else, for two and
+        // a half minutes. This is the one flavour that lets it move.
+        stride: { tier: 2, span: 4, steps: [
+          { b: 2,   k: 'b', rel: 12, v: 0.26 },
+          { b: 3.5, k: 'b', rel: 7,  v: 0.18 },
+        ] },
+      },
+    },
+    // The quiet one. No attack anywhere in it: a hum that is simply there when
+    // you notice it, and two low bells well under the register the threat
+    // celeste speaks in, so the two can never be confused even by someone who
+    // has not heard the game before.
+    glade: {
+      label: 'Glass hum', voices: 'hum and low bells',
+      blurb: 'A held hum over the chord with a low bell in the gaps. No pulse and no attack — the mildest of the four, and the only one that does not change the piece\u2019s rhythm at all.',
+      patterns: {
+        air: { tier: 1, span: 8, steps: [
+          { b: 0.5, k: 'h', i: 1, oct: 1, hold: 6.5, v: 0.70 },
+        ] },
+        chime: { tier: 1, span: 4, steps: [
+          { b: 1,   k: 'c', i: 3, oct: 0, v: 0.22 },
+          { b: 3.5, k: 'c', i: 5, oct: 0, v: 0.16 },
+        ] },
+        // Three hums climbing the chord instead of one sitting on it.
+        rise: { tier: 2, span: 8, steps: [
+          { b: 0,   k: 'h', i: 2, oct: 1, hold: 2.5, v: 0.55 },
+          { b: 2.5, k: 'h', i: 4, oct: 1, hold: 2.5, v: 0.60 },
+          { b: 5,   k: 'h', i: 5, oct: 1, hold: 3.0, v: 0.65 },
+        ] },
+        glint: { tier: 2, span: 2, steps: [ { b: 1, k: 'c', i: 4, oct: 1, v: 0.18 } ] },
+      },
+    },
+    // The loudest gesture and the fewest notes: two calls a chord, held long
+    // enough that they are the slowest thing in the piece. Measured off the
+    // root rather than picked out of the voicing, so it is the same interval
+    // every time and reads as a signal rather than as harmony.
+    horns: {
+      label: 'Horn call', voices: 'two stopped pipes',
+      blurb: 'Two long horn calls a chord, a fifth apart, with a second horn answering underneath at the top. Four notes a bar at most — the most deliberate of the four.',
+      patterns: {
+        call: { tier: 1, span: 8, steps: [
+          { b: 0, k: 'w', rel: 24, hold: 2.5, v: 0.46 },
+          { b: 3, k: 'w', rel: 19, hold: 3.0, v: 0.38 },
+        ] },
+        answer: { tier: 2, span: 8, steps: [
+          { b: 4.5, k: 'w', rel: 12, hold: 3.0, v: 0.42 },
+        ] },
+        // The nylon string an octave up, struck once a bar under the horns:
+        // the piece's own voice agreeing with them.
+        ring: { tier: 2, span: 4, steps: [ { b: 2, k: 'g', i: 5, oct: 1, v: 0.30 } ] },
+      },
+    },
+  },
+
   mix: {
     level: 7.1,
     // The guitar carries it and the piano is a guest.
@@ -2488,6 +2948,21 @@ window.addEventListener('DOMContentLoaded', function(){
     // track ever reaches. Bright and wet: it is meant to arrive from further
     // away than the guitar, and to be the one thing in the mix with air.
     bell:   { g: 0.30, pan:  0.28, send: 0.42, lp: 9000 },
+    // The forest's three, silent for the same reason the celeste is. Left of
+    // centre against the celeste's +0.28, and the drum is the driest thing in
+    // the mix: reverb on a hand drum at this tempo turns a groove into a
+    // rumble.
+    // Levelled against an offline render rather than by ear, because the four
+    // are not the same KIND of sound and matching them by eye on the numbers
+    // in the patterns gets it wrong by a lot: a hum and a horn are continuous
+    // and pile up, where a mallet and a drum are transients that have died
+    // before the next one lands. Measured over nine seconds against the piece
+    // alone, the first pass put the two sustained voices 8dB above the two
+    // struck ones — a flavour switch that was mostly a volume knob. These are
+    // the numbers that put all four within about a decibel of each other.
+    mallet: { g: 0.34, pan: -0.24, send: 0.30, lp: 7000 },
+    drum:   { g: 0.55, pan:  0.14, send: 0.14, lp: 2600 },
+    wind:   { g: 0.135, pan: -0.08, send: 0.44, lp: 3200 },
     // A rounder pluck, further from the bridge, ringing longer. `spread` is the
     // one that matters most: it is how far a hard note opens the string up, and
     // dropping it from 16 to 5 is what takes the bite out without taking the
@@ -2524,6 +2999,16 @@ window.addEventListener('DOMContentLoaded', function(){
     // Set by the game once its own gesture listeners are up. See the music
     // section near the bottom of the next script.
     owned: false,
+    // The forest voices, readable before any audio exists at all: the game
+    // draws its pause-menu picker from this on the first frame, long before a
+    // gesture has built a context, and a picker that could only be drawn once
+    // the music was running would be a picker nobody could find.
+    flavours: Object.keys(LANE_SONGS.play.quarry || {}).map(k => ({
+      key: k,
+      label: LANE_SONGS.play.quarry[k].label,
+      voices: LANE_SONGS.play.quarry[k].voices,
+    })),
+    defaultFlavour: LANE_SONGS.play.quarryDefault || null,
     context, track, rng, mtof, clamp,
   };
 
@@ -2894,6 +3379,8 @@ window.addEventListener('DOMContentLoaded', function(){
   const pauseNoteEl = document.getElementById('pauseNote');
   const pauseConfirmNoteEl = document.getElementById('pauseConfirmNote');
   const pauseReseedBtn = document.getElementById('pauseReseedBtn');
+  const mobVoiceRow = document.getElementById('mobVoiceRow');
+  const mobVoiceNote = document.getElementById('mobVoiceNote');
   const pauseConfirmTitleEl = document.getElementById('pauseConfirmTitle');
   const menuBtn = document.getElementById('menuBtn');
 
@@ -13535,6 +14022,7 @@ window.addEventListener('DOMContentLoaded', function(){
     updateBirds(dt);
     updateHudSparks(dt);
     updateMusicThreat(dt);
+    updateMusicQuarry(dt);
     if(hurtFlash>0) hurtFlash = Math.max(0, hurtFlash - dt*2.4);
     if(noManaT>0) noManaT = Math.max(0, noManaT - dt);
     if(manaDryT>0) manaDryT = Math.max(0, manaDryT - dt);
@@ -20395,6 +20883,122 @@ window.addEventListener('DOMContentLoaded', function(){
     if(MUSIC_DEBUG) window.__threat = threat;
   }
 
+  /* ------------------------------------------------------------- the forest
+
+     The same question asked about everything that is NOT a hero, because the
+     answer is a different piece of news and has to sound like one. A camp at
+     the edge of the clearing is the mode's whole point arriving: in Open World
+     there are no enemy heroes at all, so without this the music has nothing to
+     react to for an entire round.
+
+     It is a separate number on a separate axis, never a second way of moving
+     `threat`. Fed into that one, three easy mobs would eventually earn the
+     celeste, and the one sound in this game that means "a hero is on you"
+     would have been spent on scenery. The synth ducks this axis out completely
+     as the threat rises, so when both are true you hear the fight.
+
+     Same shape as the threat share and for the same reasons — one over the
+     distance, windowed so the ends are exactly 1 and exactly 0, summed per mob
+     and capped. NEAR is just outside NEUTRAL_AGGRO 250: by the time it is
+     pinned the camp has already noticed you. FAR is a little under the gap
+     between two of Open World's groves, so the forest you are in is the forest
+     you can hear. What that lands on:
+
+                        one mob   a camp of three   the apex
+         first layer      743           948           1338
+         second layer     423           717            762
+         pinned           300           582            540
+
+     The apex counts from 1.8x further out because it IS 1.8x further out
+     before it matters: APEX_AGGRO is 300 against a camp's 250, it is nearly
+     three times the radius on screen, and a thing that size walking towards
+     you is the one piece of forest news worth hearing early. */
+  const QUARRY_NEAR = 300;
+  const QUARRY_FAR  = 1100;
+  const QUARRY_EDGE = QUARRY_NEAR / QUARRY_FAR;
+  const QUARRY_HUGE = 1.8;
+  function quarryShare(d){
+    const v = (QUARRY_NEAR / Math.max(d, 1) - QUARRY_EDGE) / (1 - QUARRY_EDGE);
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  // An Open World grove is a few hundred mobs and this runs every frame, so
+  // the square reject comes first and the sum stops the moment it is pinned.
+  function quarryAt(x, y){
+    let sum = 0;
+    for(const n of neutralCreeps){
+      if(n.hp <= 0) continue;
+      const reach = n.huge ? QUARRY_FAR * QUARRY_HUGE : QUARRY_FAR;
+      const dx = n.x - x, dy = n.y - y;
+      if(dx > reach || dx < -reach || dy > reach || dy < -reach) continue;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      sum += quarryShare(n.huge ? d / QUARRY_HUGE : d);
+      if(sum >= 1) return 1;
+    }
+    return sum;
+  }
+  // Slower both ways than the threat's 0.35/2.4. Nothing here is about to kill
+  // you, and a cue that snapped on as you walked past the edge of a camp would
+  // be an alarm, which is the one thing this is not.
+  const QUARRY_RISE = 0.55, QUARRY_FALL = 1.8;
+  let quarry = 0;
+
+  /* Which of the four forest voices plays, and how a player changes it.
+
+     ?mob=<key> sets it on any protocol, but that cannot be the only way and
+     the first version's mistake was thinking it could: the published build
+     runs inside a host page whose address bar is the host's, so the one place
+     the music most wants auditioning is the one place a query string may
+     never arrive. The picker on the pause menu is the real control and the
+     URL is the shortcut. */
+  const MOB_VOICES = (LaneMusic && LaneMusic.flavours) || [];
+  const MOB_FROM_URL = (typeof location !== 'undefined'
+      && (/(?:^|[?&])mob=([a-z]+)/.exec(location.search || '') || [])[1]) || null;
+  let mobVoice = (MOB_VOICES.some(f => f.key === MOB_FROM_URL) ? MOB_FROM_URL : null)
+              || (LaneMusic && LaneMusic.defaultFlavour)
+              || (MOB_VOICES[0] ? MOB_VOICES[0].key : null);
+
+  // Pressing one has to be AUDIBLE, and the pause menu is exactly where it
+  // would not be: update() is stopped, so the forest number is frozen at
+  // whatever it was when you paused, which at the base is zero. So a press
+  // pushes the track past the second layer's threshold for as long as the
+  // menu is up. Nothing needs to undo it — the first frame after Resume
+  // writes the real number back.
+  const MOB_PREVIEW = 0.72;
+  function pickMobVoice(key){
+    mobVoice = key;
+    for(const b of mobVoiceRow.children) b.setAttribute('aria-pressed', String(b.dataset.key === key));
+    const m = musicTrack('play');
+    if(!m || !m.setFlavour) return;
+    m.setFlavour(key);
+    if(paused && m.quarry < MOB_PREVIEW) m.setQuarry(MOB_PREVIEW);
+  }
+  (function buildMobVoiceRow(){
+    if(!mobVoiceRow) return;
+    if(!MOB_VOICES.length){ if(mobVoiceNote) mobVoiceNote.classList.add('hidden'); return; }
+    for(const f of MOB_VOICES){
+      const b = document.createElement('button');
+      b.dataset.key = f.key;
+      b.setAttribute('aria-pressed', String(f.key === mobVoice));
+      b.innerHTML = f.label + '<small>' + f.voices + '</small>';
+      bindTap(b, ()=> pickMobVoice(f.key));
+      mobVoiceRow.appendChild(b);
+    }
+  })();
+
+  function updateMusicQuarry(dt){
+    const me = playerTeam[activePlayerIdx];
+    const target = (me && me.alive) ? quarryAt(me.x, me.y) : 0;
+    const tau = target > quarry ? QUARRY_RISE : QUARRY_FALL;
+    quarry += (target - quarry) * (1 - Math.exp(-dt / tau));
+    const m = musicTracks.play;
+    if(!m || !m.setQuarry) return;
+    // Here rather than at startup: the track is built lazily on the first
+    // gesture, so there is no moment early enough to set this once.
+    if(mobVoice && m.flavour !== mobVoice) m.setFlavour(mobVoice);
+    m.setQuarry(quarry);
+    if(MUSIC_DEBUG) window.__quarry = quarry;
+  }
+
   // A window on that number, for tuning it. Off unless the page was opened with
   // ?musicdebug: it is an instrument, not a feature. The entire point of the
   // mechanic is that the information reaches you through the music rather than
@@ -20410,8 +21014,20 @@ window.addEventListener('DOMContentLoaded', function(){
     // Everything here is in world units, and a world unit is about a third of a
     // pixel on a desktop view — a 2-unit line is invisible.
     ctx.lineWidth = 7;
-    for(const [r, col] of [[THREAT_FAR, 'rgba(255,190,90,.45)'], [THREAT_NEAR, 'rgba(255,110,90,.75)']]){
+    for(const [r, col] of [[THREAT_FAR, 'rgba(255,190,90,.45)'], [THREAT_NEAR, 'rgba(255,110,90,.75)'],
+                           [QUARRY_FAR, 'rgba(150,230,140,.40)'], [QUARRY_NEAR, 'rgba(110,220,130,.70)']]){
       ctx.beginPath(); ctx.arc(me.x, me.y, r, 0, 7); ctx.strokeStyle = col; ctx.stroke();
+    }
+    // Green for the forest, and only the mobs actually contributing: inside a
+    // grove every camp on screen would otherwise be joined to the hero.
+    for(const n of neutralCreeps){
+      if(n.hp <= 0) continue;
+      const d = dist(me.x, me.y, n.x, n.y);
+      const q = quarryShare(n.huge ? d / QUARRY_HUGE : d);
+      if(q <= 0.01) continue;
+      ctx.beginPath(); ctx.moveTo(me.x, me.y); ctx.lineTo(n.x, n.y);
+      ctx.strokeStyle = 'rgba(120,225,140,' + (0.15 + 0.6 * q).toFixed(2) + ')';
+      ctx.stroke();
     }
     for(const e of enemyTeam){
       if(!e.alive) continue;
@@ -20438,15 +21054,39 @@ window.addEventListener('DOMContentLoaded', function(){
       const d = me ? dist(me.x, me.y, e.x, e.y) : 0;
       lines.push(e.type + '  ' + Math.round(d) + 'u  ' + threatShare(d).toFixed(2));
     }
+    // The other axis: its number, which voice is playing it, how much of it
+    // the threat is currently ducking away, and the nearest mob that is
+    // feeding it.
+    const trk = musicTracks.play;
+    lines.push('quarry ' + quarry.toFixed(2) + '   target ' +
+               ((me && me.alive) ? quarryAt(me.x, me.y) : 0).toFixed(2));
+    lines.push('mob voice ' + ((trk && trk.flavour) || mobVoice || '\u2014') +
+               '   duck ' + Math.max(0, 1 - threat / 0.24).toFixed(2));
+    // The nearest one AND how many are contributing, because the sum is what
+    // the number is: a single mob at 700 is a fifth of it and six of them at
+    // 700 are all of it, and only the count says which you are looking at.
+    let near = null, nearD = 1e9, feeding = 0;
+    for(const n of neutralCreeps){
+      if(n.hp <= 0 || !me) continue;
+      const d = dist(me.x, me.y, n.x, n.y);
+      if(quarryShare(n.huge ? d / QUARRY_HUGE : d) > 0) feeding++;
+      if(d < nearD){ nearD = d; near = n; }
+    }
+    if(near) lines.push((near.huge ? 'apex' : 'mob ') + '  ' + Math.round(nearD) + 'u  ' +
+                        quarryShare(near.huge ? nearD / QUARRY_HUGE : nearD).toFixed(2) +
+                        '   feeding ' + feeding);
     ctx.save();
-    // Top left, under the party chips: the bottom of the canvas is behind the
-    // dock, which is where the first version of this panel spent its life.
-    const px = 40, py = H * 0.14, lh = H * 0.028, fs = Math.round(H * 0.022);
+    // Top left, CLEAR of the party chips: the bottom of the canvas is behind
+    // the dock, which is where the first version of this panel spent its life,
+    // and 0.14 put it behind the portraits, which is where the second one
+    // spent its life — visibly, in a screenshot, once the forest lines made
+    // the panel long enough to notice.
+    const px = 40, py = H * 0.35, lh = H * 0.028, fs = Math.round(H * 0.022);
     ctx.font = '600 ' + fs + 'px ui-monospace, monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     const h = lh * lines.length + lh * 0.7;
     ctx.fillStyle = 'rgba(12,10,7,.78)';
-    ctx.fillRect(px - 14, py - 10, W * 0.20, h);
+    ctx.fillRect(px - 14, py - 10, W * 0.27, h);
     ctx.fillStyle = '#F2E8D4';
     lines.forEach((t, i) => ctx.fillText(t, px, py + i * lh));
     ctx.restore();
